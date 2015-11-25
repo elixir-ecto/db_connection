@@ -62,9 +62,11 @@ defmodule DBConnection.Sojourn do
   end
 
   defp ask(broker, opts) do
+    timeout = Keyword.get(opts, :timeout, 5_000)
+    info = {self(), timeout}
     case Keyword.get(opts, :queue, true) do
-      true  -> :sbroker.ask(broker)
-      false -> :sbroker.nb_ask(broker)
+      true  -> :sbroker.ask(broker, info)
+      false -> :sbroker.nb_ask(broker, info)
     end
   end
 end

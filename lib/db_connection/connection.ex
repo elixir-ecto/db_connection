@@ -220,7 +220,7 @@ defmodule DBConnection.Connection do
   def handle_info({:timeout, timer, __MODULE__}, %{timer: timer} = s)
   when is_reference(timer) do
     exception = DBConnection.Error.exception("client timeout")
-    {:disconnect, exception, s}
+    {:disconnect, exception, %{s | timer: nil}}
   end
 
   def handle_info(:timeout, %{client: nil, broker: nil} = s) do
@@ -312,10 +312,13 @@ defmodule DBConnection.Connection do
     end
   end
 
-  defp handle_next(state, %{queue: :broker, mod: mod, broker: broker} = s) do
+  defp handle_next(state, %{queue: :broker} = s) do
+    %{client: client, timer: timer, mod: mod, broker: broker} = s
+    demonitor(client)
+    cancel_timer(timer)
     info = {self(), mod, state}
     {:await, ref, _} = :sbroker.async_ask_r(broker, info, make_ref())
-    {:noreply,  %{s | state: state, client: {ref, :broker}}}
+    {:noreply,  %{s | state: state, client: {ref, :broker}, timer: nil}}
   end
   defp handle_next(state, s) do
     %{client: client, timer: timer, queue: queue} = s
@@ -343,9 +346,10 @@ defmodule DBConnection.Connection do
     end
   end
 
-  def handle_broker({:go, ref, pid, _, _}, s) do
+  def handle_broker({:go, ref, {pid, timeout}, _, _}, s) do
     mon = Process.monitor(pid)
-    {:noreply, %{s | client: {ref, mon}}}
+    timer = start_timer(timeout)
+    {:noreply, %{s | client: {ref, mon}, timer: timer}}
   end
 
   def handle_broker({:drop, _}, s) do

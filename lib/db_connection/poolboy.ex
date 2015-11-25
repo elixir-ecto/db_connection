@@ -19,19 +19,9 @@ defmodule DBConnection.Poolboy do
     queue_timeout = Keyword.get(opts, :queue_timeout, @timeout)
     queue?        = Keyword.get(opts, :queue, true)
 
-    worker = :poolboy.checkout(pool, queue?, queue_timeout)
-    try do
-      DBConnection.Connection.checkout(worker, opts)
-    else
-      {:ok, worker_ref, mod, state} ->
-        {:ok, {pool, worker, worker_ref}, mod, state}
-      :error ->
-        :poolboy.checkin(pool, worker)
-        :error
-    catch
-      :exit, reason ->
-        :poolboy.checkin(pool, worker)
-        exit(reason)
+    case :poolboy.checkout(pool, queue?, queue_timeout) do
+      :full  -> :error
+      worker -> checkout(pool, worker, opts)
     end
   end
 
@@ -72,6 +62,22 @@ defmodule DBConnection.Poolboy do
       nil                     -> []
       name when is_atom(name) -> {:local, name}
       name                    -> name
+    end
+  end
+
+  defp checkout(pool, worker, opts) do
+    try do
+      DBConnection.Connection.checkout(worker, opts)
+    else
+      {:ok, worker_ref, mod, state} ->
+        {:ok, {pool, worker, worker_ref}, mod, state}
+      :error ->
+        :poolboy.checkin(pool, worker)
+        :error
+    catch
+      :exit, reason ->
+        :poolboy.checkin(pool, worker)
+        exit(reason)
     end
   end
 end
