@@ -1,4 +1,4 @@
-defmodule TestBackoff do
+defmodule BackoffTest do
   use ExUnit.Case, async: true
 
   alias TestPool, as: P

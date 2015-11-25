@@ -258,7 +258,7 @@ defmodule DBConnection do
         raise DBConnection.Error, "bad return value: #{inspect other}"
     catch
       kind, reason ->
-        stack = Systen.stacktrace()
+        stack = System.stacktrace()
         delete_stop(conn, conn_state, kind, reason, stack, opts)
         :erlang.raise(kind, reason, stack)
     end
@@ -428,7 +428,7 @@ defmodule DBConnection do
   defp get_info(conn), do: Process.get(key(conn), :closed)
 
   defp delete_info(conn) do
-    Process.delete(conn) || :closed
+    Process.delete(key(conn)) || :closed
   end
 
   defp key(%DBConnection{conn_ref: conn_ref}), do: {__MODULE__, conn_ref}

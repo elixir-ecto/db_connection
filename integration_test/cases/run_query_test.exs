@@ -1,4 +1,4 @@
-defmodule QueryTest do
+defmodule RunQueryTest do
   use ExUnit.Case, async: false
 
   alias TestPool, as: P
@@ -16,64 +16,16 @@ defmodule QueryTest do
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
-    assert P.query(pool, %Q{}) == {:ok, %R{}}
-    assert P.query(pool, %Q{}, [key: :value]) == {:ok, %R{}}
+    assert P.run(pool, fn(conn) ->
+      assert P.query(conn, %Q{}) == {:ok, %R{}}
+      assert P.query(conn, %Q{}, [key: :value]) == {:ok, %R{}}
+      :hi
+    end) == {:ok, :hi}
 
     assert [
       connect: [_],
       handle_query: [%Q{}, _, :state],
       handle_query: [%Q{}, [{:key, :value} | _], :new_state]] = A.record(agent)
-  end
-
-  test "query prepares query" do
-    stack = [
-      {:ok, :state},
-      {:ok, %R{}, :new_state},
-      {:ok, %R{}, :newer_state},
-      {:ok, %R{}, :newest_state}
-      ]
-    {:ok, agent} = A.start_link(stack)
-
-    opts = [agent: agent, parent: self()]
-    {:ok, pool} = P.start_link(opts)
-
-    opts2 = [prepare_fun: fn(%Q{}) -> :prepared end]
-    assert P.query(pool, %Q{}, opts2) == {:ok, %R{}}
-
-    assert P.query(pool, %Q{}, [prepare: :auto] ++ opts2) == {:ok, %R{}}
-    assert P.query(pool, %Q{}, [prepare: :manual] ++ opts2) == {:ok, %R{}}
-
-    assert [
-      connect: [_],
-      handle_query: [:prepared, _, :state],
-      handle_query: [:prepared, _, :new_state],
-      handle_query: [%Q{}, _, :newer_state]] = A.record(agent)
-  end
-
-  test "query decodes result" do
-    stack = [
-      {:ok, :state},
-      {:ok, %R{}, :new_state},
-      {:ok, %R{}, :newer_state},
-      {:ok, %R{}, :newest_state},
-      ]
-    {:ok, agent} = A.start_link(stack)
-
-    opts = [agent: agent, parent: self()]
-    {:ok, pool} = P.start_link(opts)
-
-    opts2 = [decode_fun: fn(%R{}) -> :decoded end]
-    assert P.query(pool, %Q{}, opts2) == {:ok, :decoded}
-
-    assert P.query(pool, %Q{}, [decode: :auto] ++ opts) == {:ok, %R{}}
-
-    assert P.query(pool, %Q{}, [decode: :manual] ++ opts) == {:ok, %R{}}
-
-    assert [
-      connect: [_],
-      handle_query: [%Q{}, _, :state],
-      handle_query: [%Q{}, _, :new_state],
-      handle_query: [%Q{}, _, :newer_state]] = A.record(agent)
   end
 
   test "query error returns error" do
@@ -86,7 +38,11 @@ defmodule QueryTest do
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
-    assert P.query(pool, %Q{}) == {:error, err}
+
+    P.run(pool, fn(conn) ->
+      assert P.query(conn, %Q{}) == {:error, err}
+      :hi
+    end) == {:ok, :hi}
 
     assert [
       connect: [_],
@@ -97,17 +53,25 @@ defmodule QueryTest do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
-      {:error, err, :new_state}
+      {:error, err, :new_state},
+      {:ok,  %R{}, :newer_state},
       ]
     {:ok, agent} = A.start_link(stack)
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
-    assert_raise RuntimeError, "oops", fn() -> P.query!(pool, %Q{}) end
+
+    assert P.run(pool, fn(conn) ->
+      assert_raise RuntimeError, "oops", fn() -> P.query!(conn, %Q{}) end
+
+      assert P.query(conn, %Q{}) == {:ok, %R{}}
+      :hi
+    end) == {:ok, :hi}
 
     assert [
       connect: [_],
-      handle_query: [%Q{}, _, :state]] = A.record(agent)
+      handle_query: [%Q{}, _, :state],
+      handle_query: [%Q{}, _, :new_state]] = A.record(agent)
   end
 
   test "query disconnect returns error" do
@@ -125,7 +89,15 @@ defmodule QueryTest do
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
-    assert P.query(pool, %Q{}) == {:error, err}
+
+    assert P.run(pool, fn(conn) ->
+      assert P.query(conn, %Q{}) == {:error, err}
+
+      assert_raise DBConnection.Error, "connection is closed",
+        fn() -> P.query(conn, %Q{}) end
+
+      :hi
+    end) == {:ok, :hi}
 
     assert_receive :reconnected
 
@@ -153,8 +125,16 @@ defmodule QueryTest do
     assert_receive {:hi, conn}
 
     Process.flag(:trap_exit, true)
-    assert_raise DBConnection.Error, "bad return value: :oops",
-      fn() -> P.query(pool, %Q{}) end
+
+    assert P.run(pool, fn(conn) ->
+      assert_raise DBConnection.Error, "bad return value: :oops",
+        fn() -> P.query(conn, %Q{}) end
+
+      assert_raise DBConnection.Error, "connection is closed",
+        fn() -> P.query(conn, %Q{}) end
+
+      :hi
+    end) == {:ok, :hi}
 
     assert_receive {:EXIT, ^conn,
       {%DBConnection.Error{message: "client stopped: " <> _}, [_|_]}}
@@ -183,7 +163,15 @@ defmodule QueryTest do
     assert_receive {:hi, conn}
 
     Process.flag(:trap_exit, true)
-    assert_raise RuntimeError, "oops", fn() -> P.query(pool, %Q{}) end
+
+    assert P.run(pool, fn(conn) ->
+      assert_raise RuntimeError, "oops", fn() -> P.query(conn, %Q{}) end
+
+      assert_raise DBConnection.Error, "connection is closed",
+        fn() -> P.query(conn, %Q{}) end
+
+      :hi
+    end) == {:ok, :hi}
 
     assert_receive {:EXIT, ^conn,
       {%DBConnection.Error{message: "client stopped: " <> _}, [_|_]}}

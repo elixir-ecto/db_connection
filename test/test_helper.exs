@@ -16,6 +16,14 @@ defmodule TestConnection do
         DBConnection.query!(pool, query, opts2 ++ unquote(opts))
       end
 
+      def run(pool, fun, opts2 \\ []) do
+        DBConnection.run(pool, fun, opts2 ++ unquote(opts))
+      end
+
+      def transaction(pool, fun, opts2 \\ []) do
+        DBConnection.run(pool, fun, opts2 ++ unquote(opts))
+      end
+
       defoverridable [start_link: 1]
     end
   end
@@ -46,6 +54,16 @@ defmodule TestConnection do
 
   def handle_query(query, opts, state) do
     TestAgent.eval(:handle_query, [query, opts, state])
+  end
+
+  def handle_begin(_opts, state) do
+    {:ok, state}
+    #TestAgent.eval(:begin_query, [opts, state])
+  end
+
+  def handle_commit(_opts, state) do
+    {:ok, state}
+    #TestAgent.eval(:begin_query, [opts, state])
   end
 
   def handle_info(msg, state) do
