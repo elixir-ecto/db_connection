@@ -21,8 +21,10 @@ defmodule TestConnection do
       end
 
       def transaction(pool, fun, opts2 \\ []) do
-        DBConnection.run(pool, fun, opts2 ++ unquote(opts))
+        DBConnection.transaction(pool, fun, opts2 ++ unquote(opts))
       end
+
+      defdelegate rollback(conn, reason), to: DBConnection
 
       def prepare(pool, query, opts2 \\ []) do
         DBConnection.prepare(pool, query, opts2 ++ unquote(opts))
@@ -80,14 +82,16 @@ defmodule TestConnection do
     TestAgent.eval(:handle_query, [query, opts, state])
   end
 
-  def handle_begin(_opts, state) do
-    {:ok, state}
-    #TestAgent.eval(:begin_query, [opts, state])
+  def handle_begin(opts, state) do
+    TestAgent.eval(:handle_begin, [opts, state])
   end
 
-  def handle_commit(_opts, state) do
-    {:ok, state}
-    #TestAgent.eval(:begin_query, [opts, state])
+  def handle_commit(opts, state) do
+    TestAgent.eval(:handle_commit, [opts, state])
+  end
+
+  def handle_rollback(opts, state) do
+    TestAgent.eval(:handle_rollback, [opts, state])
   end
 
   def handle_prepare(query, opts, state) do

@@ -155,7 +155,7 @@ defmodule DBConnection do
   def transaction(%DBConnection{} = conn, fun, opts) do
     case fetch_info(conn) do
       {:transaction, _} ->
-        fun.(conn)
+        {:ok, fun.(conn)}
       {:idle, conn_state} ->
         transaction_begin(conn, conn_state, fun, opts, :idle)
     end
@@ -313,7 +313,10 @@ defmodule DBConnection do
       {:ok, conn_state} ->
         put_info(conn, :transaction, conn_state)
         transaction_run(conn, fun, opts, status)
-      {disconnect, err, conn_state} when disconnect in [:error, :disconnect] ->
+      {:error, err, conn_state} ->
+        checkin(conn, conn_state, opts)
+        raise err
+      {:disconnect, err, conn_state} ->
         delete_disconnect(conn, conn_state, err, opts)
         raise err
        other ->
@@ -321,7 +324,7 @@ defmodule DBConnection do
         raise DBConnection.Error, "bad return value: #{inspect other}"
     catch
       kind, reason ->
-        stack = System.stackrace()
+        stack = System.stacktrace()
         delete_stop(conn, conn_state, kind, reason, stack, opts)
         :erlang.raise(kind, reason, stack)
     end
@@ -377,7 +380,10 @@ defmodule DBConnection do
       {:ok, conn_state} ->
         checkin(conn, conn_state, opts)
         result
-      {disconnect, err, conn_state} when disconnect in [:error, :disconnect] ->
+      {:error, err, conn_state} ->
+        checkin(conn, conn_state, opts)
+        raise err
+      {:disconnect, err, conn_state} ->
         delete_disconnect(conn, conn_state, err, opts)
         raise err
        other ->
@@ -385,7 +391,7 @@ defmodule DBConnection do
         raise DBConnection.Error, "bad return value: #{inspect other}"
     catch
       kind, reason ->
-        stack = System.stackrace()
+        stack = System.stacktrace()
         delete_stop(conn, conn_state, kind, reason, stack, opts)
         :erlang.raise(kind, reason, stack)
     end
@@ -399,7 +405,10 @@ defmodule DBConnection do
       {:ok, conn_state} ->
         put_info(conn, :idle, conn_state)
         result
-      {disconnect, err, conn_state} when disconnect in [:error, :disconnect] ->
+      {:error, err, conn_state} ->
+        put_info(conn, :idle, conn_state)
+        raise err
+      {:disconnect, err, conn_state} ->
         delete_disconnect(conn, conn_state, err, opts)
         raise err
        other ->
@@ -407,7 +416,7 @@ defmodule DBConnection do
          raise DBConnection.Error, "bad return value: #{inspect other}"
     catch
       kind, reason ->
-        stack = System.stackrace()
+        stack = System.stacktrace()
         delete_stop(conn, conn_state, kind, reason, stack, opts)
         :erlang.raise(kind, reason, stack)
     end

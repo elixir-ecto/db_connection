@@ -9,8 +9,10 @@ defmodule TransactionQueryTest do
   test "query returns result" do
     stack = [
       {:ok, :state},
-      {:ok, %R{}, :new_state},
-      {:ok, %R{}, :new_state}
+      {:ok, :new_state},
+      {:ok, %R{}, :newer_state},
+      {:ok, %R{}, :newest_state},
+      {:ok, :newest_state}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -24,15 +26,19 @@ defmodule TransactionQueryTest do
 
     assert [
       connect: [_],
-      handle_query: [%Q{}, _, :state],
-      handle_query: [%Q{}, [{:key, :value} | _], :new_state]] = A.record(agent)
+      handle_begin: [_, :state],
+      handle_query: [%Q{}, _, :new_state],
+      handle_query: [%Q{}, [{:key, :value} | _], :newer_state],
+      handle_commit: [_, :newest_state]] = A.record(agent)
   end
 
   test "query error returns error" do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
-      {:error, err, :new_state}
+      {:ok, :new_state},
+      {:error, err, :newer_state},
+      {:ok, :newest_state}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -46,15 +52,19 @@ defmodule TransactionQueryTest do
 
     assert [
       connect: [_],
-      handle_query: [%Q{}, _, :state]] = A.record(agent)
+      handle_begin: [_, :state],
+      handle_query: [%Q{}, _, :new_state],
+      handle_commit: [_, :newer_state]] = A.record(agent)
   end
 
   test "query! error raises error" do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
-      {:error, err, :new_state},
-      {:ok,  %R{}, :newer_state},
+      {:ok, :new_state},
+      {:error, err, :newer_state},
+      {:ok,  %R{}, :newest_state},
+      {:ok, :newest_state}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -70,15 +80,18 @@ defmodule TransactionQueryTest do
 
     assert [
       connect: [_],
-      handle_query: [%Q{}, _, :state],
-      handle_query: [%Q{}, _, :new_state]] = A.record(agent)
+      handle_begin: [_, :state],
+      handle_query: [%Q{}, _, :new_state],
+      handle_query: [%Q{}, _, :newer_state],
+      handle_commit: [_, :newest_state]] = A.record(agent)
   end
 
   test "query disconnect returns error" do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
-      {:disconnect, err, :new_state},
+      {:ok, :new_state},
+      {:disconnect, err, :newer_state},
       :ok,
       fn(opts) ->
         send(opts[:parent], :reconnected)
@@ -103,8 +116,9 @@ defmodule TransactionQueryTest do
 
     assert [
       connect: [opts2],
-      handle_query: [%Q{}, _, :state],
-      disconnect: [^err, :new_state],
+      handle_begin: [_, :state],
+      handle_query: [%Q{}, _, :new_state],
+      disconnect: [^err, :newer_state],
       connect: [opts2]] = A.record(agent)
   end
 
@@ -115,6 +129,7 @@ defmodule TransactionQueryTest do
         Process.link(opts[:parent])
         {:ok, :state}
       end,
+      {:ok, :new_state},
       :oops,
       {:ok, :state}
       ]
@@ -141,7 +156,8 @@ defmodule TransactionQueryTest do
 
     assert [
       {:connect, _},
-      {:handle_query, [%Q{}, _, :state]}| _] = A.record(agent)
+      {:handle_begin, [_, :state]},
+      {:handle_query, [%Q{}, _, :new_state]} | _] = A.record(agent)
   end
 
   test "query raise raises and stops connection" do
@@ -151,6 +167,7 @@ defmodule TransactionQueryTest do
         Process.link(opts[:parent])
         {:ok, :state}
       end,
+      {:ok, :new_state},
       fn(_, _, _) ->
         raise "oops"
       end,
@@ -178,6 +195,7 @@ defmodule TransactionQueryTest do
 
     assert [
       {:connect, _},
-      {:handle_query, [%Q{}, _, :state]}| _] = A.record(agent)
+      {:handle_begin, [_, :state]},
+      {:handle_query, [%Q{}, _, :new_state]}| _] = A.record(agent)
   end
 end
