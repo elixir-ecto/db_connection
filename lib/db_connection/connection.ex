@@ -150,9 +150,12 @@ defmodule DBConnection.Connection do
   end
 
   def handle_cast({:stop, ref, reason, state}, %{client: {ref, _}} = s) do
-    message = ["client stopped: " | Exception.format_exit(reason)]
+    message = "client stopped: " <> Exception.format_exit(reason)
     exception = DBConnection.Error.exception(message)
-    {:stop, exception, %{s | state: state}}
+    ## Terrible hack so the stacktrace points here and we get the new
+    ## state in logs
+    {_, stack} = :erlang.process_info(self(), :current_stacktrace)
+    {:stop, {exception, stack}, %{s | state: state}}
   end
 
   def handle_cast({:cancel, _}, %{queue: :broker}) do
@@ -377,12 +380,8 @@ defmodule DBConnection.Connection do
   defp demonitor({_, other}) when other in [:connect, :broker], do: true
   defp demonitor(nil), do: true
 
-  defp start_timer(opts) do
-    case Keyword.fetch!(opts, :timeout) do
-      :infinity -> nil
-      timeout   -> :erlang.start_timer(timeout, self, __MODULE__)
-    end
-  end
+  defp start_timer(:infinity), do: nil
+  defp start_timer(timeout), do: :erlang.start_timer(timeout, self, __MODULE__)
 
   defp cancel_timer(nil), do: :ok
   defp cancel_timer(timer) do

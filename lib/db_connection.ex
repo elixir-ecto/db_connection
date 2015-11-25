@@ -255,7 +255,7 @@ defmodule DBConnection do
         {:error, err}
       other ->
         delete_stop(conn, conn_state, {:bad_return_value, other}, opts)
-        raise DBConnection.Error, "invalid return: #{inspect other}"
+        raise DBConnection.Error, "bad return value: #{inspect other}"
     catch
       kind, reason ->
         stack = Systen.stacktrace()
@@ -284,10 +284,10 @@ defmodule DBConnection do
         {:error, err}
       other ->
         delete_stop(conn, conn_state, {:bad_return_value, other}, opts)
-        raise DBConnection.Error, "invalid return: #{inspect other}"
+        raise DBConnection.Error, "bad return value: #{inspect other}"
     catch
       kind, reason ->
-        stack = Systen.stacktrace()
+        stack = System.stacktrace()
         delete_stop(conn, conn_state, kind, reason, stack, opts)
         :erlang.raise(kind, reason, stack)
     end
@@ -318,7 +318,7 @@ defmodule DBConnection do
         raise err
        other ->
         delete_stop(conn, conn_state, {:bad_return_value, other}, opts)
-        raise DBConnection.Error, "invalid return: #{inspect other}"
+        raise DBConnection.Error, "bad return value: #{inspect other}"
     catch
       kind, reason ->
         stack = System.stackrace()
@@ -382,7 +382,7 @@ defmodule DBConnection do
         raise err
        other ->
         delete_stop(conn, conn_state, {:bad_return_value, other}, opts)
-        raise DBConnection.Error, "invalid return: #{inspect other}"
+        raise DBConnection.Error, "bad return value: #{inspect other}"
     catch
       kind, reason ->
         stack = System.stackrace()
@@ -404,7 +404,7 @@ defmodule DBConnection do
         raise err
        other ->
          delete_stop(conn, conn_state, {:bad_return_value, other}, opts)
-         raise DBConnection.Error, "invalid return: #{inspect other}"
+         raise DBConnection.Error, "bad return value: #{inspect other}"
     catch
       kind, reason ->
         stack = System.stackrace()

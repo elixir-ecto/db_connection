@@ -1,5 +1,4 @@
 defprotocol DBConnection.Query do
-
   @spec prepare(any, Keyword.t) :: any
   def prepare(query, opts)
 

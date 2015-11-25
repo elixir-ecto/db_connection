@@ -2,6 +2,24 @@ ExUnit.start([capture_log: true])
 
 defmodule TestConnection do
 
+  defmacro __using__(opts) do
+    quote do
+      def start_link(opts2) do
+        TestConnection.start_link(unquote(opts) ++ opts2)
+      end
+
+      def query(pool, query, opts2 \\ []) do
+        DBConnection.query(pool, query, opts2 ++ unquote(opts))
+      end
+
+      def query!(pool, query, opts2 \\ []) do
+        DBConnection.query!(pool, query, opts2 ++ unquote(opts))
+      end
+
+      defoverridable [start_link: 1]
+    end
+  end
+
   def start_link(opts), do: DBConnection.start_link(__MODULE__, opts)
 
   def connect(opts) do
@@ -18,8 +36,16 @@ defmodule TestConnection do
     {:ok, state}
   end
 
+  def checkin(state) do
+    {:ok, state}
+  end
+
   def ping(state) do
     TestAgent.eval(:ping, [state])
+  end
+
+  def handle_query(query, opts, state) do
+    TestAgent.eval(:handle_query, [query, opts, state])
   end
 
   def handle_info(msg, state) do
@@ -27,9 +53,41 @@ defmodule TestConnection do
   end
 end
 
+
+defmodule TestQuery do
+  defstruct []
+end
+
+defmodule TestResult do
+  defstruct []
+end
+
+defimpl DBConnection.Query, for: TestQuery do
+  def prepare(query, opts) do
+    prepare = Keyword.get(opts, :prepare_fun, &(&1))
+    prepare.(query)
+  end
+
+  def encode(query, opts) do
+    encode = Keyword.get(opts, :encode_fun, &(&1))
+    encode.(query)
+  end
+end
+
+defimpl DBConnection.Result, for: TestResult do
+  def decode(query, opts) do
+    decode = Keyword.get(opts, :decode_fun, &(&1))
+    decode.(query)
+  end
+end
+
 defmodule TestAgent do
 
-  def start_link(stack), do: Agent.start_link(fn() -> {stack, []} end)
+  def start_link(stack) do
+    {:ok, agent} = ok = Agent.start_link(fn() -> {stack, []} end)
+    _ = Process.put(:agent, agent)
+    ok
+  end
 
   def eval(agent \\ Process.get(:agent), fun, args) do
     action = {fun, args}

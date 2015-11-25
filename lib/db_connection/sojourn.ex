@@ -23,17 +23,11 @@ defmodule DBConnection.Sojourn do
     end
   end
 
-  def checkin({pid, ref}, state, _) do
-    DBConnection.Sojourn.Connection.checkin(pid, ref, state)
-  end
+  defdelegate checkin(ref, state, opts), to: DBConnection.Connection
 
-  def disconnect({pid, ref}, err, state, _) do
-    DBConnection.Sojourn.Connection.disconnect(pid, ref, err, state)
-  end
+  defdelegate disconnect(ref, err, state, opts), to: DBConnection.Connection
 
-  def stop({pid, ref}, reason, state, _) do
-    DBConnection.Sojourn.Connection.stop(pid, ref, reason, state)
-  end
+  defdelegate stop(ref, reason, state, opts), to: DBConnection.Connection
 
   ## Helpers
 
