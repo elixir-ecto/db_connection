@@ -45,7 +45,7 @@ defmodule TransactionQueryTest do
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
 
-    P.transaction(pool, fn(conn) ->
+    assert P.transaction(pool, fn(conn) ->
       assert P.query(conn, %Q{}) == {:error, err}
       :hi
     end) == {:ok, :hi}

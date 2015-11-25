@@ -39,7 +39,7 @@ defmodule RunQueryTest do
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
 
-    P.run(pool, fn(conn) ->
+    assert P.run(pool, fn(conn) ->
       assert P.query(conn, %Q{}) == {:error, err}
       :hi
     end) == {:ok, :hi}
