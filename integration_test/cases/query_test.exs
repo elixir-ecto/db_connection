@@ -1,5 +1,5 @@
 defmodule QueryTest do
-  use ExUnit.Case, async: false
+  use ExUnit.Case, async: true
 
   alias TestPool, as: P
   alias TestAgent, as: A

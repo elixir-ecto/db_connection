@@ -24,6 +24,30 @@ defmodule TestConnection do
         DBConnection.run(pool, fun, opts2 ++ unquote(opts))
       end
 
+      def prepare(pool, query, opts2 \\ []) do
+        DBConnection.prepare(pool, query, opts2 ++ unquote(opts))
+      end
+
+      def prepare!(pool, query, opts2 \\ []) do
+        DBConnection.prepare!(pool, query, opts2 ++ unquote(opts))
+      end
+
+      def execute(pool, query, opts2 \\ []) do
+        DBConnection.execute(pool, query, opts2 ++ unquote(opts))
+      end
+
+      def execute!(pool, query, opts2 \\ []) do
+        DBConnection.execute!(pool, query, opts2 ++ unquote(opts))
+      end
+
+      def close(pool, query, opts2 \\ []) do
+        DBConnection.close(pool, query, opts2 ++ unquote(opts))
+      end
+
+      def close!(pool, query, opts2 \\ []) do
+        DBConnection.close!(pool, query, opts2 ++ unquote(opts))
+      end
+
       defoverridable [start_link: 1]
     end
   end
@@ -64,6 +88,18 @@ defmodule TestConnection do
   def handle_commit(_opts, state) do
     {:ok, state}
     #TestAgent.eval(:begin_query, [opts, state])
+  end
+
+  def handle_prepare(query, opts, state) do
+    TestAgent.eval(:handle_prepare, [query, opts, state])
+  end
+
+  def handle_execute(query, opts, state) do
+    TestAgent.eval(:handle_execute, [query, opts, state])
+  end
+
+  def handle_close(query, opts, state) do
+    TestAgent.eval(:handle_close, [query, opts, state])
   end
 
   def handle_info(msg, state) do
