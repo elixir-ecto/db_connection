@@ -1,4 +1,7 @@
 # DBConnection
 
-Brain dump of an idea for a database connection behaviour with broken code,
-no docs and no tests. BUG RIDDEN!
+Database connection behaviour and database connection pool designed for
+handling transaction, prepare/execute and client process encode/decode.
+
+An example of using the `DBConnection` behaviour is available in
+`./examples/db_agent/`.
