@@ -1,4 +1,17 @@
 defmodule DBConnection.Sojourn do
+  @moduledoc """
+  A `DBConnection.Pool` using sbroker.
+
+  ### Options
+
+    * `:pool_size` - The number of connections (default: `10`)
+    * `:broker_mod` - The sbroker callback module (see `:sbroker`,
+    default: `DBConnection.Sojourn.Timeout`)
+    * `:broker_start_opts` - Start options for the broker (see
+    `:sbroker`, default: `[]`)
+
+  All options are passed as the argument to the sbroker callback module.
+  """
 
   @behaviour DBConnection.Pool
 
@@ -7,15 +20,18 @@ defmodule DBConnection.Sojourn do
 
   import Supervisor.Spec
 
+  @doc false
   def start_link(mod, opts) do
     Supervisor.start_link(children(mod, opts), [strategy: :rest_for_one])
   end
 
+  @doc false
   def child_spec(mod, opts, child_opts \\ []) do
     args = [children(mod, opts), [strategy: :rest_for_one]]
     supervisor(Supervisor, args, child_opts)
   end
 
+  @doc false
   def checkout(broker, opts) do
     case ask(broker, opts) do
       {:go, ref, {pid, mod, state}, _, _}    -> {:ok, {pid, ref}, mod, state}
@@ -23,10 +39,13 @@ defmodule DBConnection.Sojourn do
     end
   end
 
+  @doc false
   defdelegate checkin(ref, state, opts), to: DBConnection.Connection
 
+  @doc false
   defdelegate disconnect(ref, err, state, opts), to: DBConnection.Connection
 
+  @doc false
   defdelegate stop(ref, reason, state, opts), to: DBConnection.Connection
 
   ## Helpers

@@ -1,18 +1,62 @@
 defmodule DBConnection.Pool do
+  @moduledoc """
+  A behaviour module for implementing a pool of database connections
+  using `DBConnection`.
+  """
 
-  @callback start_link(module, Keyword.t) ::
+  @doc """
+  Start and link to a pool of `module` connections with options `opts`.
+  """
+  @callback start_link(module, opts :: Keyword.t) ::
     GenServer.on_start
 
-  @callback child_spec(module, Keyword.t, Keyword.t) ::
+  @doc """
+  Create a supervisor child specification for the pool with module
+  `module`, options `opts` and child specification options `child_opts`.
+  """
+  @callback child_spec(module, opts :: Keyword.t, child_opts :: Keyword.t) ::
     Supervisor.Spec.spec
 
-  @callback checkout(GenServer.server, Keyword.t) ::
+  @doc """
+  Checkout a connection's state from a pool.
+
+  The returned `pool_ref` will be passed to `checkin/3`, `disconnect/4`
+  and `stop/4`.
+
+  `module` and `state` are the module and state of the connection.
+  """
+  @callback checkout(GenServer.server, opts :: Keyword.t) ::
     {:ok, pool_ref :: any, module, state :: any} | :error
 
-  @callback checkin(pool_ref :: any, state :: any, Keyword.t) :: :ok
+  @doc """
+  Checkin a connection's state to the pool.
 
-  @callback disconnect(pool_ref :: any, Exception.t, state :: any, Keyword.t) ::
+  The `pool_ref` is from the return of `checkout/2`.
+
+  `state` is the lastest state of the connection.
+  """
+  @callback checkin(pool_ref :: any, state :: any, opts :: Keyword.t) :: :ok
+
+  @doc """
+  Checkin a connection's state to the pool and disconnect it with an
+  exception.
+
+  The `pool_ref` is from the return of `checkout/2`.
+
+  `state` is the lastest state of the connection.
+  """
+  @callback disconnect(pool_ref :: any, Exception.t, state :: any, opts :: Keyword.t) ::
     :ok
 
-  @callback stop(pool_ref :: any, reason :: any, state :: any, Keyword.t) :: :ok
+  @doc """
+  Stop a connection.
+
+  The `pool_ref` is from the return of `checkout/2`.
+
+  `reason` is any term.
+
+  `state` is the lastest state of the connection.
+  """
+  @callback stop(pool_ref :: any, reason :: any, state :: any, opts :: Keyword.t) ::
+    :ok
 end

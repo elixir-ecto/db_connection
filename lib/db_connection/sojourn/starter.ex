@@ -1,4 +1,5 @@
 defmodule DBConnection.Sojourn.Starter do
+  @moduledoc false
 
   use Connection
 

@@ -1,5 +1,12 @@
 defmodule DBConnection.Connection do
+  @moduledoc """
+  A `DBConnection.Pool` with a single connection, the default pool.
 
+  ### Options
+
+    * `:sync_connect` - Whether to block the caller of `start_link` to
+    carry out an initial connection attempt (boolean, default: `false`)
+  """
   @behaviour DBConnection.Pool
   use Connection
   require Logger
@@ -12,14 +19,17 @@ defmodule DBConnection.Connection do
 
   ## DBConnection.Pool API
 
+  @doc false
   def start_link(mod, opts) do
     start_link(mod, opts, :connection)
   end
 
+  @doc false
   def child_spec(mod, opts, child_opts \\ []) do
     child_spec(mod, opts, :connection, child_opts)
   end
 
+  @doc false
   def checkout(pool, opts) do
     queue_timeout = opts[:queue_timeout] || @timeout
     queue?        = Keyword.get(opts, :queue, true)
@@ -35,14 +45,17 @@ defmodule DBConnection.Connection do
     end
   end
 
+  @doc false
   def checkin({pid, ref}, state, _) do
     Connection.cast(pid, {:checkin, ref, state})
   end
 
+  @doc false
   def disconnect({pid, ref}, err, state, _) do
     Connection.cast(pid, {:disconnect, ref, err, state})
   end
 
+  @doc false
   def stop({pid, ref}, reason, state, _) do
     Connection.cast(pid, {:stop, ref, reason, state})
   end
