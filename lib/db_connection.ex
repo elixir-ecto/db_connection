@@ -192,7 +192,7 @@ defmodule DBConnection do
   Messages received by the connection process when checked out will be
   logged and discared.
   """
-  @callback handle_info(msg :: any, state :: any) :
+  @callback handle_info(msg :: any, state :: any) ::
     {:ok, new_state :: any} |
     {:disconnect, Exception.t, new_state :: any}
 
