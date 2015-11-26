@@ -61,6 +61,8 @@ defmodule DBConnection do
 
   If an error is returned it will be logged and another
   connection attempt will be made after a backoff interval.
+
+  This callback is called in the connection process.
   """
   @callback connect(opts :: Keyword.t) ::
     {:ok, state :: any} | {:error, Exception.t}
@@ -75,6 +77,8 @@ defmodule DBConnection do
 
   Messages are discarded, instead of being passed to `handle_info/2`,
   when the state is checked out.
+
+  This callback is called in the connection process.
   """
   @callback checkout(state :: any) ::
     {:ok, new_state :: any} | {:disconnect, Exception.t, new_state :: any}
@@ -86,6 +90,8 @@ defmodule DBConnection do
   This callback is called when the control of the state is passed back
   to the connection process. It should reverse any changes made in
   `checkout/2`.
+
+  This callback is called in the connection process.
   """
   @callback checkin(state :: any) ::
     {:ok, new_state :: any} | {:disconnect, Exception.t, new_state :: any}
@@ -99,6 +105,8 @@ defmodule DBConnection do
   idle timeout and a client process is not using the state. The idle
   timeout can be configured by the `:idle_timeout` option. This function
   can be called whether the connection is checked in or checked out.
+
+  This callback is called in the connection process.
   """
   @callback ping(state :: any) ::
     {:ok, new_state :: any} | {:disconnect, Exception.t, new_state :: any}
@@ -108,6 +116,8 @@ defmodule DBConnection do
   `result` and to continue, `{:error, exception, state}` to return an
   error and to continue and `{:disconnect, exception, state}` to return
   an error and to disconnect.
+
+  This callback is called in the client process.
   """
   @callback handle_query(query, opts :: Keyword.t, state :: any) ::
     {:ok, result, new_state :: any} |
@@ -118,6 +128,8 @@ defmodule DBConnection do
   continue, `{:error, exception, state}` to abort the transaction and
   continue or `{:disconnect, exception, state}` to abort the transaction
   and disconnect.
+
+  This callback is called in the client process.
   """
   @callback handle_begin(opts :: Keyword.t, state :: any) ::
     {:ok, new_state :: any} |
@@ -128,6 +140,8 @@ defmodule DBConnection do
   to continue, `{:error, exception, state}` to abort the transaction and
   continue or `{:disconnect, exception, state}` to abort the transaction
   and disconnect.
+
+  This callback is called in the client process.
   """
   @callback handle_commit(opts :: Keyword.t, state :: any) ::
     {:ok, new_state :: any} |
@@ -141,6 +155,8 @@ defmodule DBConnection do
 
   A transaction will be rolled back if an exception occurs or
   `rollback/2` is called.
+
+  This callback is called in the client process.
   """
   @callback handle_rollback(opts :: Keyword.t, state :: any) ::
     {:ok, new_state :: any} |
@@ -159,6 +175,8 @@ defmodule DBConnection do
   If the connection is not required to prepare a query, `query/3`
   should be used and the query can be prepared by the
   `DBConnection.Query` protocol.
+
+  This callback is called in the client process.
   """
   @callback handle_prepare(query, opts :: Keyword.t, state :: any) ::
     {:ok, query, new_state :: any} |
@@ -169,6 +187,8 @@ defmodule DBConnection do
   `{:ok, result, state}` to return the result `result` and continue,
   `{:error, exception, state}` to return an error and continue or
   `{:disconnect, exception, state{}` to return an error and disconnect.
+
+  This callback is called in the client process.
   """
   @callback handle_execute(query, opts :: Keyword.t, state :: any) ::
     {:ok, result, new_state :: any} |
@@ -179,6 +199,8 @@ defmodule DBConnection do
   `{:ok, state}` on success and to continue,
   `{:error, exception, state}` to return an error and continue, or
   `{:disconnect, exception, state}` to return an error and disconnect.
+
+  This callback is called in the client process.
   """
   @callback handle_close(query, opts :: Keyword.t, state :: any) ::
     {:ok, new_state :: any} |
@@ -191,6 +213,8 @@ defmodule DBConnection do
 
   Messages received by the connection process when checked out will be
   logged and discared.
+
+  This callback is called in the connection process.
   """
   @callback handle_info(msg :: any, state :: any) ::
     {:ok, new_state :: any} |
@@ -205,6 +229,8 @@ defmodule DBConnection do
   If the state is controlled by a client and it exits or takes too long
   to process a request the state will be last known state. In these
   cases the exception will be a `DBConnection.Error.
+
+  This callback is called in the connection process.
   """
   @callback disconnect(err :: Exception.t, state :: any) :: :ok
 
