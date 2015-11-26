@@ -44,6 +44,9 @@ defmodule DBConnection do
   """
   defstruct [:pool_mod, :pool_ref, :conn_mod, :conn_ref]
 
+  @typedoc """
+  Run or transaction connection reference.
+  """
   @type t :: %__MODULE__{pool_mod: module,
                          pool_ref: any,
                          conn_mod: any,
