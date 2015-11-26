@@ -20,14 +20,14 @@ defmodule DBConnection.Mixfile do
   end
 
   def application do
-    [applications: [:logger, :connection, :backoff, :poolboy, :sbroker]]
+    [applications: [:logger, :connection, :backoff]]
   end
 
   defp deps do
     [{:connection, "~> 1.0.2"},
      {:backoff, "~> 1.0"},
-     {:poolboy, "~> 1.5"},
-     {:sbroker, "~> 0.7"},
+     {:poolboy, "~> 1.5", [optional: true]},
+     {:sbroker, "~> 0.7", [optional: true]},
      {:earmark, "~> 0.1", only: :dev},
      {:ex_doc, "~> 0.11.1", only: :dev}]
   end

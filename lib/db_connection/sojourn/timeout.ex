@@ -13,7 +13,9 @@ defmodule DBConnection.Sojourn.Timeout do
     * `:queue_size` - The maximum size of the queue (default: `128`)
   """
 
-  @behaviour :sbroker
+  if Code.ensure_loaded?(:sbroker) do
+    @behaviour :sbroker
+  end
 
   @doc false
   def init(opts) do
