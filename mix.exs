@@ -2,12 +2,16 @@ defmodule DBConnection.Mixfile do
   use Mix.Project
 
   @pools [:connection, :poolboy, :sojourn]
+  @version "0.1.0"
 
   def project do
     [app: :db_connection,
-     version: "0.0.1-dev",
+     version: @version,
      elixir: "~> 1.0",
      deps: deps,
+     docs: docs,
+     description: description,
+     package: package,
      build_per_environment: false,
      test_paths: test_paths(Mix.env),
      aliases: ["test.all": ["test", "test.pools"],
@@ -23,7 +27,27 @@ defmodule DBConnection.Mixfile do
     [{:connection, "~> 1.0.2"},
      {:backoff, "~> 1.0"},
      {:poolboy, "~> 1.5"},
-     {:sbroker, "~> 0.7"}]
+     {:sbroker, "~> 0.7"},
+     {:earmark, "~> 0.1", only: :dev},
+     {:ex_doc, "~> 0.11.1", only: :dev}]
+  end
+
+  defp docs do
+    [source_url: "https://github.com/fishcakez/db_connection",
+     source_ref: "v#{@version}",
+     main: DBConnection]
+  end
+
+  defp description do
+    """
+    Database connection behaviour for database transactions and connection pooling
+    """
+  end
+
+  defp package do
+    %{licenses: ["Apache 2.0"],
+      maintainers: ["James Fish"],
+      links: %{"Github" => "https://github.com/fishcakez/db_connection"}}
   end
 
   defp test_paths(pool) when pool in @pools, do: ["integration_test/#{pool}"]
