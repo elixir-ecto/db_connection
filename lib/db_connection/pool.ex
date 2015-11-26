@@ -25,7 +25,7 @@ defmodule DBConnection.Pool do
 
   `module` and `state` are the module and state of the connection.
   """
-  @callback checkout(GenServer.server, opts :: Keyword.t) ::
+  @callback checkout(pool :: GenServer.server, opts :: Keyword.t) ::
     {:ok, pool_ref :: any, module, state :: any} | :error
 
   @doc """
@@ -45,7 +45,7 @@ defmodule DBConnection.Pool do
 
   `state` is the lastest state of the connection.
   """
-  @callback disconnect(pool_ref :: any, Exception.t, state :: any, opts :: Keyword.t) ::
+  @callback disconnect(pool_ref :: any, err :: Exception.t, state :: any, opts :: Keyword.t) ::
     :ok
 
   @doc """

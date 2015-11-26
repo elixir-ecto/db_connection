@@ -206,7 +206,7 @@ defmodule DBConnection do
   to process a request the state will be last known state. In these
   cases the exception will be a `DBConnection.Error.
   """
-  @callback disconnect(Exception.t, state :: any) :: :ok
+  @callback disconnect(err :: Exception.t, state :: any) :: :ok
 
   @doc """
   Use `DBConnection` to set the behaviour and include default
@@ -319,7 +319,7 @@ defmodule DBConnection do
 
   ### Example
 
-    {:ok, pid} = DBConnection.start_link(mod, [idle_timeout: 5_000])
+      {:ok, pid} = DBConnection.start_link(mod, [idle_timeout: 5_000])
   """
   @spec start_link(module, opts :: Keyword.t) :: GenServer.on_start
   def start_link(conn_mod, opts) do
@@ -365,7 +365,7 @@ defmodule DBConnection do
 
   ### Example
 
-    {:ok, _} = DBConnection.query(pid, "SELECT id FROM table", [decode: :manual])
+      {:ok, _} = DBConnection.query(pid, "SELECT id FROM table", [decode: :manual])
   """
   @spec query(conn, query, opts :: opts :: Keyword.t) ::
     {:ok, result} | {:error, Exception.t}
@@ -569,8 +569,8 @@ defmodule DBConnection do
 
   ### Example
 
-  {:ok, res} = kDBConnection.run(pid, fn(conn) ->
-        res = DBConnection.query!(conn, "SELECT * FROM table")
+      {:ok, res} = DBConnection.run(pid, fn(conn) ->
+        res = DBConnection.query!(conn, "SELECT id FROM table")
         res
       end)
   """
@@ -621,7 +621,7 @@ defmodule DBConnection do
   ### Example
 
       {:ok, res} = DBConnection.transaction(pid, fn(conn) ->
-        res = DBConnection.query!(conn, "SELECT * FROM table")
+        res = DBConnection.query!(conn, "SELECT id FROM table")
         res
       end)
   """

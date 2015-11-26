@@ -359,13 +359,13 @@ defmodule DBConnection.Connection do
     end
   end
 
-  def handle_broker({:go, ref, {pid, timeout}, _, _}, s) do
+  defp handle_broker({:go, ref, {pid, timeout}, _, _}, s) do
     mon = Process.monitor(pid)
     timer = start_timer(timeout)
     {:noreply, %{s | client: {ref, mon}, timer: timer}}
   end
 
-  def handle_broker({:drop, _}, s) do
+  defp handle_broker({:drop, _}, s) do
     %{mod: mod, state: state, broker: broker, client: {ref, :broker}} = s
     case apply(mod, :ping, [state]) do
       {:ok, state} ->
