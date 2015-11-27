@@ -11,6 +11,7 @@ defmodule DBConnection.Connection do
   use Connection
   require Logger
 
+  @queue_timeout 5_000
   @timeout       15_000
   @idle_timeout  15_000
   @backoff_start 200
@@ -31,7 +32,7 @@ defmodule DBConnection.Connection do
 
   @doc false
   def checkout(pool, opts) do
-    queue_timeout = opts[:queue_timeout] || @timeout
+    queue_timeout = opts[:queue_timeout] || @queue_timeout
     queue?        = Keyword.get(opts, :queue, true)
     timeout       = opts[:timeout] || @timeout
 
