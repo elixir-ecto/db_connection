@@ -11,7 +11,7 @@ defmodule DBConnection.Connection do
   use Connection
   require Logger
 
-  @timeout       5_000
+  @timeout       15_000
   @idle_timeout  15_000
   @backoff_start 200
   @backoff_max   15_000
