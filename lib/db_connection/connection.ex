@@ -61,6 +61,19 @@ defmodule DBConnection.Connection do
     Connection.cast(pid, {:stop, ref, reason, state})
   end
 
+  @doc false
+  def sync_stop({pid, ref}, reason, state, opts) do
+    timeout = Keyword.get(opts, :queue_timeout, @queue_timeout)
+    {_, mref} = spawn_monitor(fn() ->
+      sync_stop(pid, ref, reason, state, timeout)
+    end)
+    # The reason is not important as long as the process exited
+    # before trying to checkin
+    receive do
+      {:DOWN, ^mref, _, _, _} -> :ok
+    end
+  end
+
   ## Internal API
 
   @doc false
@@ -152,6 +165,14 @@ defmodule DBConnection.Connection do
       _ when queue? == false ->
         {:reply, :error, s}
     end
+  end
+
+  def handle_call({:stop, ref, _, _} = stop, from, %{client: {ref, _}} = s) do
+    Connection.reply(from, :ok)
+    handle_cast(stop, s)
+  end
+  def handle_call({:stop, _, _, _}, _, s) do
+    {:reply, :error, s}
   end
 
   @doc false
@@ -289,6 +310,18 @@ defmodule DBConnection.Connection do
   end
   defp start_opts(mode, opts) when mode in [:poolboy, :sojourn] do
     Keyword.take(opts, [:debug, :timeout, :spawn_opt])
+  end
+
+  defp sync_stop(pid, ref, reason, state, timeout) do
+    mref = Process.monitor(pid)
+    case Connection.call(pid, {:stop, ref, reason, state}, timeout) do
+      :ok ->
+        # The reason is not important as long as the process exited
+        # before trying to checkin
+        receive do: ({:DOWN, ^mref, _, _, _} -> :ok)
+      :error ->
+        exit(:normal)
+    end
   end
 
   defp backoff_init(opts) do

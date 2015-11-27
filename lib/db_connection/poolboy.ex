@@ -41,22 +41,26 @@ defmodule DBConnection.Poolboy do
 
   @doc false
   def checkin({pool, worker, worker_ref}, state, opts) do
-    DBConnection.Connection.checkin(worker_ref, state, opts)
     :poolboy.checkin(pool, worker)
+    DBConnection.Connection.checkin(worker_ref, state, opts)
   end
 
   @doc false
   def disconnect({pool, worker, worker_ref}, err, state, opts) do
-    DBConnection.Connection.disconnect(worker_ref, err, state, opts)
     :poolboy.checkin(pool, worker)
+    DBConnection.Connection.disconnect(worker_ref, err, state, opts)
   end
 
   @doc false
-  def stop({_, _, worker_ref}, reason, state, opts) do
-    # Don't check worker back into poolboy as it's going to exit, hopefully
-    # this prevents poolboy giving this worker (that's about to exit) to
-    # another process.
-    DBConnection.Connection.stop(worker_ref, reason, state, opts)
+  def stop({pool, worker, worker_ref}, reason, state, opts) do
+    # Synchronous stop is required to prevent checking in a worker thats
+    # about to exit as it can cause a client to get a worker thats about
+    # to exit.
+    try do
+      DBConnection.Connection.sync_stop(worker_ref, reason, state, opts)
+    after
+      :poolboy.checkin(pool, worker)
+    end
   end
 
   ## Helpers
