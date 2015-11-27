@@ -1,7 +1,7 @@
 DBAgent
 =======
 
-`DBAgent` is a simple `DBConnection` process that behaves in a simialr
+`DBAgent` is a simple `DBConnection` process that behaves in a similar
 way to an `Agent` except the state is copied to the client process and functions
 called there. Transactions are also supported.
 
