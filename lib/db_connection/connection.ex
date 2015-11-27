@@ -190,7 +190,10 @@ defmodule DBConnection.Connection do
     handle_timeout(%{s | queue: :queue.filter(cancel, queue)})
   end
 
-  def handle_cast({tag, _, _}, s) when tag in [:checkin, :disconnect, :stop] do
+  def handle_cast({:checkin, _, _}, s) do
+    handle_timeout(s)
+  end
+  def handle_cast({tag, _, _, _}, s) when tag in [:disconnect, :stop] do
     handle_timeout(s)
   end
 
