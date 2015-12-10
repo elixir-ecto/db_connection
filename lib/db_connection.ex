@@ -394,27 +394,20 @@ defmodule DBConnection do
     * `:timeout` - The maximum time that the caller is allowed the
     to hold the connection's state (ignored when using a run/transaction
     connection, default: `15_000`)
-    * `:prepare` - Query prepare method: `:auto` uses the
-    `DBConnection.Query` protocol to prepare the query and `:manual`
-    does not (default: `:auto`)
-    * `:decode` - Result decode method: `:auto` uses the
-    `DBConnection.Result` protocol to decode the query and `:manual`
-    does not (default: `:auto`)
 
   The pool and connection module may support other options. All options
-  are passed to `handle_query/3`.
+  are passed to `handle_prepare/3` and `handle_execute_close/3`.
 
   ### Example
 
-      {:ok, _} = DBConnection.query(pid, "SELECT id FROM table", [decode: :manual])
+      {:ok, _} = DBConnection.query(pid, "SELECT id FROM table", [])
   """
-  @spec query(conn, query, opts :: opts :: Keyword.t) ::
+  @spec query(conn, query, opts :: Keyword.t) ::
     {:ok, result} | {:error, Exception.t}
   def query(conn, query, opts \\ []) do
-    query = prepare_query(query, opts)
-    decode = Keyword.get(opts, :decode, :auto)
-    case run(conn, &do_query(&1, query, [decode: :manual] ++ opts), opts) do
-      {:ok, {:ok, result}} when decode == :auto ->
+    query = DBConnection.Query.parse(query, opts)
+    case run(conn, &do_query(&1, query, opts), opts) do
+      {:ok, {:ok, result}} ->
         {:ok, DBConnection.Result.decode(result, opts)}
       {:ok, other} ->
         other
@@ -452,24 +445,26 @@ defmodule DBConnection do
     * `:timeout` - The maximum time that the caller is allowed the
     to hold the connection's state (ignored when using a run/transaction
     connection, default: `15_000`)
-    * `:prepare` - Query prepare method: `:auto` uses the
-    `DBConnection.Query` protocol to prepare the query and `:manual`
-    does not (default: `:auto`)
 
   The pool and connection module may support other options. All options
   are passed to `handle_prepare/3`.
 
   ## Example
 
-      {ok, query}  = DBConnection.prepare(pid, "SELECT id FROM table")
-      {:ok, [_|_]} = DBConnection.execute(pid, query)
-      :ok          = DBConnection.close(pid, query)
+      {ok, query}   = DBConnection.prepare(pid, "SELECT id FROM table")
+      {:ok, result} = DBConnection.execute(pid, query)
+      :ok           = DBConnection.close(pid, query)
   """
   @spec prepare(conn, query, opts :: Keyword.t) ::
     {:ok, query} | {:error, Exception.t}
   def prepare(conn, query, opts \\ []) do
-    query = prepare_query(query, opts)
-    handle(conn, :handle_prepare, query, opts, :result)
+    query = DBConnection.Query.parse(query, opts)
+    case handle(conn, :handle_prepare, query, opts, :result) do
+      {:ok, query} ->
+        {:ok, DBConnection.Query.describe(query, opts)}
+      other ->
+        other
+    end
   end
 
   @doc """
@@ -501,12 +496,6 @@ defmodule DBConnection do
     * `:timeout` - The maximum time that the caller is allowed the
     to hold the connection's state (ignored when using a run/transaction
     connection, default: `15_000`)
-    * `:encode` - Query encode method: `:auto` uses the
-    `DBConnection.Query` protocol to encode any query parameters and
-    `:manual` does not (default: `:auto`)
-    * `:decode` - Result decode method: `:auto` uses the
-    `DBConnection.Result` protocol to decode the query and `:manual`
-    does not (default: `:auto`)
 
   The pool and connection module may support other options. All options
   are passed to `handle_execute/3`.
@@ -516,10 +505,9 @@ defmodule DBConnection do
   @spec execute(conn, query, opts :: Keyword.t) ::
     {:ok, result} | {:error, Exception.t}
   def execute(conn, query, opts) do
-    query = encode_query(query, opts)
-    decode = Keyword.get(opts, :decode, :auto)
+    query = DBConnection.Query.encode(query, opts)
     case handle(conn, :handle_execute, query, opts, :result) do
-      {:ok, result} when decode == :auto ->
+      {:ok, result} ->
         {:ok, DBConnection.Result.decode(result, opts)}
       other ->
         other
@@ -552,10 +540,9 @@ defmodule DBConnection do
   @spec execute_close(conn, query, opts :: Keyword.t) ::
     {:ok, result} | {:error, Exception.t}
   def execute_close(conn, query, opts) do
-    query = encode_query(query, opts)
-    decode = Keyword.get(opts, :decode, :auto)
+    query = Postgrex.Query.encode(query, opts)
     case handle(conn, :handle_execute_close, query, opts, :result) do
-      {:ok, result} when decode == :auto ->
+      {:ok, result} ->
         {:ok, DBConnection.Result.decode(result, opts)}
       other ->
         other
@@ -786,20 +773,6 @@ defmodule DBConnection do
     :ok
   end
 
-  defp prepare_query(query, opts) do
-    case Keyword.get(opts, :prepare, :auto) do
-      :auto   -> DBConnection.Query.prepare(query, opts)
-      :manual -> query
-    end
-  end
-
-  defp encode_query(query, opts) do
-    case Keyword.get(opts, :encode, :auto) do
-      :auto   -> DBConnection.Query.encode(query, opts)
-      :manual -> query
-    end
-  end
-
   defp handle(%DBConnection{} = conn, callback, query, opts, return) do
     %DBConnection{conn_mod: conn_mod} = conn
     {status, conn_state} = fetch_info(conn)
@@ -859,20 +832,19 @@ defmodule DBConnection do
   end
 
   defp do_query(conn, query, opts) do
-    encode = Keyword.get(opts, :encode, :auto)
-    case prepare(conn, query, opts) do
-      {:ok, query} when encode == :auto ->
-        do_query_encode(conn, query, opts)
+    case handle(conn, :handle_prepare, query, opts, :result) do
       {:ok, query} ->
-        execute_close(conn, query, opts)
+        do_query_execute(conn, query, opts)
       {:error, _} = error ->
         error
     end
   end
 
-  defp do_query_encode(conn, query, opts) do
+  defp do_query_execute(conn, query, opts) do
     try do
-      DBConnection.Query.encode(query, opts)
+      query
+      |> DBConnection.Query.describe(opts)
+      |> DBConnection.Query.encode(opts)
     catch
       kind, reason ->
         stack = System.stacktrace()
@@ -882,7 +854,7 @@ defmodule DBConnection do
         end
     else
       query ->
-        execute_close(conn, query, [encode: :manual] ++ opts)
+        handle(conn, :handle_execute_close, query, opts, :result)
     end
   end
 

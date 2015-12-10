@@ -25,73 +25,88 @@ defmodule QueryTest do
       connect: [_],
       handle_prepare: [%Q{}, _, :state],
       handle_execute_close: [%Q{}, _, :new_state],
-      handle_prepare: [%Q{},
-        [{:decode, :manual}, {:key, :value} | _], :newer_state],
-      handle_execute_close: [%Q{},
-        [{:encode, :manual}, {:decode, :manual}, {:key, :value} | _], :newest_state]] = A.record(agent)
+      handle_prepare: [%Q{}, [{:key, :value} | _], :newer_state],
+      handle_execute_close: [%Q{}, [{:key, :value} | _], :newest_state]] = A.record(agent)
   end
 
-  test "query prepares query" do
+  test "query parses query" do
     stack = [
       {:ok, :state},
-      {:ok, :prepared2, :new_state},
-      {:ok, %R{}, :newer_state},
-      {:ok, :prepared2, :newest_state},
-      {:ok, %R{}, :new_state2},
-      {:ok, :handle_prepared, :newer_state2},
-      {:ok, %R{}, :newest_state2}
-      ]
+      {:ok, %Q{}, :new_state},
+      {:ok, %R{}, :newer_state}
+     ]
     {:ok, agent} = A.start_link(stack)
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
 
-    opts2 = [prepare_fun: fn(%Q{}) -> :prepared end]
+    opts2 = [parse: fn(%Q{}) -> :parsed end]
     assert P.query(pool, %Q{}, opts2) == {:ok, %R{}}
-
-    assert P.query(pool, %Q{}, [prepare: :auto] ++ opts2) == {:ok, %R{}}
-    assert P.query(pool, %Q{}, [prepare: :manual] ++ opts2) == {:ok, %R{}}
 
     assert [
       connect: [_],
-      handle_prepare: [:prepared, _, :state],
-      handle_execute_close: [:prepared2, _, :new_state],
-      handle_prepare: [:prepared, _, :newer_state],
-      handle_execute_close: [:prepared2, _, :newest_state],
-      handle_prepare: [%Q{}, _, :new_state2],
-      handle_execute_close: [:handle_prepared, _, :newer_state2]] = A.record(agent)
+      handle_prepare: [:parsed, _, :state],
+      handle_execute_close: [%Q{}, _, :new_state]] = A.record(agent)
+  end
+
+  test "query describe query" do
+    stack = [
+      {:ok, :state},
+      {:ok, %Q{}, :new_state},
+      {:ok, %R{}, :newer_state}
+     ]
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self()]
+    {:ok, pool} = P.start_link(opts)
+
+    opts2 = [describe: fn(%Q{}) -> :described end]
+    assert P.query(pool, %Q{}, opts2) == {:ok, %R{}}
+
+    assert [
+      connect: [_],
+      handle_prepare: [%Q{}, _, :state],
+      handle_execute_close: [:described, _, :new_state]] = A.record(agent)
+  end
+
+  test "query encodes query" do
+    stack = [
+      {:ok, :state},
+      {:ok, %Q{}, :new_state},
+      {:ok, %R{}, :newer_state}
+     ]
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self()]
+    {:ok, pool} = P.start_link(opts)
+
+    opts2 = [encode: fn(%Q{}) -> :encoded end]
+    assert P.query(pool, %Q{}, opts2) == {:ok, %R{}}
+
+    assert [
+      connect: [_],
+      handle_prepare: [%Q{}, _, :state],
+      handle_execute_close: [:encoded, _, :new_state]] = A.record(agent)
   end
 
   test "query decodes result" do
     stack = [
       {:ok, :state},
       {:ok, %Q{}, :new_state},
-      {:ok, %R{}, :newer_state},
-      {:ok, %Q{}, :newest_state},
-      {:ok, %R{}, :new_state2},
-      {:ok, %Q{}, :newer_state2},
-      {:ok, %R{}, :newest_state2} 
-      ]
+      {:ok, %R{}, :newer_state}
+     ]
     {:ok, agent} = A.start_link(stack)
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
 
-    opts2 = [decode_fun: fn(%R{}) -> :decoded end]
+    opts2 = [decode: fn(%R{}) -> :decoded end]
     assert P.query(pool, %Q{}, opts2) == {:ok, :decoded}
-
-    assert P.query(pool, %Q{}, [decode: :auto] ++ opts) == {:ok, %R{}}
-
-    assert P.query(pool, %Q{}, [decode: :manual] ++ opts) == {:ok, %R{}}
 
     assert [
       connect: [_],
       handle_prepare: [%Q{}, _, :state],
-      handle_execute_close: [%Q{}, _, :new_state],
-      handle_prepare: [%Q{}, _, :newer_state],
-      handle_execute_close: [%Q{}, _, :newest_state],
-      handle_prepare: [%Q{}, _, :new_state2],
-      handle_execute_close: [%Q{}, _, :newer_state2]] = A.record(agent)
+      handle_execute_close: [%Q{}, _, :new_state]] = A.record(agent)
   end
 
   test "query handle_prepare error returns error" do

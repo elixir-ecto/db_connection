@@ -9,9 +9,10 @@ defprotocol DBConnection.Result do
   @doc """
   Decode a query.
 
-  This function is called to decode a result term return from a query.
+  This function is called to decode a result after it is returned by a
+  connection callback module.
 
-  See `DBConnection.query/3` and `DBConnection.execute/3`.
+  See `DBConnection.execute/3` and `DBConnection.execute_close/3`.
   """
   @spec decode(any, Keyword.t) :: any
   def decode(result, opts)

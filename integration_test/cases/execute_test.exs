@@ -26,55 +26,23 @@ defmodule ExecuteTest do
       ] = A.record(agent)
   end
 
-  test "execute encodes query" do
+  test "execute encodes query and decodes result" do
     stack = [
       {:ok, :state},
       {:ok, %R{}, :new_state},
-      {:ok, %R{}, :newer_state},
-      {:ok, %R{}, :newest_state}
       ]
     {:ok, agent} = A.start_link(stack)
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
 
-    opts2 = [encode_fun: fn(%Q{}) -> :encoded end]
-    assert P.execute(pool, %Q{}, opts2) == {:ok, %R{}}
-
-    assert P.execute(pool, %Q{}, [encode: :auto] ++ opts2) == {:ok, %R{}}
-    assert P.execute(pool, %Q{}, [encode: :manual] ++ opts2) == {:ok, %R{}}
-
-    assert [
-      connect: [_],
-      handle_execute: [:encoded, _, :state],
-      handle_execute: [:encoded, _, :new_state],
-      handle_execute: [%Q{}, _, :newer_state]] = A.record(agent)
-  end
-
-  test "execute decodes result" do
-    stack = [
-      {:ok, :state},
-      {:ok, %R{}, :new_state},
-      {:ok, %R{}, :newer_state},
-      {:ok, %R{}, :newest_state},
-      ]
-    {:ok, agent} = A.start_link(stack)
-
-    opts = [agent: agent, parent: self()]
-    {:ok, pool} = P.start_link(opts)
-
-    opts2 = [decode_fun: fn(%R{}) -> :decoded end]
+    opts2 = [encode: fn(%Q{}) -> :encoded end,
+             decode: fn(%R{}) -> :decoded end]
     assert P.execute(pool, %Q{}, opts2) == {:ok, :decoded}
 
-    assert P.execute(pool, %Q{}, [decode: :auto] ++ opts) == {:ok, %R{}}
-
-    assert P.execute(pool, %Q{}, [decode: :manual] ++ opts) == {:ok, %R{}}
-
     assert [
       connect: [_],
-      handle_execute: [%Q{}, _, :state],
-      handle_execute: [%Q{}, _, :new_state],
-      handle_execute: [%Q{}, _, :newer_state]] = A.record(agent)
+      handle_execute: [:encoded, _, :state]] = A.record(agent)
   end
 
   test "execute error returns error" do

@@ -121,20 +121,25 @@ defmodule TestResult do
 end
 
 defimpl DBConnection.Query, for: TestQuery do
-  def prepare(query, opts) do
-    prepare = Keyword.get(opts, :prepare_fun, &(&1))
-    prepare.(query)
+  def parse(query, opts) do
+    parse = Keyword.get(opts, :parse, &(&1))
+    parse.(query)
+  end
+
+  def describe(query, opts) do
+    describe = Keyword.get(opts, :describe, &(&1))
+    describe.(query)
   end
 
   def encode(query, opts) do
-    encode = Keyword.get(opts, :encode_fun, &(&1))
+    encode = Keyword.get(opts, :encode, &(&1))
     encode.(query)
   end
 end
 
 defimpl DBConnection.Result, for: TestResult do
   def decode(query, opts) do
-    decode = Keyword.get(opts, :decode_fun, &(&1))
+    decode = Keyword.get(opts, :decode, &(&1))
     decode.(query)
   end
 end

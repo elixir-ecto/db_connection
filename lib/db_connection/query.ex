@@ -1,28 +1,38 @@
 defprotocol DBConnection.Query do
   @moduledoc """
-  The `DBConnection.query` protocol is responsible for preparing and
-  encoding queries before they are passed to a connection.
+  The `DBConnection.Query` protocol is responsible for preparing and
+  encoding queries.
   """
 
   @fallback_to_any true
 
   @doc """
-  Prepare a query.
+  Parse a query.
 
-  This function is called to prepare a query term for use with a connection
-  callback module, either to prepare it further using the connection
-  itself or for a query.
+  This function is called to parse a query term before it is prepared using a
+  connection callback module.
 
-  See `DBConnection.query/3` and `DBConnection.prepare/3`.
+  See `DBConnection.prepare/3`.
   """
-  @spec prepare(any, Keyword.t) :: any
-  def prepare(query, opts)
+  @spec parse(any, Keyword.t) :: any
+  def parse(query, opts)
+
+  @doc """
+  Describe a query.
+
+  This function is called to describe a query after it is prepared using a
+  connection callback module.
+
+  See `DBConnection.prepare/3`.
+  """
+  @spec describe(any, Keyword.t) :: any
+  def describe(query, opts)
 
   @doc """
   Encodes a query.
 
-  This function is called to encode a query once it has been prepared by
-  a connection.
+  This function is called to encode a query before it is executed using a
+  connection callback module.
 
   See `DBConnection.execute/3`.
   """
@@ -31,6 +41,7 @@ defprotocol DBConnection.Query do
 end
 
 defimpl DBConnection.Query, for: Any do
-  def prepare(query, _), do: query
+  def parse(query, _), do: query
+  def describe(query, _), do: query
   def encode(query, _), do: query
 end
