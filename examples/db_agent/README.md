@@ -17,5 +17,5 @@ This example should help show the way transactions are handled in
     :buzz = DBAgent.get(conn, &Map.fetch!(&1, :foo))
     DBAgent.rollback(conn, :oops)
 end)
-:bar = DBAgent.get(agent, &Map,fetch!(&1, :foo))
+:bar = DBAgent.get(agent, &Map.fetch!(&1, :foo))
 ```

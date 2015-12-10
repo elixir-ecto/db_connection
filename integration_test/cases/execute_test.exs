@@ -136,4 +136,61 @@ defmodule ExecuteTest do
       disconnect: [^err, :new_state],
       connect: [opts2]] = A.record(agent)
   end
+
+  test "execute bad return raises DBConnection.Error and stops connection" do
+    stack = [
+      fn(opts) ->
+        send(opts[:parent], {:hi, self()})
+        Process.link(opts[:parent])
+        {:ok, :state}
+      end,
+      :oops,
+      {:ok, :state}
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self()]
+    {:ok, pool} = P.start_link(opts)
+    assert_receive {:hi, conn}
+
+    Process.flag(:trap_exit, true)
+    assert_raise DBConnection.Error, "bad return value: :oops",
+      fn() -> P.execute(pool, %Q{}) end
+
+    assert_receive {:EXIT, ^conn,
+      {%DBConnection.Error{message: "client stopped: " <> _}, [_|_]}}
+
+    assert [
+      {:connect, _},
+      {:handle_execute, [%Q{}, _, :state]}| _] = A.record(agent)
+  end
+
+  test "execute raise raises and stops connection" do
+    stack = [
+      fn(opts) ->
+        send(opts[:parent], {:hi, self()})
+        Process.link(opts[:parent])
+        {:ok, :state}
+      end,
+      fn(_, _, _) ->
+        raise "oops"
+      end,
+      {:ok, :state}
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self()]
+    {:ok, pool} = P.start_link(opts)
+    assert_receive {:hi, conn}
+
+    Process.flag(:trap_exit, true)
+    assert_raise RuntimeError, "oops", fn() -> P.execute(pool, %Q{}) end
+
+    assert_receive {:EXIT, ^conn,
+      {%DBConnection.Error{message: "client stopped: " <> _}, [_|_]}}
+
+    assert [
+      {:connect, _},
+      {:handle_execute, [%Q{}, _, :state]}| _] = A.record(agent)
+  end
 end

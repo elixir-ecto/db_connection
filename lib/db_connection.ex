@@ -112,18 +112,6 @@ defmodule DBConnection do
     {:ok, new_state :: any} | {:disconnect, Exception.t, new_state :: any}
 
   @doc """
-  Handle a query. Return `{:ok, result, state}` to return the result
-  `result` and to continue, `{:error, exception, state}` to return an
-  error and to continue and `{:disconnect, exception, state}` to return
-  an error and to disconnect.
-
-  This callback is called in the client process.
-  """
-  @callback handle_query(query, opts :: Keyword.t, state :: any) ::
-    {:ok, result, new_state :: any} |
-    {:error | :disconnect, Exception.t, new_state :: any}
-
-  @doc """
   Handle the beginning of a transaction. Return `{:ok, state}` to
   continue, `{:error, exception, state}` to abort the transaction and
   continue or `{:disconnect, exception, state}` to abort the transaction
@@ -195,6 +183,21 @@ defmodule DBConnection do
     {:error | :disconnect, Exception.t, new_state :: any}
 
   @doc """
+  Execute a query prepared by `handle_prepare/3` and close it. Return
+  `{:ok, result, state}` to return the result `result` and continue,
+  `{:error, exception, state}` to return an error and continue or
+  `{:disconnect, exception, state{}` to return an error and disconnect.
+
+  This callback should be equivalent to calling `handle_execute/3` and
+  `handle_close/3`.
+
+  This callback is called in the client process.
+  """
+  @callback handle_execute_close(query, opts :: Keyword.t, state :: any) ::
+    {:ok, result, new_state :: any} |
+    {:error | :disconnect, Exception.t, new_state :: any}
+
+  @doc """
   Close a query prepared by `handle_prepare/3` with the database. Return
   `{:ok, state}` on success and to continue,
   `{:error, exception, state}` to return an error and continue, or
@@ -236,10 +239,9 @@ defmodule DBConnection do
 
   @doc """
   Use `DBConnection` to set the behaviour and include default
-  implementations for `handle_prepare/3` (no-op), `handle_execute/3`
-  (forwards to `handle_query`) and `handle_close/3` (no-op) for
-  connections that don't handle the prepare/execute/close pattern.
-  `handle_info/2` is also implemented as a no-op.
+  implementations for `handle_prepare/3` (no-op), `handle_execute_close/3`
+  (forwards to `handle_execute/3` and `handle_close/3`) and `handle_close/3`
+  (no-op). `handle_info/2` is also implemented as a no-op.
   """
   defmacro __using__(_) do
     quote location: :keep do
@@ -280,14 +282,6 @@ defmodule DBConnection do
 
       def ping(state), do: {:ok, state}
 
-      def handle_query(_, _, _) do
-        message = "handle_query/3 not implemented"
-        case :erlang.phash2(1, 1) do
-          0 -> raise message
-          1 -> {:error, RuntimeError.exception(message)}
-        end
-      end
-
       def handle_begin(_, _) do
         message = "handle_begin/2 not implemented"
         case :erlang.phash2(1, 1) do
@@ -314,8 +308,29 @@ defmodule DBConnection do
 
       def handle_prepare(query, _, state), do: {:ok, query, state}
 
-      def handle_execute(query, opts, state) do
-        handle_query(query, opts, state)
+      def handle_execute(_, _, _) do
+        message = "handle_execute/3 not implemented"
+        case :erlang.phash2(1, 1) do
+          0 -> raise message
+          1 -> {:error, RuntimeError.exception(message)}
+        end
+      end
+
+      def handle_execute_close(query, opts, state) do
+        case handle_execute(query, opts, state) do
+          {:ok, result, state} ->
+            case handle_close(query, opts, state) do
+              {:ok, state} -> {:ok, result, state}
+              other        -> other
+            end
+          {:error, err, state} ->
+            case handle_close(query, opts, state) do
+              {:ok, state} -> {:error, err, state}
+              other        -> other
+            end
+          other ->
+            other
+        end
       end
 
       def handle_close(_, _, state), do: {:ok, state}
@@ -323,9 +338,9 @@ defmodule DBConnection do
       def handle_info(_, state), do: {:ok, state}
 
       defoverridable [connect: 1, disconnect: 2, checkout: 1, checkin: 1,
-                      ping: 1, handle_query: 3, handle_begin: 2,
-                      handle_commit: 2, handle_rollback: 2, handle_prepare: 3,
-                      handle_execute: 3, handle_close: 3, handle_info: 2]
+                      ping: 1, handle_begin: 2, handle_commit: 2,
+                      handle_rollback: 2, handle_prepare: 3, handle_execute: 3,
+                      handle_execute_close: 3, handle_close: 3, handle_info: 2]
     end
   end
 
@@ -398,10 +413,10 @@ defmodule DBConnection do
   def query(conn, query, opts \\ []) do
     query = prepare_query(query, opts)
     decode = Keyword.get(opts, :decode, :auto)
-    case handle(conn, :handle_query, query, opts, :result) do
-      {:ok, result} when decode == :auto ->
+    case run(conn, &do_query(&1, query, [decode: :manual] ++ opts), opts) do
+      {:ok, {:ok, result}} when decode == :auto ->
         {:ok, DBConnection.Result.decode(result, opts)}
-      other ->
+      {:ok, other} ->
         other
     end
   end
@@ -520,6 +535,42 @@ defmodule DBConnection do
   @spec execute!(conn, query, opts :: Keyword.t) :: result
   def execute!(conn, query, opts \\ []) do
     case execute(conn, query, opts) do
+      {:ok, result} -> result
+      {:error, err} -> raise err
+    end
+  end
+
+  @doc """
+  Execute a prepared query and close it with a database connection and return
+  `{:ok, result}` on success or `{:error, exception}` if there was an
+  error.
+
+  All options are passed to `handle_execute_close/3`.
+
+  See `execute/3` and `close/3`.
+  """
+  @spec execute_close(conn, query, opts :: Keyword.t) ::
+    {:ok, result} | {:error, Exception.t}
+  def execute_close(conn, query, opts) do
+    query = encode_query(query, opts)
+    decode = Keyword.get(opts, :decode, :auto)
+    case handle(conn, :handle_execute_close, query, opts, :result) do
+      {:ok, result} when decode == :auto ->
+        {:ok, DBConnection.Result.decode(result, opts)}
+      other ->
+        other
+    end
+  end
+
+  @doc """
+  Execute a prepared query and close it with a database connection and return
+  the result. Raises an exception on error.
+
+  See `execute_close/3`
+  """
+  @spec execute_close!(conn, query, opts :: Keyword.t) :: result
+  def execute_close!(conn, query, opts \\ []) do
+    case execute_close(conn, query, opts) do
       {:ok, result} -> result
       {:error, err} -> raise err
     end
@@ -804,6 +855,34 @@ defmodule DBConnection do
         stack = System.stacktrace()
         delete_stop(conn, conn_state, kind, reason, stack, opts)
         :erlang.raise(kind, reason, stack)
+    end
+  end
+
+  defp do_query(conn, query, opts) do
+    encode = Keyword.get(opts, :encode, :auto)
+    case prepare(conn, query, opts) do
+      {:ok, query} when encode == :auto ->
+        do_query_encode(conn, query, opts)
+      {:ok, query} ->
+        execute_close(conn, query, opts)
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  defp do_query_encode(conn, query, opts) do
+    try do
+      DBConnection.Query.encode(query, opts)
+    catch
+      kind, reason ->
+        stack = System.stacktrace()
+        case close(conn, query, opts) do
+          :ok                 -> :erlang.raise(kind, reason, stack)
+          {:error, _} = error -> error
+        end
+    else
+      query ->
+        execute_close(conn, query, [encode: :manual] ++ opts)
     end
   end
 

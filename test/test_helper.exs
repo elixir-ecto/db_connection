@@ -78,10 +78,6 @@ defmodule TestConnection do
     TestAgent.eval(:ping, [state])
   end
 
-  def handle_query(query, opts, state) do
-    TestAgent.eval(:handle_query, [query, opts, state])
-  end
-
   def handle_begin(opts, state) do
     TestAgent.eval(:handle_begin, [opts, state])
   end
@@ -100,6 +96,10 @@ defmodule TestConnection do
 
   def handle_execute(query, opts, state) do
     TestAgent.eval(:handle_execute, [query, opts, state])
+  end
+
+  def handle_execute_close(query, opts, state) do
+    TestAgent.eval(:handle_execute_close, [query, opts, state])
   end
 
   def handle_close(query, opts, state) do

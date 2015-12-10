@@ -1,4 +1,4 @@
-defmodule TransactionQueryTest do
+defmodule TransactionExecuteTest do
   use ExUnit.Case, async: true
 
   alias TestPool, as: P
@@ -6,7 +6,7 @@ defmodule TransactionQueryTest do
   alias TestQuery, as: Q
   alias TestResult, as: R
 
-  test "query returns result" do
+  test "execute returns result" do
     stack = [
       {:ok, :state},
       {:ok, :new_state},
@@ -19,20 +19,20 @@ defmodule TransactionQueryTest do
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
     assert P.transaction(pool, fn(conn) ->
-      assert P.query(conn, %Q{}) == {:ok, %R{}}
-      assert P.query(conn, %Q{}, [key: :value]) == {:ok, %R{}}
+      assert P.execute(conn, %Q{}) == {:ok, %R{}}
+      assert P.execute(conn, %Q{}, [key: :value]) == {:ok, %R{}}
       :hi
     end) == {:ok, :hi}
 
     assert [
       connect: [_],
       handle_begin: [_, :state],
-      handle_query: [%Q{}, _, :new_state],
-      handle_query: [%Q{}, [{:key, :value} | _], :newer_state],
+      handle_execute: [%Q{}, _, :new_state],
+      handle_execute: [%Q{}, [{:key, :value} | _], :newer_state],
       handle_commit: [_, :newest_state]] = A.record(agent)
   end
 
-  test "query error returns error" do
+  test "execute error returns error" do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
@@ -46,18 +46,18 @@ defmodule TransactionQueryTest do
     {:ok, pool} = P.start_link(opts)
 
     assert P.transaction(pool, fn(conn) ->
-      assert P.query(conn, %Q{}) == {:error, err}
+      assert P.execute(conn, %Q{}) == {:error, err}
       :hi
     end) == {:ok, :hi}
 
     assert [
       connect: [_],
       handle_begin: [_, :state],
-      handle_query: [%Q{}, _, :new_state],
+      handle_execute: [%Q{}, _, :new_state],
       handle_commit: [_, :newer_state]] = A.record(agent)
   end
 
-  test "query! error raises error" do
+  test "execute! error raises error" do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
@@ -72,21 +72,21 @@ defmodule TransactionQueryTest do
     {:ok, pool} = P.start_link(opts)
 
     assert P.transaction(pool, fn(conn) ->
-      assert_raise RuntimeError, "oops", fn() -> P.query!(conn, %Q{}) end
+      assert_raise RuntimeError, "oops", fn() -> P.execute!(conn, %Q{}) end
 
-      assert P.query(conn, %Q{}) == {:ok, %R{}}
+      assert P.execute(conn, %Q{}) == {:ok, %R{}}
       :hi
     end) == {:ok, :hi}
 
     assert [
       connect: [_],
       handle_begin: [_, :state],
-      handle_query: [%Q{}, _, :new_state],
-      handle_query: [%Q{}, _, :newer_state],
+      handle_execute: [%Q{}, _, :new_state],
+      handle_execute: [%Q{}, _, :newer_state],
       handle_commit: [_, :newest_state]] = A.record(agent)
   end
 
-  test "query disconnect returns error" do
+  test "execute disconnect returns error" do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
@@ -104,10 +104,10 @@ defmodule TransactionQueryTest do
     {:ok, pool} = P.start_link(opts)
 
     assert P.transaction(pool, fn(conn) ->
-      assert P.query(conn, %Q{}) == {:error, err}
+      assert P.execute(conn, %Q{}) == {:error, err}
 
       assert_raise DBConnection.Error, "connection is closed",
-        fn() -> P.query(conn, %Q{}) end
+        fn() -> P.execute(conn, %Q{}) end
 
       :hi
     end) == {:ok, :hi}
@@ -117,12 +117,12 @@ defmodule TransactionQueryTest do
     assert [
       connect: [opts2],
       handle_begin: [_, :state],
-      handle_query: [%Q{}, _, :new_state],
+      handle_execute: [%Q{}, _, :new_state],
       disconnect: [^err, :newer_state],
       connect: [opts2]] = A.record(agent)
   end
 
-  test "query bad return raises DBConnection.Error and stops connection" do
+  test "execute bad return raises DBConnection.Error and stops connection" do
     stack = [
       fn(opts) ->
         send(opts[:parent], {:hi, self()})
@@ -143,10 +143,10 @@ defmodule TransactionQueryTest do
 
     assert P.transaction(pool, fn(conn) ->
       assert_raise DBConnection.Error, "bad return value: :oops",
-        fn() -> P.query(conn, %Q{}) end
+        fn() -> P.execute(conn, %Q{}) end
 
       assert_raise DBConnection.Error, "connection is closed",
-        fn() -> P.query(conn, %Q{}) end
+        fn() -> P.execute(conn, %Q{}) end
 
       :hi
     end) == {:ok, :hi}
@@ -157,10 +157,10 @@ defmodule TransactionQueryTest do
     assert [
       {:connect, _},
       {:handle_begin, [_, :state]},
-      {:handle_query, [%Q{}, _, :new_state]} | _] = A.record(agent)
+      {:handle_execute, [%Q{}, _, :new_state]} | _] = A.record(agent)
   end
 
-  test "query raise raises and stops connection" do
+  test "execute raise raises and stops connection" do
     stack = [
       fn(opts) ->
         send(opts[:parent], {:hi, self()})
@@ -182,10 +182,10 @@ defmodule TransactionQueryTest do
     Process.flag(:trap_exit, true)
 
     assert P.transaction(pool, fn(conn) ->
-      assert_raise RuntimeError, "oops", fn() -> P.query(conn, %Q{}) end
+      assert_raise RuntimeError, "oops", fn() -> P.execute(conn, %Q{}) end
 
       assert_raise DBConnection.Error, "connection is closed",
-        fn() -> P.query(conn, %Q{}) end
+        fn() -> P.execute(conn, %Q{}) end
 
       :hi
     end) == {:ok, :hi}
@@ -196,6 +196,6 @@ defmodule TransactionQueryTest do
     assert [
       {:connect, _},
       {:handle_begin, [_, :state]},
-      {:handle_query, [%Q{}, _, :new_state]}| _] = A.record(agent)
+      {:handle_execute, [%Q{}, _, :new_state]}| _] = A.record(agent)
   end
 end

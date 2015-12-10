@@ -50,13 +50,13 @@ defmodule DBAgent do
 
   def checkin(s), do: {:ok, s}
 
-  def handle_query({:get, fun}, _, %{state: state} = s) do
+  def handle_execute({:get, fun}, _, %{state: state} = s) do
     {:ok, fun.(state), s}
   end
-  def handle_query({:update, fun}, _, %{state: state} = s) do
+  def handle_execute({:update, fun}, _, %{state: state} = s) do
     {:ok, :ok, %{s | state: fun.(state)}}
   end
-  def handle_query({:get_and_update, fun}, _, %{state: state} = s) do
+  def handle_execute({:get_and_update, fun}, _, %{state: state} = s) do
     {res, state} = fun.(state)
     {:ok, res, %{s | state: state}}
   end

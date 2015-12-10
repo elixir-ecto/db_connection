@@ -1,4 +1,4 @@
-defmodule RunQueryTest do
+defmodule RunExecuteTest do
   use ExUnit.Case, async: true
 
   alias TestPool, as: P
@@ -6,7 +6,7 @@ defmodule RunQueryTest do
   alias TestQuery, as: Q
   alias TestResult, as: R
 
-  test "query returns result" do
+  test "execute returns result" do
     stack = [
       {:ok, :state},
       {:ok, %R{}, :new_state},
@@ -17,18 +17,18 @@ defmodule RunQueryTest do
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
     assert P.run(pool, fn(conn) ->
-      assert P.query(conn, %Q{}) == {:ok, %R{}}
-      assert P.query(conn, %Q{}, [key: :value]) == {:ok, %R{}}
+      assert P.execute(conn, %Q{}) == {:ok, %R{}}
+      assert P.execute(conn, %Q{}, [key: :value]) == {:ok, %R{}}
       :hi
     end) == {:ok, :hi}
 
     assert [
       connect: [_],
-      handle_query: [%Q{}, _, :state],
-      handle_query: [%Q{}, [{:key, :value} | _], :new_state]] = A.record(agent)
+      handle_execute: [%Q{}, _, :state],
+      handle_execute: [%Q{}, [{:key, :value} | _], :new_state]] = A.record(agent)
   end
 
-  test "query error returns error" do
+  test "execute error returns error" do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
@@ -40,16 +40,16 @@ defmodule RunQueryTest do
     {:ok, pool} = P.start_link(opts)
 
     assert P.run(pool, fn(conn) ->
-      assert P.query(conn, %Q{}) == {:error, err}
+      assert P.execute(conn, %Q{}) == {:error, err}
       :hi
     end) == {:ok, :hi}
 
     assert [
       connect: [_],
-      handle_query: [%Q{}, _, :state]] = A.record(agent)
+      handle_execute: [%Q{}, _, :state]] = A.record(agent)
   end
 
-  test "query! error raises error" do
+  test "execute! error raises error" do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
@@ -62,19 +62,19 @@ defmodule RunQueryTest do
     {:ok, pool} = P.start_link(opts)
 
     assert P.run(pool, fn(conn) ->
-      assert_raise RuntimeError, "oops", fn() -> P.query!(conn, %Q{}) end
+      assert_raise RuntimeError, "oops", fn() -> P.execute!(conn, %Q{}) end
 
-      assert P.query(conn, %Q{}) == {:ok, %R{}}
+      assert P.execute(conn, %Q{}) == {:ok, %R{}}
       :hi
     end) == {:ok, :hi}
 
     assert [
       connect: [_],
-      handle_query: [%Q{}, _, :state],
-      handle_query: [%Q{}, _, :new_state]] = A.record(agent)
+      handle_execute: [%Q{}, _, :state],
+      handle_execute: [%Q{}, _, :new_state]] = A.record(agent)
   end
 
-  test "query disconnect returns error" do
+  test "execute disconnect returns error" do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
@@ -91,10 +91,10 @@ defmodule RunQueryTest do
     {:ok, pool} = P.start_link(opts)
 
     assert P.run(pool, fn(conn) ->
-      assert P.query(conn, %Q{}) == {:error, err}
+      assert P.execute(conn, %Q{}) == {:error, err}
 
       assert_raise DBConnection.Error, "connection is closed",
-        fn() -> P.query(conn, %Q{}) end
+        fn() -> P.execute(conn, %Q{}) end
 
       :hi
     end) == {:ok, :hi}
@@ -103,12 +103,12 @@ defmodule RunQueryTest do
 
     assert [
       connect: [opts2],
-      handle_query: [%Q{}, _, :state],
+      handle_execute: [%Q{}, _, :state],
       disconnect: [^err, :new_state],
       connect: [opts2]] = A.record(agent)
   end
 
-  test "query bad return raises DBConnection.Error and stops connection" do
+  test "execute bad return raises DBConnection.Error and stops connection" do
     stack = [
       fn(opts) ->
         send(opts[:parent], {:hi, self()})
@@ -128,10 +128,10 @@ defmodule RunQueryTest do
 
     assert P.run(pool, fn(conn) ->
       assert_raise DBConnection.Error, "bad return value: :oops",
-        fn() -> P.query(conn, %Q{}) end
+        fn() -> P.execute(conn, %Q{}) end
 
       assert_raise DBConnection.Error, "connection is closed",
-        fn() -> P.query(conn, %Q{}) end
+        fn() -> P.execute(conn, %Q{}) end
 
       :hi
     end) == {:ok, :hi}
@@ -141,10 +141,10 @@ defmodule RunQueryTest do
 
     assert [
       {:connect, _},
-      {:handle_query, [%Q{}, _, :state]}| _] = A.record(agent)
+      {:handle_execute, [%Q{}, _, :state]}| _] = A.record(agent)
   end
 
-  test "query raise raises and stops connection" do
+  test "execute raise raises and stops connection" do
     stack = [
       fn(opts) ->
         send(opts[:parent], {:hi, self()})
@@ -165,10 +165,10 @@ defmodule RunQueryTest do
     Process.flag(:trap_exit, true)
 
     assert P.run(pool, fn(conn) ->
-      assert_raise RuntimeError, "oops", fn() -> P.query(conn, %Q{}) end
+      assert_raise RuntimeError, "oops", fn() -> P.execute(conn, %Q{}) end
 
       assert_raise DBConnection.Error, "connection is closed",
-        fn() -> P.query(conn, %Q{}) end
+        fn() -> P.execute(conn, %Q{}) end
 
       :hi
     end) == {:ok, :hi}
@@ -178,6 +178,6 @@ defmodule RunQueryTest do
 
     assert [
       {:connect, _},
-      {:handle_query, [%Q{}, _, :state]}| _] = A.record(agent)
+      {:handle_execute, [%Q{}, _, :state]}| _] = A.record(agent)
   end
 end
