@@ -161,4 +161,64 @@ defmodule ExecuteTest do
       {:connect, _},
       {:handle_execute, [%Q{}, _, :state]}| _] = A.record(agent)
   end
+
+ test "execute prepares query and then re-executes" do
+   stack = [
+      {:ok, :state},
+      {:prepare, :new_state},
+      {:ok, %Q{}, :newer_state},
+      {:ok, %R{}, :newest_state}
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self()]
+    {:ok, pool} = P.start_link(opts)
+    assert P.execute(pool, %Q{}) == {:ok, %R{}}
+
+    assert [
+      connect: [_],
+      handle_execute: [%Q{}, _, :state],
+      handle_prepare: [%Q{}, _, :new_state],
+      handle_execute: [%Q{}, _, :newer_state]] = A.record(agent)
+  end
+
+ test "execute errors when preparing query" do
+   err = RuntimeError.exception("oops")
+   stack = [
+      {:ok, :state},
+      {:prepare, :new_state},
+      {:error, err, :newer_state},
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self()]
+    {:ok, pool} = P.start_link(opts)
+    assert P.execute(pool, %Q{}) == {:error, err}
+
+    assert [
+      connect: [_],
+      handle_execute: [%Q{}, _, :state],
+      handle_prepare: [%Q{}, _, :new_state]] = A.record(agent)
+  end
+
+ test "execute asks to prepare on retry raises" do
+   stack = [
+      {:ok, :state},
+      {:prepare, :new_state},
+      {:ok, %Q{}, :newer_state},
+      {:prepare, :newest_state}
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self()]
+    {:ok, pool} = P.start_link(opts)
+    assert_raise DBConnection.Error, "connection did not prepare query",
+      fn() -> P.execute(pool, %Q{}) end
+
+    assert [
+      connect: [_],
+      handle_execute: [%Q{}, _, :state],
+      handle_prepare: [%Q{}, _, :new_state],
+      handle_execute: [%Q{}, _, :newer_state]] = A.record(agent)
+  end
 end
