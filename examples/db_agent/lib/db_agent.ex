@@ -12,22 +12,19 @@ defmodule DBAgent do
   @spec get(DBConnection.conn, ((state :: any) -> value), timeout) ::
     value when value: var
   def get(conn, fun, timeout \\ 5_000) when is_function(fun, 1) do
-    DBConnection.query!(conn, {:get, fun},
-      [queue_timeout: timeout, prepare: :manual, decode: :manual])
+    DBConnection.query!(conn, :get, [fun], [queue_timeout: timeout])
   end
 
   @spec update(DBConnection.conn, ((state :: any) -> new_state :: any), timeout) ::
     :ok
   def update(conn, fun, timeout \\ 5_000) when is_function(fun, 1) do
-    DBConnection.query!(conn, {:update, fun},
-      [queue_timeout: timeout, prepare: :manual, decode: :manual])
+    DBConnection.query!(conn, :update, [fun], [queue_timeout: timeout])
   end
 
   @spec get(DBConnection.conn, ((state :: any) -> {value, new_state :: any}), timeout) ::
     value when value: var
   def get_and_update(conn, fun, timeout \\ 5_000) when is_function(fun, 2) do
-    DBConnection.query!(conn, {:get_and_update, fun},
-      [queue_timeout: timeout, prepare: :manual, decode: :manual])
+    DBConnection.query!(conn, :get_and_update, [fun], [queue_timeout: timeout])
   end
 
   @spec transaction(DBConnection.conn, ((DBConnection.t) -> res),  timeout) ::
@@ -50,13 +47,13 @@ defmodule DBAgent do
 
   def checkin(s), do: {:ok, s}
 
-  def handle_execute({:get, fun}, _, %{state: state} = s) do
+  def handle_execute(:get, [fun], _, %{state: state} = s) do
     {:ok, fun.(state), s}
   end
-  def handle_execute({:update, fun}, _, %{state: state} = s) do
+  def handle_execute(:update, [fun], _, %{state: state} = s) do
     {:ok, :ok, %{s | state: fun.(state)}}
   end
-  def handle_execute({:get_and_update, fun}, _, %{state: state} = s) do
+  def handle_execute(:get_and_update, [fun], _, %{state: state} = s) do
     {res, state} = fun.(state)
     {:ok, res, %{s | state: state}}
   end

@@ -16,17 +16,17 @@ defmodule ExecuteTest do
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
-    assert P.execute(pool, %Q{}) == {:ok, %R{}}
-    assert P.execute(pool, %Q{}, [key: :value]) == {:ok, %R{}}
+    assert P.execute(pool, %Q{}, [:param]) == {:ok, %R{}}
+    assert P.execute(pool, %Q{}, [:param], [key: :value]) == {:ok, %R{}}
 
     assert [
       connect: [_],
-      handle_execute: [%Q{}, _, :state],
-      handle_execute: [%Q{}, [{:key, :value} | _], :new_state]
+      handle_execute: [%Q{}, [:param], _, :state],
+      handle_execute: [%Q{}, [:param], [{:key, :value} | _], :new_state]
       ] = A.record(agent)
   end
 
-  test "execute encodes query and decodes result" do
+  test "execute encodes params and decodes result" do
     stack = [
       {:ok, :state},
       {:ok, %R{}, :new_state},
@@ -36,13 +36,13 @@ defmodule ExecuteTest do
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
 
-    opts2 = [encode: fn(%Q{}) -> :encoded end,
+    opts2 = [encode: fn([:param]) -> :encoded end,
              decode: fn(%R{}) -> :decoded end]
-    assert P.execute(pool, %Q{}, opts2) == {:ok, :decoded}
+    assert P.execute(pool, %Q{}, [:param], opts2) == {:ok, :decoded}
 
     assert [
       connect: [_],
-      handle_execute: [:encoded, _, :state]] = A.record(agent)
+      handle_execute: [_, :encoded, _, :state]] = A.record(agent)
   end
 
   test "execute error returns error" do
@@ -55,11 +55,11 @@ defmodule ExecuteTest do
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
-    assert P.execute(pool, %Q{}) == {:error, err}
+    assert P.execute(pool, %Q{}, [:param]) == {:error, err}
 
     assert [
       connect: [_],
-      handle_execute: [%Q{}, _, :state]] = A.record(agent)
+      handle_execute: [%Q{}, [:param], _, :state]] = A.record(agent)
   end
 
   test "execute! error raises error" do
@@ -72,11 +72,12 @@ defmodule ExecuteTest do
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
-    assert_raise RuntimeError, "oops", fn() -> P.execute!(pool, %Q{}) end
+    assert_raise RuntimeError, "oops",
+      fn() -> P.execute!(pool, %Q{}, [:param]) end
 
     assert [
       connect: [_],
-      handle_execute: [%Q{}, _, :state]] = A.record(agent)
+      handle_execute: [%Q{}, [:param], _, :state]] = A.record(agent)
   end
 
   test "execute disconnect returns error" do
@@ -94,13 +95,13 @@ defmodule ExecuteTest do
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
-    assert P.execute(pool, %Q{}) == {:error, err}
+    assert P.execute(pool, %Q{}, [:param]) == {:error, err}
 
     assert_receive :reconnected
 
     assert [
       connect: [opts2],
-      handle_execute: [%Q{}, _, :state],
+      handle_execute: [%Q{}, [:param], _, :state],
       disconnect: [^err, :new_state],
       connect: [opts2]] = A.record(agent)
   end
@@ -123,14 +124,14 @@ defmodule ExecuteTest do
 
     Process.flag(:trap_exit, true)
     assert_raise DBConnection.Error, "bad return value: :oops",
-      fn() -> P.execute(pool, %Q{}) end
+      fn() -> P.execute(pool, %Q{}, [:param]) end
 
     assert_receive {:EXIT, ^conn,
       {%DBConnection.Error{message: "client stopped: " <> _}, [_|_]}}
 
     assert [
       {:connect, _},
-      {:handle_execute, [%Q{}, _, :state]}| _] = A.record(agent)
+      {:handle_execute, [%Q{}, [:param], _, :state]}| _] = A.record(agent)
   end
 
   test "execute raise raises and stops connection" do
@@ -140,7 +141,7 @@ defmodule ExecuteTest do
         Process.link(opts[:parent])
         {:ok, :state}
       end,
-      fn(_, _, _) ->
+      fn(_, _, _, _) ->
         raise "oops"
       end,
       {:ok, :state}
@@ -152,14 +153,15 @@ defmodule ExecuteTest do
     assert_receive {:hi, conn}
 
     Process.flag(:trap_exit, true)
-    assert_raise RuntimeError, "oops", fn() -> P.execute(pool, %Q{}) end
+    assert_raise RuntimeError, "oops",
+      fn() -> P.execute(pool, %Q{}, [:param]) end
 
     assert_receive {:EXIT, ^conn,
       {%DBConnection.Error{message: "client stopped: " <> _}, [_|_]}}
 
     assert [
       {:connect, _},
-      {:handle_execute, [%Q{}, _, :state]}| _] = A.record(agent)
+      {:handle_execute, [%Q{}, [:param], _, :state]}| _] = A.record(agent)
   end
 
  test "execute prepares query and then re-executes" do
@@ -173,13 +175,13 @@ defmodule ExecuteTest do
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
-    assert P.execute(pool, %Q{}) == {:ok, %R{}}
+    assert P.execute(pool, %Q{}, [:param]) == {:ok, %R{}}
 
     assert [
       connect: [_],
-      handle_execute: [%Q{}, _, :state],
+      handle_execute: [%Q{}, [:param], _, :state],
       handle_prepare: [%Q{}, _, :new_state],
-      handle_execute: [%Q{}, _, :newer_state]] = A.record(agent)
+      handle_execute: [%Q{}, [:param], _, :newer_state]] = A.record(agent)
   end
 
  test "execute errors when preparing query" do
@@ -193,11 +195,11 @@ defmodule ExecuteTest do
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
-    assert P.execute(pool, %Q{}) == {:error, err}
+    assert P.execute(pool, %Q{}, [:param]) == {:error, err}
 
     assert [
       connect: [_],
-      handle_execute: [%Q{}, _, :state],
+      handle_execute: [%Q{}, [:param], _, :state],
       handle_prepare: [%Q{}, _, :new_state]] = A.record(agent)
   end
 
@@ -213,12 +215,12 @@ defmodule ExecuteTest do
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
     assert_raise DBConnection.Error, "connection did not prepare query",
-      fn() -> P.execute(pool, %Q{}) end
+      fn() -> P.execute(pool, %Q{}, [:param]) end
 
     assert [
       connect: [_],
-      handle_execute: [%Q{}, _, :state],
+      handle_execute: [%Q{}, [:param], _, :state],
       handle_prepare: [%Q{}, _, :new_state],
-      handle_execute: [%Q{}, _, :newer_state]] = A.record(agent)
+      handle_execute: [%Q{}, [:param], _, :newer_state]] = A.record(agent)
   end
 end

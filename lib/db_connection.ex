@@ -53,6 +53,7 @@ defmodule DBConnection do
                          conn_ref: reference}
   @type conn :: GenSever.server | t
   @type query :: any
+  @type params :: [any]
   @type result :: any
 
   @doc """
@@ -152,7 +153,7 @@ defmodule DBConnection do
 
   @doc """
   Prepare a query with the database. Return `{:ok, query, state}` where
-  `query` is a query to pass to `execute/3` or `close/3`,
+  `query` is a query to pass to `execute/4` or `close/3`,
   `{:error, exception, state}` to return an error and continue or
   `{:disconnect, exception, state}` to return an error and disconnect.
 
@@ -160,7 +161,7 @@ defmodule DBConnection do
   needed to prepare a query and/or the query can be saved in the
   database to call later.
 
-  If the connection is not required to prepare a query, `query/3`
+  If the connection is not required to prepare a query, `query/4`
   should be used and the query can be prepared by the
   `DBConnection.Query` protocol.
 
@@ -179,7 +180,7 @@ defmodule DBConnection do
 
   This callback is called in the client process.
   """
-  @callback handle_execute(query, opts :: Keyword.t, state :: any) ::
+  @callback handle_execute(query, params, opts :: Keyword.t, state :: any) ::
     {:ok, result, new_state :: any} |
     {:prepare, new_state :: any} |
     {:error | :disconnect, Exception.t, new_state :: any}
@@ -191,12 +192,13 @@ defmodule DBConnection do
   `{:error, exception, state}` to return an error and continue or
   `{:disconnect, exception, state{}` to return an error and disconnect.
 
-  This callback should be equivalent to calling `handle_execute/3` and
+  This callback should be equivalent to calling `handle_execute/4` and
   `handle_close/3`.
 
   This callback is called in the client process.
   """
-  @callback handle_execute_close(query, opts :: Keyword.t, state :: any) ::
+  @callback handle_execute_close(query, params, opts :: Keyword.t,
+  state :: any) ::
     {:ok, result, new_state :: any} |
     {:prepare, new_state :: any} |
     {:error | :disconnect, Exception.t, new_state :: any}
@@ -243,8 +245,8 @@ defmodule DBConnection do
 
   @doc """
   Use `DBConnection` to set the behaviour and include default
-  implementations for `handle_prepare/3` (no-op), `handle_execute_close/3`
-  (forwards to `handle_execute/3` and `handle_close/3`) and `handle_close/3`
+  implementations for `handle_prepare/3` (no-op), `handle_execute_close/4`
+  (forwards to `handle_execute/4` and `handle_close/3`) and `handle_close/3`
   (no-op). `handle_info/2` is also implemented as a no-op.
   """
   defmacro __using__(_) do
@@ -312,16 +314,16 @@ defmodule DBConnection do
 
       def handle_prepare(query, _, state), do: {:ok, query, state}
 
-      def handle_execute(_, _, _) do
-        message = "handle_execute/3 not implemented"
+      def handle_execute(_, _, _, _) do
+        message = "handle_execute/4 not implemented"
         case :erlang.phash2(1, 1) do
           0 -> raise message
           1 -> {:error, RuntimeError.exception(message)}
         end
       end
 
-      def handle_execute_close(query, opts, state) do
-        case handle_execute(query, opts, state) do
+      def handle_execute_close(query, params, opts, state) do
+        case handle_execute(query, params, opts, state) do
           {:ok, result, state} ->
             case handle_close(query, opts, state) do
               {:ok, state} -> {:ok, result, state}
@@ -343,8 +345,8 @@ defmodule DBConnection do
 
       defoverridable [connect: 1, disconnect: 2, checkout: 1, checkin: 1,
                       ping: 1, handle_begin: 2, handle_commit: 2,
-                      handle_rollback: 2, handle_prepare: 3, handle_execute: 3,
-                      handle_execute_close: 3, handle_close: 3, handle_info: 2]
+                      handle_rollback: 2, handle_prepare: 3, handle_execute: 4,
+                      handle_execute_close: 4, handle_close: 3, handle_info: 2]
     end
   end
 
@@ -400,17 +402,17 @@ defmodule DBConnection do
     connection, default: `15_000`)
 
   The pool and connection module may support other options. All options
-  are passed to `handle_prepare/3` and `handle_execute_close/3`.
+  are passed to `handle_prepare/3` and `handle_execute_close/4`.
 
   ### Example
 
-      {:ok, _} = DBConnection.query(pid, "SELECT id FROM table", [])
+      {:ok, _} = DBConnection.query(pid, "SELECT id FROM table", [], [])
   """
-  @spec query(conn, query, opts :: Keyword.t) ::
+  @spec query(conn, query, params, opts :: Keyword.t) ::
     {:ok, result} | {:error, Exception.t}
-  def query(conn, query, opts \\ []) do
+  def query(conn, query, params, opts \\ []) do
     query = DBConnection.Query.parse(query, opts)
-    case run(conn, &do_query(&1, query, opts), opts) do
+    case run_query(conn, query, params, opts) do
       {:ok, {:ok, result}} ->
         {:ok, DBConnection.Result.decode(result, opts)}
       {:ok, other} ->
@@ -424,9 +426,9 @@ defmodule DBConnection do
 
   See `query/3`.
   """
-  @spec query!(conn, query, opts :: Keyword.t) :: result
-  def query!(conn, query, opts \\ []) do
-    case query(conn, query, opts) do
+  @spec query!(conn, query, params, opts :: Keyword.t) :: result
+  def query!(conn, query, params, opts \\ []) do
+    case query(conn, query, params, opts) do
       {:ok, result} -> result
       {:error, err} -> raise err
     end
@@ -456,14 +458,14 @@ defmodule DBConnection do
   ## Example
 
       {ok, query}   = DBConnection.prepare(pid, "SELECT id FROM table")
-      {:ok, result} = DBConnection.execute(pid, query)
+      {:ok, result} = DBConnection.execute(pid, query, [])
       :ok           = DBConnection.close(pid, query)
   """
   @spec prepare(conn, query, opts :: Keyword.t) ::
     {:ok, query} | {:error, Exception.t}
   def prepare(conn, query, opts \\ []) do
     query = DBConnection.Query.parse(query, opts)
-    case handle(conn, :handle_prepare, query, opts, :result) do
+    case handle(conn, :handle_prepare, [query], opts, :result) do
       {:ok, query} ->
         {:ok, DBConnection.Query.describe(query, opts)}
       other ->
@@ -505,25 +507,25 @@ defmodule DBConnection do
     connection, default: `15_000`)
 
   The pool and connection module may support other options. All options
-  are passed to `handle_execute/3`.
+  are passed to `handle_execute/4`.
 
   See `prepare/3`.
   """
-  @spec execute(conn, query, opts :: Keyword.t) ::
+  @spec execute(conn, query, params, opts :: Keyword.t) ::
     {:ok, result} | {:error, Exception.t}
-  def execute(conn, query, opts) do
-    execute(conn, :handle_execute, query, opts)
+  def execute(conn, query, params, opts) do
+    execute(conn, :handle_execute, query, params, opts)
   end
 
   @doc """
   Execute a prepared query with a database connection and return the
   result. Raises an exception on error.
 
-  See `execute/3`
+  See `execute/4`
   """
-  @spec execute!(conn, query, opts :: Keyword.t) :: result
-  def execute!(conn, query, opts \\ []) do
-    case execute(conn, query, opts) do
+  @spec execute!(conn, query, params, opts :: Keyword.t) :: result
+  def execute!(conn, query, params, opts \\ []) do
+    case execute(conn, query, params, opts) do
       {:ok, result} -> result
       {:error, err} -> raise err
     end
@@ -534,25 +536,25 @@ defmodule DBConnection do
   `{:ok, result}` on success or `{:error, exception}` if there was an
   error.
 
-  All options are passed to `handle_execute_close/3`.
+  All options are passed to `handle_execute_close/4`.
 
-  See `execute/3` and `close/3`.
+  See `execute/4` and `close/3`.
   """
-  @spec execute_close(conn, query, opts :: Keyword.t) ::
+  @spec execute_close(conn, query, params, opts :: Keyword.t) ::
     {:ok, result} | {:error, Exception.t}
-  def execute_close(conn, query, opts) do
-    execute(conn, :handle_execute_close, query, opts)
+  def execute_close(conn, query, params, opts \\ []) do
+    execute(conn, :handle_execute_close, query, params, opts)
   end
 
   @doc """
   Execute a prepared query and close it with a database connection and return
   the result. Raises an exception on error.
 
-  See `execute_close/3`
+  See `execute_close/4`
   """
-  @spec execute_close!(conn, query, opts :: Keyword.t) :: result
-  def execute_close!(conn, query, opts \\ []) do
-    case execute_close(conn, query, opts) do
+  @spec execute_close!(conn, query, params, opts :: Keyword.t) :: result
+  def execute_close!(conn, query, params, opts \\ []) do
+    case execute_close(conn, query, params, opts) do
       {:ok, result} -> result
       {:error, err} -> raise err
     end
@@ -584,7 +586,7 @@ defmodule DBConnection do
   @spec close(conn, query, opts :: Keyword.t) ::
     :ok | {:error, Exception.t}
   def close(conn, query, opts \\ []) do
-    handle(conn, :handle_close, query, opts, :no_result)
+    handle(conn, :handle_close, [query], opts, :no_result)
   end
 
   @doc """
@@ -629,7 +631,7 @@ defmodule DBConnection do
   ### Example
 
       {:ok, res} = DBConnection.run(pid, fn(conn) ->
-        res = DBConnection.query!(conn, "SELECT id FROM table")
+        res = DBConnection.query!(conn, "SELECT id FROM table", [])
         res
       end)
   """
@@ -680,7 +682,7 @@ defmodule DBConnection do
   ### Example
 
       {:ok, res} = DBConnection.transaction(pid, fn(conn) ->
-        res = DBConnection.query!(conn, "SELECT id FROM table")
+        res = DBConnection.query!(conn, "SELECT id FROM table", [])
         res
       end)
   """
@@ -768,11 +770,11 @@ defmodule DBConnection do
     :ok
   end
 
-  defp handle(%DBConnection{} = conn, callback, query, opts, return) do
+  defp handle(%DBConnection{} = conn, callback, args, opts, return) do
     %DBConnection{conn_mod: conn_mod} = conn
     {status, conn_state} = fetch_info(conn)
     try do
-      apply(conn_mod, callback, [query, opts, conn_state])
+      apply(conn_mod, callback, args ++ [opts, conn_state])
     else
       {:ok, result, conn_state} when return in [:result, :execute] ->
         put_info(conn, status, conn_state)
@@ -800,11 +802,11 @@ defmodule DBConnection do
     end
   end
 
-  defp handle(pool, callback, query, opts, return) do
+  defp handle(pool, callback, args, opts, return) do
     {conn, conn_state} = checkout(pool, opts)
     %DBConnection{conn_mod: conn_mod} = conn
     try do
-      apply(conn_mod, callback, [query, opts, conn_state])
+      apply(conn_mod, callback, args ++ [opts, conn_state])
     else
       {:ok, result, conn_state} when return == :result ->
         checkin(conn, conn_state, opts)
@@ -829,20 +831,22 @@ defmodule DBConnection do
     end
   end
 
-  defp do_query(conn, query, opts) do
-    case handle(conn, :handle_prepare, query, opts, :result) do
-      {:ok, query} ->
-        do_query_execute(conn, query, opts)
-      {:error, _} = error ->
-        error
-    end
+  defp run_query(conn, query, params, opts) do
+    run(conn, fn(conn2) ->
+      case handle(conn2, :handle_prepare, [query], opts, :result) do
+        {:ok, query} ->
+          query_execute(conn2, query, params, opts)
+        {:error, _} = error ->
+          error
+      end
+    end, opts)
   end
 
-  defp do_query_execute(conn, query, opts) do
+  defp query_execute(conn, query, params, opts) do
     try do
-      query
-      |> DBConnection.Query.describe(opts)
-      |> DBConnection.Query.encode(opts)
+      query = DBConnection.Query.describe(query, opts)
+      params = DBConnection.Query.encode(query, params, opts)
+      {query, params}
     catch
       kind, reason ->
         stack = System.stacktrace()
@@ -851,14 +855,14 @@ defmodule DBConnection do
           {:error, _} = error -> error
         end
     else
-      query ->
-        prepared_execute(conn, :handle_execute_close, query, opts)
+      {query, params} ->
+        prepared_execute(conn, :handle_execute_close, query, params, opts)
     end
   end
 
-  defp execute(conn, callback, query, opts) do
-    query = DBConnection.Query.encode(query, opts)
-    case run_execute(conn, callback, query, opts)  do
+  defp execute(conn, callback, query, params, opts) do
+    params = DBConnection.Query.encode(query, params, opts)
+    case run_execute(conn, callback, query, params, opts)  do
       {:ok, {:ok, result}} ->
        {:ok, DBConnection.Result.decode(result, opts)}
       {:ok, other} ->
@@ -866,28 +870,28 @@ defmodule DBConnection do
     end
   end
 
-  defp run_execute(conn, callback, query, opts) do
+  defp run_execute(conn, callback, query, params, opts) do
     run(conn, fn(conn2) ->
-      case handle(conn2, callback, query, opts, :execute) do
+      case handle(conn2, callback, [query, params], opts, :execute) do
         :prepare ->
-          execute_prepare(conn2, callback, query, opts)
+          execute_prepare(conn2, callback, query, params, opts)
         other ->
           other
       end
     end, opts)
   end
 
-  defp execute_prepare(conn, callback, query, opts) do
-    case handle(conn, :handle_prepare, query, opts, :result) do
+  defp execute_prepare(conn, callback, query, params, opts) do
+    case handle(conn, :handle_prepare, [query], opts, :result) do
       {:ok, query} ->
-        prepared_execute(conn, callback, query, opts)
+        prepared_execute(conn, callback, query, params, opts)
       other ->
         other
     end
   end
 
-  defp prepared_execute(conn, callback, query, opts) do
-    case handle(conn, callback, query, opts, :execute) do
+  defp prepared_execute(conn, callback, query, params, opts) do
+    case handle(conn, callback, [query, params], opts, :execute) do
       :prepare ->
         raise DBConnection.Error, "connection did not prepare query"
       other ->

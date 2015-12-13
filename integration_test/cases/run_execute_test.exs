@@ -17,15 +17,16 @@ defmodule RunExecuteTest do
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
     assert P.run(pool, fn(conn) ->
-      assert P.execute(conn, %Q{}) == {:ok, %R{}}
-      assert P.execute(conn, %Q{}, [key: :value]) == {:ok, %R{}}
+      assert P.execute(conn, %Q{}, [:param]) == {:ok, %R{}}
+      assert P.execute(conn, %Q{}, [:param], [key: :value]) == {:ok, %R{}}
       :hi
     end) == {:ok, :hi}
 
     assert [
       connect: [_],
-      handle_execute: [%Q{}, _, :state],
-      handle_execute: [%Q{}, [{:key, :value} | _], :new_state]] = A.record(agent)
+      handle_execute: [%Q{}, [:param], _, :state],
+      handle_execute: [%Q{}, [:param],
+        [{:key, :value} | _], :new_state]] = A.record(agent)
   end
 
   test "execute error returns error" do
@@ -40,13 +41,13 @@ defmodule RunExecuteTest do
     {:ok, pool} = P.start_link(opts)
 
     assert P.run(pool, fn(conn) ->
-      assert P.execute(conn, %Q{}) == {:error, err}
+      assert P.execute(conn, %Q{}, [:param]) == {:error, err}
       :hi
     end) == {:ok, :hi}
 
     assert [
       connect: [_],
-      handle_execute: [%Q{}, _, :state]] = A.record(agent)
+      handle_execute: [%Q{}, [:param], _, :state]] = A.record(agent)
   end
 
   test "execute! error raises error" do
@@ -62,16 +63,17 @@ defmodule RunExecuteTest do
     {:ok, pool} = P.start_link(opts)
 
     assert P.run(pool, fn(conn) ->
-      assert_raise RuntimeError, "oops", fn() -> P.execute!(conn, %Q{}) end
+      assert_raise RuntimeError, "oops",
+        fn() -> P.execute!(conn, %Q{}, [:param]) end
 
-      assert P.execute(conn, %Q{}) == {:ok, %R{}}
+      assert P.execute(conn, %Q{}, [:param]) == {:ok, %R{}}
       :hi
     end) == {:ok, :hi}
 
     assert [
       connect: [_],
-      handle_execute: [%Q{}, _, :state],
-      handle_execute: [%Q{}, _, :new_state]] = A.record(agent)
+      handle_execute: [%Q{}, [:param], _, :state],
+      handle_execute: [%Q{}, [:param], _, :new_state]] = A.record(agent)
   end
 
   test "execute disconnect returns error" do
@@ -91,10 +93,10 @@ defmodule RunExecuteTest do
     {:ok, pool} = P.start_link(opts)
 
     assert P.run(pool, fn(conn) ->
-      assert P.execute(conn, %Q{}) == {:error, err}
+      assert P.execute(conn, %Q{}, [:param]) == {:error, err}
 
       assert_raise DBConnection.Error, "connection is closed",
-        fn() -> P.execute(conn, %Q{}) end
+        fn() -> P.execute(conn, %Q{}, [:param]) end
 
       :hi
     end) == {:ok, :hi}
@@ -103,7 +105,7 @@ defmodule RunExecuteTest do
 
     assert [
       connect: [opts2],
-      handle_execute: [%Q{}, _, :state],
+      handle_execute: [%Q{}, [:param], _, :state],
       disconnect: [^err, :new_state],
       connect: [opts2]] = A.record(agent)
   end
@@ -128,10 +130,10 @@ defmodule RunExecuteTest do
 
     assert P.run(pool, fn(conn) ->
       assert_raise DBConnection.Error, "bad return value: :oops",
-        fn() -> P.execute(conn, %Q{}) end
+        fn() -> P.execute(conn, %Q{}, [:param]) end
 
       assert_raise DBConnection.Error, "connection is closed",
-        fn() -> P.execute(conn, %Q{}) end
+        fn() -> P.execute(conn, %Q{}, [:param]) end
 
       :hi
     end) == {:ok, :hi}
@@ -141,7 +143,7 @@ defmodule RunExecuteTest do
 
     assert [
       {:connect, _},
-      {:handle_execute, [%Q{}, _, :state]}| _] = A.record(agent)
+      {:handle_execute, [%Q{}, [:param], _, :state]}| _] = A.record(agent)
   end
 
   test "execute raise raises and stops connection" do
@@ -151,7 +153,7 @@ defmodule RunExecuteTest do
         Process.link(opts[:parent])
         {:ok, :state}
       end,
-      fn(_, _, _) ->
+      fn(_, _, _, _) ->
         raise "oops"
       end,
       {:ok, :state}
@@ -165,10 +167,11 @@ defmodule RunExecuteTest do
     Process.flag(:trap_exit, true)
 
     assert P.run(pool, fn(conn) ->
-      assert_raise RuntimeError, "oops", fn() -> P.execute(conn, %Q{}) end
+      assert_raise RuntimeError, "oops",
+        fn() -> P.execute(conn, %Q{}, [:param]) end
 
       assert_raise DBConnection.Error, "connection is closed",
-        fn() -> P.execute(conn, %Q{}) end
+        fn() -> P.execute(conn, %Q{}, [:param]) end
 
       :hi
     end) == {:ok, :hi}
@@ -178,6 +181,6 @@ defmodule RunExecuteTest do
 
     assert [
       {:connect, _},
-      {:handle_execute, [%Q{}, _, :state]}| _] = A.record(agent)
+      {:handle_execute, [%Q{}, [:param], _, :state]}| _] = A.record(agent)
   end
 end

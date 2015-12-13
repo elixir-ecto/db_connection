@@ -35,12 +35,12 @@ defmodule DBConnectionTest do
 
       assert Sample.handle_prepare(:query, [], :state) == {:ok, :query, :state}
 
-      assert_raise RuntimeError, "handle_execute/3 not implemented",
-        fn() -> Sample.handle_execute(:query, [], :state) end
+      assert_raise RuntimeError, "handle_execute/4 not implemented",
+        fn() -> Sample.handle_execute(:query, [], [], :state) end
 
       # not a bug! handle_execute forwards to handle_query/3
-      assert_raise RuntimeError, "handle_execute/3 not implemented",
-        fn() -> Sample.handle_execute_close(:query, [], :state) end
+      assert_raise RuntimeError, "handle_execute/4 not implemented",
+        fn() -> Sample.handle_execute_close(:query, [], [], :state) end
 
       assert Sample.handle_close(:query, [], :state) == {:ok, :state}
 
@@ -55,10 +55,10 @@ defmodule DBConnectionTest do
     defmodule SampleEC do
       use DBConnection
 
-      def handle_execute({:ok, _}, _, state) do
+      def handle_execute({:ok, _}, _, _, state) do
         {:ok, :ok, [:execute | state]}
       end
-      def handle_execute({error, _}, _, state)
+      def handle_execute({error, _}, _, _, state)
       when error in [:error, :disconnect] do
         {error, %ArgumentError{message: "execute"}, [:execute | state]}
       end
@@ -73,25 +73,25 @@ defmodule DBConnectionTest do
     end
 
     try do
-      assert SampleEC.handle_execute_close({:ok, :ok}, [], []) ==
+      assert SampleEC.handle_execute_close({:ok, :ok}, [], [], []) ==
         {:ok, :ok, [:close, :execute]}
 
-      assert SampleEC.handle_execute_close({:ok, :error}, [], []) ==
+      assert SampleEC.handle_execute_close({:ok, :error}, [], [], []) ==
         {:error, %ArgumentError{message: "close"}, [:close, :execute]}
 
-      assert SampleEC.handle_execute_close({:ok, :disconnect}, [], []) ==
+      assert SampleEC.handle_execute_close({:ok, :disconnect}, [], [], []) ==
         {:disconnect, %ArgumentError{message: "close"}, [:close, :execute]}
 
-      assert SampleEC.handle_execute_close({:error, :ok}, [], []) ==
+      assert SampleEC.handle_execute_close({:error, :ok}, [], [], []) ==
         {:error, %ArgumentError{message: "execute"}, [:close, :execute]}
 
-      assert SampleEC.handle_execute_close({:error, :error}, [], []) ==
+      assert SampleEC.handle_execute_close({:error, :error}, [], [], []) ==
         {:error, %ArgumentError{message: "close"}, [:close, :execute]}
 
-      assert SampleEC.handle_execute_close({:error, :disconnect}, [], []) ==
+      assert SampleEC.handle_execute_close({:error, :disconnect}, [], [], []) ==
         {:disconnect, %ArgumentError{message: "close"}, [:close, :execute]}
 
-      assert SampleEC.handle_execute_close({:disconnect, nil}, [], []) ==
+      assert SampleEC.handle_execute_close({:disconnect, nil}, [], [], []) ==
         {:disconnect, %ArgumentError{message: "execute"}, [:execute]}
     after
       :code.purge(SampleEC)
