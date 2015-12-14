@@ -20,7 +20,8 @@ defmodule DBConnection.Mixfile do
   end
 
   def application do
-    [applications: [:logger, :connection, :backoff]]
+    [applications: [:logger, :connection, :backoff],
+     mod: {DBConnection.App, []}]
   end
 
   defp deps do

@@ -363,6 +363,9 @@ defmodule DBConnection do
     * `:backoff_max` - The maximum backoff interval (default: `15_000`)
     * `:backoff_type` - The backoff strategy, `:stop` for no backoff and
     to stop (see `:backoff`, default: `:jitter`)
+    * `:after_connect` - A function to run on connect using `run/3`, either
+    a 1-arity fun, `{module, function, args}` with `DBConnection.t` prepended
+    to `args` or `nil` (default: `nil`)
 
   ### Example
 
