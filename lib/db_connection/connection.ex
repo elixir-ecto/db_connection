@@ -95,6 +95,9 @@ defmodule DBConnection.Connection do
     broker = if mode == :sojourn, do: info
     s = %{mod: mod, opts: opts, state: nil, client: :closed, broker: broker,
           queue: queue, timer: nil, backoff: backoff_init(opts),
+          after_connect: Keyword.get(opts, :after_connect),
+          after_connect_timeout: Keyword.get(opts, :after_connect_timeout,
+                                             @timeout),
           idle_timeout: Keyword.get(opts, :idle_timeout, @idle_timeout)}
     if mode == :connection and Keyword.get(opts, :sync_connect, false) do
       connect(:init, s)
@@ -105,14 +108,18 @@ defmodule DBConnection.Connection do
 
   @doc false
   def connect(_, s) do
-    %{mod: mod, opts: opts, queue: queue, backoff: backoff,
-      idle_timeout: idle_timeout} = s
+    %{mod: mod, opts: opts, backoff: backoff, after_connect: after_connect,
+      queue: queue, idle_timeout: idle_timeout} = s
     case apply(mod, :connect, [opts]) do
+      {:ok, state} when after_connect != nil ->
+        ref = make_ref()
+        Connection.cast(self(), {:after_connect, ref})
+        {:ok, %{s | state: state, client: {ref, :connect}}}
       {:ok, state} when queue == :broker ->
-          backoff = backoff_succeed(backoff)
-          ref = make_ref()
-          Connection.cast(self(), {:connected, ref})
-          {:ok, %{s | state: state, client: {ref, :connect}, backoff: backoff}}
+        backoff = backoff_succeed(backoff)
+        ref = make_ref()
+        Connection.cast(self(), {:connected, ref})
+        {:ok, %{s | state: state, client: {ref, :connect}, backoff: backoff}}
       {:ok, state} ->
         backoff = backoff_succeed(backoff)
         {:ok, %{s | state: state, client: nil, backoff: backoff}, idle_timeout}
@@ -138,14 +145,21 @@ defmodule DBConnection.Connection do
       [inspect(mod), ?\s, ?(, inspect(self()),
         ") disconnected: " | Exception.format_banner(:error, err, [])]
     end)
-    %{mod: mod, state: state, client: client,
-      timer: timer, queue: queue} = s
+    %{state: state, client: client, timer: timer, queue: queue,
+      backoff: backoff} = s
     demonitor(client)
     cancel_timer(timer)
     queue = clear_queue(queue)
     :ok = apply(mod, :disconnect, [err, state])
     s = %{s | state: nil, client: :closed, timer: nil, queue: queue}
-    {:connect, :disconnect, s}
+    case client do
+      {_, :after_connect} ->
+        timeout = :backoff.get(backoff)
+        {_, backoff} = :backoff.fail(backoff)
+        {:backoff, timeout, %{s | backoff: backoff}}
+      _ ->
+        {:connect, :disconnect, s}
+    end
   end
 
   @doc false
@@ -219,6 +233,25 @@ defmodule DBConnection.Connection do
     handle_timeout(s)
   end
 
+  def handle_cast({:after_connect, ref}, %{client: {ref, :connect}} = s) do
+    %{mod: mod, state: state, after_connect: after_connect,
+      after_connect_timeout: timeout, opts: opts} = s
+    case apply(mod, :checkout, [state]) do
+      {:ok, state} ->
+        opts = [timeout: timeout] ++ opts
+        ref = DBConnection.Task.run_child(mod, after_connect, state, opts)
+        timer = start_timer(timeout)
+        s = %{s | client: {ref, :after_connect}, timer: timer, state: state}
+        {:noreply, s}
+      {:disconnect, err, state} ->
+        {:disconnect, err, %{s | state: state}}
+    end
+  end
+
+  def handle_cast({:after_connect, _}, s) do
+    {:noreply, s}
+  end
+
   def handle_cast({:connected, ref}, %{client: {ref, :connect}} = s) do
     %{mod: mod, state: state, broker: broker} = s
     case apply(mod, :checkout, [state]) do
@@ -236,9 +269,13 @@ defmodule DBConnection.Connection do
   end
 
   @doc false
-  def handle_info({:DOWN, mon, :process, _, _}, %{client: {_, mon}} = s) do
+  def handle_info({:DOWN, ref, _, _, _}, %{client: {ref, :after_connect}} = s) do
     exception = DBConnection.Error.exception("client down")
-    {:disconnect, exception, s}
+    {:disconnect, exception, %{s | client: {nil, :after_connect}}}
+  end
+  def handle_info({:DOWN, mon, :process, _, _}, %{client: {ref, mon}} = s) do
+    exception = DBConnection.Error.exception("client down")
+    {:disconnect, exception, %{s | client: {ref, nil}}}
   end
   def handle_info({:DOWN, _, :process, _, _} = msg, %{queue: :broker} = s) do
     do_handle_info(msg, s)
@@ -362,6 +399,12 @@ defmodule DBConnection.Connection do
     end
   end
 
+  defp handle_next(state, %{client: {_, :after_connect} = client} = s) do
+    %{backoff: backoff} = s
+    backoff = backoff_succeed(backoff)
+    demonitor(client)
+    handle_next(state, %{s | client: nil, backoff: backoff})
+  end
   defp handle_next(state, %{queue: :broker} = s) do
     %{client: client, timer: timer, mod: mod, broker: broker} = s
     demonitor(client)
@@ -431,7 +474,10 @@ defmodule DBConnection.Connection do
   defp demonitor({_, mon}) when is_reference(mon) do
     Process.demonitor(mon, [:flush])
   end
-  defp demonitor({_, other}) when other in [:connect, :broker], do: true
+  defp demonitor({mon, :after_connect}) when is_reference(mon) do
+    Process.demonitor(mon, [:flush])
+  end
+  defp demonitor({_, _}), do: true
   defp demonitor(nil), do: true
 
   defp start_timer(:infinity), do: nil

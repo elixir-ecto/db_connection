@@ -102,4 +102,32 @@ defmodule BackoffTest do
       {:connect, [[_, _ | ^opts]]},
       {:handle_info, [:hello, :state]} | _] = A.record(agent)
   end
+
+  test "backoff after failed after_connect" do
+    stack = [
+      {:ok, :state},
+      :ok,
+      {:ok, :state2},
+      :ok
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    parent = self()
+    after_connect = fn(_) ->
+      send(parent, :after_connect)
+      Process.exit(self(), :shutdown)
+    end
+    opts = [after_connect: after_connect, agent: agent, parent: self(),
+            backoff_type: :normal]
+    {:ok, _} = P.start_link(opts)
+
+    assert_receive :after_connect
+    refute_receive :after_connect, 50
+    assert_receive :after_connect, 500
+
+    assert [
+      {:connect, [_]},
+      {:disconnect, [%DBConnection.Error{}, :state]},
+      {:connect, [_]} | _] = A.record(agent)
+  end
 end
