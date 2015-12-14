@@ -36,12 +36,12 @@ defprotocol DBConnection.Query do
 
   See `DBConnection.execute/3`.
   """
-  @spec encode(any, Keyword.t) :: any
-  def encode(query, opts)
+  @spec encode(any, [any], Keyword.t) :: any
+  def encode(query, params, opts)
 end
 
 defimpl DBConnection.Query, for: Any do
   def parse(query, _), do: query
   def describe(query, _), do: query
-  def encode(query, _), do: query
+  def encode(_, params, _), do: params
 end

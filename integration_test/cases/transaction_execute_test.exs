@@ -19,16 +19,17 @@ defmodule TransactionExecuteTest do
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
     assert P.transaction(pool, fn(conn) ->
-      assert P.execute(conn, %Q{}) == {:ok, %R{}}
-      assert P.execute(conn, %Q{}, [key: :value]) == {:ok, %R{}}
+      assert P.execute(conn, %Q{}, [:param]) == {:ok, %R{}}
+      assert P.execute(conn, %Q{}, [:param], [key: :value]) == {:ok, %R{}}
       :hi
     end) == {:ok, :hi}
 
     assert [
       connect: [_],
       handle_begin: [_, :state],
-      handle_execute: [%Q{}, _, :new_state],
-      handle_execute: [%Q{}, [{:key, :value} | _], :newer_state],
+      handle_execute: [%Q{}, [:param], _, :new_state],
+      handle_execute: [%Q{}, [:param],
+        [{:key, :value} | _], :newer_state],
       handle_commit: [_, :newest_state]] = A.record(agent)
   end
 
@@ -46,14 +47,14 @@ defmodule TransactionExecuteTest do
     {:ok, pool} = P.start_link(opts)
 
     assert P.transaction(pool, fn(conn) ->
-      assert P.execute(conn, %Q{}) == {:error, err}
+      assert P.execute(conn, %Q{}, [:param]) == {:error, err}
       :hi
     end) == {:ok, :hi}
 
     assert [
       connect: [_],
       handle_begin: [_, :state],
-      handle_execute: [%Q{}, _, :new_state],
+      handle_execute: [%Q{}, [:param], _, :new_state],
       handle_commit: [_, :newer_state]] = A.record(agent)
   end
 
@@ -72,17 +73,18 @@ defmodule TransactionExecuteTest do
     {:ok, pool} = P.start_link(opts)
 
     assert P.transaction(pool, fn(conn) ->
-      assert_raise RuntimeError, "oops", fn() -> P.execute!(conn, %Q{}) end
+      assert_raise RuntimeError, "oops",
+        fn() -> P.execute!(conn, %Q{}, [:param]) end
 
-      assert P.execute(conn, %Q{}) == {:ok, %R{}}
+      assert P.execute(conn, %Q{}, [:param]) == {:ok, %R{}}
       :hi
     end) == {:ok, :hi}
 
     assert [
       connect: [_],
       handle_begin: [_, :state],
-      handle_execute: [%Q{}, _, :new_state],
-      handle_execute: [%Q{}, _, :newer_state],
+      handle_execute: [%Q{}, [:param], _, :new_state],
+      handle_execute: [%Q{}, [:param], _, :newer_state],
       handle_commit: [_, :newest_state]] = A.record(agent)
   end
 
@@ -104,10 +106,10 @@ defmodule TransactionExecuteTest do
     {:ok, pool} = P.start_link(opts)
 
     assert P.transaction(pool, fn(conn) ->
-      assert P.execute(conn, %Q{}) == {:error, err}
+      assert P.execute(conn, %Q{}, [:param]) == {:error, err}
 
       assert_raise DBConnection.Error, "connection is closed",
-        fn() -> P.execute(conn, %Q{}) end
+        fn() -> P.execute(conn, %Q{}, [:param]) end
 
       :hi
     end) == {:ok, :hi}
@@ -117,7 +119,7 @@ defmodule TransactionExecuteTest do
     assert [
       connect: [opts2],
       handle_begin: [_, :state],
-      handle_execute: [%Q{}, _, :new_state],
+      handle_execute: [%Q{}, [:param], _, :new_state],
       disconnect: [^err, :newer_state],
       connect: [opts2]] = A.record(agent)
   end
@@ -143,10 +145,10 @@ defmodule TransactionExecuteTest do
 
     assert P.transaction(pool, fn(conn) ->
       assert_raise DBConnection.Error, "bad return value: :oops",
-        fn() -> P.execute(conn, %Q{}) end
+        fn() -> P.execute(conn, %Q{}, [:param]) end
 
       assert_raise DBConnection.Error, "connection is closed",
-        fn() -> P.execute(conn, %Q{}) end
+        fn() -> P.execute(conn, %Q{}, [:param]) end
 
       :hi
     end) == {:ok, :hi}
@@ -157,7 +159,7 @@ defmodule TransactionExecuteTest do
     assert [
       {:connect, _},
       {:handle_begin, [_, :state]},
-      {:handle_execute, [%Q{}, _, :new_state]} | _] = A.record(agent)
+      {:handle_execute, [%Q{}, [:param], _, :new_state]} | _] = A.record(agent)
   end
 
   test "execute raise raises and stops connection" do
@@ -168,7 +170,7 @@ defmodule TransactionExecuteTest do
         {:ok, :state}
       end,
       {:ok, :new_state},
-      fn(_, _, _) ->
+      fn(_, _, _, _) ->
         raise "oops"
       end,
       {:ok, :state}
@@ -182,10 +184,11 @@ defmodule TransactionExecuteTest do
     Process.flag(:trap_exit, true)
 
     assert P.transaction(pool, fn(conn) ->
-      assert_raise RuntimeError, "oops", fn() -> P.execute(conn, %Q{}) end
+      assert_raise RuntimeError, "oops",
+        fn() -> P.execute(conn, %Q{}, [:param]) end
 
       assert_raise DBConnection.Error, "connection is closed",
-        fn() -> P.execute(conn, %Q{}) end
+        fn() -> P.execute(conn, %Q{}, [:param]) end
 
       :hi
     end) == {:ok, :hi}
@@ -196,6 +199,6 @@ defmodule TransactionExecuteTest do
     assert [
       {:connect, _},
       {:handle_begin, [_, :state]},
-      {:handle_execute, [%Q{}, _, :new_state]}| _] = A.record(agent)
+      {:handle_execute, [%Q{}, [:param], _, :new_state]}| _] = A.record(agent)
   end
 end

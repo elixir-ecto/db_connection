@@ -87,18 +87,18 @@ defmodule ClientTest do
 
     assert P.run(pool, fn(conn) ->
         :timer.sleep(50)
-        assert {:error, %RuntimeError{}} = P.execute(conn, %Q{})
+        assert {:error, %RuntimeError{}} = P.execute(conn, %Q{}, [:param])
         :result
     end, [timeout: 0])  == {:ok, :result}
 
-    assert P.execute(pool, %Q{}) == {:ok, %R{}}
+    assert P.execute(pool, %Q{}, [:param]) == {:ok, %R{}}
 
     assert [
       {:connect, _},
       {:disconnect, _},
       {:connect, _},
-      {:handle_execute, [%Q{}, _, :state]},
-      {:handle_execute, [%Q{}, _, :new_state]}] = A.record(agent)
+      {:handle_execute, [%Q{}, [:param], _, :state]},
+      {:handle_execute, [%Q{}, [:param], _, :new_state]}] = A.record(agent)
   end
 
   test "reconnect when client timeout and then crashes" do
@@ -109,7 +109,7 @@ defmodule ClientTest do
         send(opts[:runner], :reconnected)
         {:ok, :new_state}
       end,
-      fn(_, _, _) ->
+      fn(_, _, _, _) ->
         throw(:oops)
       end,
       {:ok, %R{}, :newer_state}]
@@ -130,20 +130,20 @@ defmodule ClientTest do
     try do
       P.run(pool, fn(conn) ->
         :timer.sleep(50)
-        P.execute(conn, %Q{})
+        P.execute(conn, %Q{}, [:param])
       end, [timeout: 0])
     catch
       :throw, :oops ->
         :ok
     end
 
-    assert P.execute(pool, %Q{}) == {:ok, %R{}}
+    assert P.execute(pool, %Q{}, [:param]) == {:ok, %R{}}
 
     assert [
       {:connect, _},
       {:disconnect, _},
       {:connect, _},
-      {:handle_execute, [%Q{}, _, :state]},
-      {:handle_execute, [%Q{}, _, :new_state]}] = A.record(agent)
+      {:handle_execute, [%Q{}, [:param], _, :state]},
+      {:handle_execute, [%Q{}, [:param], _, :new_state]}] = A.record(agent)
   end
 end

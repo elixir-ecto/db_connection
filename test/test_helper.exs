@@ -8,12 +8,12 @@ defmodule TestConnection do
         TestConnection.start_link(unquote(opts) ++ opts2)
       end
 
-      def query(pool, query, opts2 \\ []) do
-        DBConnection.query(pool, query, opts2 ++ unquote(opts))
+      def query(pool, query, params, opts2 \\ []) do
+        DBConnection.query(pool, query, params, opts2 ++ unquote(opts))
       end
 
-      def query!(pool, query, opts2 \\ []) do
-        DBConnection.query!(pool, query, opts2 ++ unquote(opts))
+      def query!(pool, query, params, opts2 \\ []) do
+        DBConnection.query!(pool, query, params, opts2 ++ unquote(opts))
       end
 
       def run(pool, fun, opts2 \\ []) do
@@ -34,12 +34,12 @@ defmodule TestConnection do
         DBConnection.prepare!(pool, query, opts2 ++ unquote(opts))
       end
 
-      def execute(pool, query, opts2 \\ []) do
-        DBConnection.execute(pool, query, opts2 ++ unquote(opts))
+      def execute(pool, query, params, opts2 \\ []) do
+        DBConnection.execute(pool, query, params, opts2 ++ unquote(opts))
       end
 
-      def execute!(pool, query, opts2 \\ []) do
-        DBConnection.execute!(pool, query, opts2 ++ unquote(opts))
+      def execute!(pool, query, params, opts2 \\ []) do
+        DBConnection.execute!(pool, query, params, opts2 ++ unquote(opts))
       end
 
       def close(pool, query, opts2 \\ []) do
@@ -94,12 +94,12 @@ defmodule TestConnection do
     TestAgent.eval(:handle_prepare, [query, opts, state])
   end
 
-  def handle_execute(query, opts, state) do
-    TestAgent.eval(:handle_execute, [query, opts, state])
+  def handle_execute(query, params, opts, state) do
+    TestAgent.eval(:handle_execute, [query, params, opts, state])
   end
 
-  def handle_execute_close(query, opts, state) do
-    TestAgent.eval(:handle_execute_close, [query, opts, state])
+  def handle_execute_close(query, params, opts, state) do
+    TestAgent.eval(:handle_execute_close, [query, params, opts, state])
   end
 
   def handle_close(query, opts, state) do
@@ -131,9 +131,9 @@ defimpl DBConnection.Query, for: TestQuery do
     describe.(query)
   end
 
-  def encode(query, opts) do
+  def encode(_, params, opts) do
     encode = Keyword.get(opts, :encode, &(&1))
-    encode.(query)
+    encode.(params)
   end
 end
 
