@@ -136,9 +136,9 @@ defmodule DBConnection.Proxy do
       def handle_begin(mod, opts, conn, state) do
         case apply(mod, :handle_begin, [opts, conn]) do
           {:ok, _} = ok ->
-            Tuple.append(ok, state)
+            :erlang.append_element(ok, state)
           {:error, _, _} = error ->
-            Tuple.append(error, state)
+            :erlang.append_element(error, state)
           {:disconnect, _, _} = discon ->
             discon
           other ->
@@ -149,9 +149,9 @@ defmodule DBConnection.Proxy do
       def handle_commit(mod, opts, conn, state) do
         case apply(mod, :handle_commit, [opts, conn]) do
           {:ok, _} = ok ->
-            Tuple.append(ok, state)
+            :erlang.append_element(ok, state)
           {:error, _, _} = error ->
-            Tuple.append(error, state)
+            :erlang.append_element(error, state)
           {:disconnect, _, _} = discon ->
             discon
           other ->
@@ -162,9 +162,9 @@ defmodule DBConnection.Proxy do
       def handle_rollback(mod, opts, conn, state) do
         case apply(mod, :handle_rollback, [opts, conn]) do
           {:ok, _} = ok ->
-            Tuple.append(ok, state)
+            :erlang.append_element(ok, state)
           {:error, _, _} = error ->
-            Tuple.append(error, state)
+            :erlang.append_element(error, state)
           {:disconnect, _, _} = discon ->
             discon
           other ->
@@ -175,9 +175,9 @@ defmodule DBConnection.Proxy do
       def handle_prepare(mod, query, opts, conn, state) do
         case apply(mod, :handle_prepare, [query, opts, conn]) do
           {:ok, _, _} = ok ->
-            Tuple.append(ok, state)
+            :erlang.append_element(ok, state)
           {:error, _, _} = error ->
-            Tuple.append(error, state)
+            :erlang.append_element(error, state)
           {:disconnect, _, _} = discon ->
             discon
           other ->
@@ -188,11 +188,11 @@ defmodule DBConnection.Proxy do
       def handle_execute(mod, query, params, opts, conn, state) do
         case apply(mod, :handle_execute, [query, params, opts, conn]) do
           {:ok, _, _} = ok ->
-            Tuple.append(ok, state)
+            :erlang.append_element(ok, state)
           {:prepare, _} = prepare ->
-            Tuple.append(prepare, state)
+            :erlang.append_element(prepare, state)
           {:error, _, _} = error ->
-            Tuple.append(error, state)
+            :erlang.append_element(error, state)
           {:disconnect, _, _} = discon ->
             discon
           other ->
@@ -203,11 +203,11 @@ defmodule DBConnection.Proxy do
       def handle_execute_close(mod, query, params, opts, conn, state) do
         case apply(mod, :handle_execute_close, [query, params, opts, conn]) do
           {:ok, _, _} = ok ->
-            Tuple.append(ok, state)
+            :erlang.append_element(ok, state)
           {:prepaere, _} = prepare ->
-            Tuple.append(prepare, state)
+            :erlang.append_element(prepare, state)
           {:error, _, _} = error ->
-            Tuple.append(error, state)
+            :erlang.append_element(error, state)
           {:disconnect, _, _} = discon ->
             discon
           other ->
@@ -218,9 +218,9 @@ defmodule DBConnection.Proxy do
       def handle_close(mod, query, opts, conn, state) do
         case apply(mod, :handle_close, [query, opts, conn]) do
           {:ok, _} = ok ->
-            Tuple.append(ok, state)
+            :erlang.append_element(ok, state)
           {:error, _, _} = error ->
-            Tuple.append(error, state)
+            :erlang.append_element(error, state)
           {:disconnect, _, _} = discon ->
             discon
           other ->
