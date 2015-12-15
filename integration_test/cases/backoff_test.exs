@@ -24,8 +24,10 @@ defmodule BackoffTest do
     assert_receive {:hi, ^conn}
 
     assert [
-      connect: [[_, _ | ^opts]],
-      connect: [[_, _ | ^opts]]] = A.record(agent)
+      connect: [opts2],
+      connect: [opts2]] = A.record(agent)
+
+    assert :lists.suffix(opts, opts2)
   end
 
   test "backoff after disconnect and failed connection attempt" do
@@ -52,11 +54,13 @@ defmodule BackoffTest do
     assert_receive {:hi2, ^conn}
 
     assert [
-      connect: [[_, _ | ^opts]],
+      connect: [opts2],
       handle_info: [:hello, :state],
       disconnect: [^err, :discon],
-      connect: [[_, _ | ^opts]],
-      connect: [[_, _ | ^opts]]] = A.record(agent)
+      connect: [opts2],
+      connect: [opts2]] = A.record(agent)
+
+    assert :lists.suffix(opts, opts2)
   end
 
   test "backoff :stop exits on failed initial connection attempt" do
@@ -76,7 +80,9 @@ defmodule BackoffTest do
     assert_receive {:error, conn}
     assert_receive {:EXIT, ^conn, {^err, _}}
 
-    assert [{:connect, [[_, _ | ^opts]]} | _] = A.record(agent)
+    assert [{:connect, [opts2]} | _] = A.record(agent)
+
+    assert :lists.suffix(opts, opts2)
   end
 
   test "backoff :stop exits after disconnect without attempting to connect" do
@@ -99,8 +105,10 @@ defmodule BackoffTest do
     assert_receive {:EXIT, ^conn, {^err, _}}
 
     assert [
-      {:connect, [[_, _ | ^opts]]},
+      {:connect, [opts2]},
       {:handle_info, [:hello, :state]} | _] = A.record(agent)
+
+    assert :lists.suffix(opts, opts2)
   end
 
   test "backoff after failed after_connect" do
@@ -126,8 +134,10 @@ defmodule BackoffTest do
     assert_receive :after_connect, 500
 
     assert [
-      {:connect, [_]},
+      {:connect, [opts2]},
       {:disconnect, [%DBConnection.Error{}, :state]},
-      {:connect, [_]} | _] = A.record(agent)
+      {:connect, [opts2]} | _] = A.record(agent)
+
+    assert :lists.suffix(opts, opts2)
   end
 end

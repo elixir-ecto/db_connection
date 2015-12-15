@@ -6,7 +6,15 @@ defmodule TestPool do
   use TestConnection, @opts
 
   def start_link(opts) do
-    {:ok, sup} = TestConnection.start_link(@opts ++ opts)
+    do_start(:start_link, opts)
+  end
+
+  def sandbox_link(opts) do
+    do_start(:sandbox_link, opts)
+  end
+
+  defp do_start(start, opts) do
+    {:ok, sup} = apply(TestConnection, start, [@opts ++ opts])
     children = Supervisor.which_children(sup)
     {_, broker, _, _} = List.keyfind(children, :sbroker, 0)
     {:ok, broker}

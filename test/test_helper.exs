@@ -8,6 +8,10 @@ defmodule TestConnection do
         TestConnection.start_link(unquote(opts) ++ opts2)
       end
 
+      def sandbox_link(opts2) do
+        TestConnection.sandbox_link(unquote(opts) ++ opts2)
+      end
+
       def query(pool, query, params, opts2 \\ []) do
         DBConnection.query(pool, query, params, opts2 ++ unquote(opts))
       end
@@ -50,11 +54,28 @@ defmodule TestConnection do
         DBConnection.close!(pool, query, opts2 ++ unquote(opts))
       end
 
-      defoverridable [start_link: 1]
+      def start_sandbox(pool, opts2 \\ []) do
+        DBConnection.Sandbox.start_sandbox(pool, opts2 ++ unquote(opts))
+      end
+
+      def restart_sandbox(pool, opts2 \\ []) do
+        DBConnection.Sandbox.restart_sandbox(pool, opts2 ++ unquote(opts))
+      end
+
+      def stop_sandbox(pool, opts2 \\ []) do
+        DBConnection.Sandbox.stop_sandbox(pool, opts2 ++ unquote(opts))
+      end
+
+      defoverridable [start_link: 1, sandbox_link: 1]
     end
   end
 
   def start_link(opts), do: DBConnection.start_link(__MODULE__, opts)
+
+  def sandbox_link(opts) do
+    opts = [sandbox_mod: __MODULE__] ++ opts
+    DBConnection.start_link(DBConnection.Sandbox, opts)
+  end
 
   def connect(opts) do
     agent = Keyword.fetch!(opts, :agent)
@@ -109,8 +130,31 @@ defmodule TestConnection do
   def handle_info(msg, state) do
     TestAgent.eval(:handle_info, [msg, state])
   end
-end
 
+  def sandbox_start(opts, state) do
+    TestAgent.eval(:sandbox_start, [opts, state])
+  end
+
+  def sandbox_restart(opts, state) do
+    TestAgent.eval(:sandbox_restart, [opts, state])
+  end
+
+  def sandbox_stop(opts, state) do
+    TestAgent.eval(:sandbox_stop, [opts, state])
+  end
+
+  def sandbox_begin(opts, state) do
+    TestAgent.eval(:sandbox_begin, [opts, state])
+  end
+
+  def sandbox_commit(opts, state) do
+    TestAgent.eval(:sandbox_commit, [opts, state])
+  end
+
+  def sandbox_rollback(opts, state) do
+    TestAgent.eval(:sandbox_rollback, [opts, state])
+  end
+end
 
 defmodule TestQuery do
   defstruct []
