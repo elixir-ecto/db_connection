@@ -404,6 +404,9 @@ defmodule DBConnection do
     * `:timeout` - The maximum time that the caller is allowed the
     to hold the connection's state (ignored when using a run/transaction
     connection, default: `15_000`)
+    * `:proxy_mod` - The `DBConnection.Proxy` module, if any, to proxy the
+    connection's state (ignored when using a run/transaction connection,
+    default: `nil`)
 
   The pool and connection module may support other options. All options
   are passed to `handle_prepare/3` and `handle_execute_close/4`.
@@ -455,6 +458,9 @@ defmodule DBConnection do
     * `:timeout` - The maximum time that the caller is allowed the
     to hold the connection's state (ignored when using a run/transaction
     connection, default: `15_000`)
+   * `:proxy_mod` - The `DBConnection.Proxy` module, if any, to proxy the
+    connection's state (ignored when using a run/transaction connection,
+    default: `nil`)
 
   The pool and connection module may support other options. All options
   are passed to `handle_prepare/3`.
@@ -509,6 +515,9 @@ defmodule DBConnection do
     * `:timeout` - The maximum time that the caller is allowed the
     to hold the connection's state (ignored when using a run/transaction
     connection, default: `15_000`)
+    * `:proxy_mod` - The `DBConnection.Proxy` module, if any, to proxy the
+    connection's state (ignored when using a run/transaction connection,
+    default: `nil`)
 
   The pool and connection module may support other options. All options
   are passed to `handle_execute/4`.
@@ -581,6 +590,9 @@ defmodule DBConnection do
     * `:timeout` - The maximum time that the caller is allowed the
     to hold the connection's state (ignored when using a run/transaction
     connection, default: `15_000`)
+    * `:proxy_mod` - The `DBConnection.Proxy` module, if any, to proxy the
+    connection's state (ignored when using a run/transaction connection,
+    default: `nil`)
 
   The pool and connection module may support other options. All options
   are passed to `handle_close/3`.
@@ -629,6 +641,9 @@ defmodule DBConnection do
     connection's state (boolean, default: `true`)
     * `:timeout` - The maximum time that the caller is allowed the
     to hold the connection's state (default: `15_000`)
+    * `:proxy_mod` - The `DBConnection.Proxy` module, if any, to proxy the
+    connection's state (ignored when using a run/transaction connection,
+    default: `nil`)
 
   The pool may support other options.
 
@@ -679,6 +694,9 @@ defmodule DBConnection do
     connection's state (boolean, default: `true`)
     * `:timeout` - The maximum time that the caller is allowed the
     to hold the connection's state (default: `15_000`)
+    * `:proxy_mod` - The `DBConnection.Proxy` module, if any, to proxy the
+    connection's state (ignored when using a run/transaction connection,
+    default: `nil`)
 
   The pool and connection module may support other options. All options
   are passed to `handle_begin/2`, `handle_commit/2` and
@@ -762,8 +780,8 @@ defmodule DBConnection do
     else
       {:ok, conn_state, proxy_state} ->
         {conn, conn_state, proxy_state}
-      {:error, err, conn_state, proxy_state} ->
-        checkin(conn, conn_state, proxy_state, opts)
+      {:error, err, conn_state} ->
+        checkin(conn, conn_state, opts)
         raise err
      {:disconnect, err, conn_state} ->
         delete_disconnect(conn, conn_state, err, opts)
