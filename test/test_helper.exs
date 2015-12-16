@@ -145,12 +145,10 @@ defimpl DBConnection.Query, for: TestQuery do
     encode = Keyword.get(opts, :encode, &(&1))
     encode.(params)
   end
-end
 
-defimpl DBConnection.Result, for: TestResult do
-  def decode(query, opts) do
+  def decode(_, result, opts) do
     decode = Keyword.get(opts, :decode, &(&1))
-    decode.(query)
+    decode.(result)
   end
 end
 

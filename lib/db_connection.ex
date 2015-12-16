@@ -30,11 +30,9 @@ defmodule DBConnection do
   (configurable) exponential random backoff to reconnect. All state is
   lost when a connection disconnects but the process is reused.
 
-  The `DBConnection.Query` and `DBConnection.Result` protocols provide
-  utility functions so that queries can be prepared or encoded and
-  results decoding without blocking the connection or pool. Unless set
-  to `:manual` these protocols will be called automatically at the
-  appropriate moment.
+  The `DBConnection.Query` protocol provide utility functions so that
+  queries can be prepared or encoded and results decoding without
+  blocking the connection or pool.
 
   By default the `DBConnection` provides a single connection. However
   the `:pool_mod` option can be set to use a pool of connections. If a
@@ -421,7 +419,7 @@ defmodule DBConnection do
     query = DBConnection.Query.parse(query, opts)
     case run_query(conn, query, params, opts) do
       {:ok, result} ->
-        {:ok, DBConnection.Result.decode(result, opts)}
+        {:ok, DBConnection.Query.decode(query, result, opts)}
       other ->
         other
     end
@@ -535,7 +533,7 @@ defmodule DBConnection do
     query = DBConnection.Query.parse(query, opts)
     case run_prepare_execute(conn, query, params, opts) do
       {:ok, query, result} ->
-        {:ok, query, DBConnection.Result.decode(result, opts)}
+        {:ok, query, DBConnection.Query.decode(query, result, opts)}
       other ->
         other
     end
@@ -1025,7 +1023,7 @@ defmodule DBConnection do
     params = DBConnection.Query.encode(query, params, opts)
     case run_execute(conn, callback, query, params, opts)  do
       {:ok, result} ->
-       {:ok, DBConnection.Result.decode(result, opts)}
+       {:ok, DBConnection.Query.decode(query, result, opts)}
       other ->
         other
     end

@@ -29,7 +29,7 @@ defprotocol DBConnection.Query do
   def describe(query, opts)
 
   @doc """
-  Encodes a query.
+  Encode parameters using a query.
 
   This function is called to encode a query before it is executed using a
   connection callback module.
@@ -38,10 +38,22 @@ defprotocol DBConnection.Query do
   """
   @spec encode(any, any, Keyword.t) :: any
   def encode(query, params, opts)
+
+  @doc """
+  Decode a result using aquery.
+
+  This function is called to decode a result after it is returned by a
+  connection callback module.
+
+  See `DBConnection.execute/3`.
+  """
+  @spec decode(any, any, Keyword.t) :: any
+  def decode(query, result, opts)
 end
 
 defimpl DBConnection.Query, for: Any do
   def parse(query, _), do: query
   def describe(query, _), do: query
   def encode(_, params, _), do: params
+  def decode(_, result, _), do: result
 end
