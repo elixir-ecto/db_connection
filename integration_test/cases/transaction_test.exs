@@ -104,7 +104,7 @@ defmodule TransactionTest do
         assert %DBConnection{} = conn2
         assert conn == conn2
         :result
-      end) == {:ok, :result}
+      end) == :result
       :result
     end) == {:ok, :result}
 

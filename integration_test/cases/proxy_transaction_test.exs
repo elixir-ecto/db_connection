@@ -129,7 +129,7 @@ defmodule ProxyTransactionTest do
         assert %DBConnection{} = conn2
         assert conn == conn2
         :result
-      end) == {:ok, :result}
+      end) == :result
       :result
     end, [proxy_mod: Proxy]) == {:ok, :result}
 

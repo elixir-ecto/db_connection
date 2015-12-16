@@ -420,9 +420,9 @@ defmodule DBConnection do
   def query(conn, query, params, opts \\ []) do
     query = DBConnection.Query.parse(query, opts)
     case run_query(conn, query, params, opts) do
-      {:ok, {:ok, result}} ->
+      {:ok, result} ->
         {:ok, DBConnection.Result.decode(result, opts)}
-      {:ok, other} ->
+      other ->
         other
     end
   end
@@ -534,9 +534,9 @@ defmodule DBConnection do
   def prepare_execute(conn, query, params, opts \\ []) do
     query = DBConnection.Query.parse(query, opts)
     case run_prepare_execute(conn, query, params, opts) do
-      {:ok, {:ok, query, result}} ->
+      {:ok, query, result} ->
         {:ok, query, DBConnection.Result.decode(result, opts)}
-      {:ok, other} ->
+      other ->
         other
     end
   end
@@ -712,11 +712,10 @@ defmodule DBConnection do
         res
       end)
   """
-  @spec run(conn, (t -> result), opts :: Keyword.t) ::
-    {:ok, result} when result: var
+  @spec run(conn, (t -> result), opts :: Keyword.t) :: result when result: var
   def run(%DBConnection{} = conn, fun, _) do
     _ = fetch_info(conn)
-    {:ok, fun.(conn)}
+    fun.(conn)
   end
   def run(pool, fun, opts) do
     case checkout(pool, opts) do
@@ -782,8 +781,7 @@ defmodule DBConnection do
     end
   end
   def transaction(pool, fun, opts) do
-    {:ok, result} = run(pool, &transaction(&1, fun, opts), opts)
-    result
+     run(pool, &transaction(&1, fun, opts), opts)
   end
 
   @doc """
@@ -978,8 +976,7 @@ defmodule DBConnection do
     end
   end
   defp handle(pool, fun, args, opts, return) do
-    {:ok, result} = run(pool, &handle(&1, fun, args, opts, return), opts)
-    result
+    run(pool, &handle(&1, fun, args, opts, return), opts)
   end
 
   defp run_query(conn, query, params, opts) do
@@ -988,8 +985,8 @@ defmodule DBConnection do
         {:ok, query} ->
           fun = :handle_execute_close
           describe_execute(conn2, fun, query, params, opts, :result)
-        {:error, _} = error ->
-          error
+        other ->
+          other
       end
     end, opts)
   end
@@ -1027,9 +1024,9 @@ defmodule DBConnection do
   defp execute(conn, callback, query, params, opts) do
     params = DBConnection.Query.encode(query, params, opts)
     case run_execute(conn, callback, query, params, opts)  do
-      {:ok, {:ok, result}} ->
+      {:ok, result} ->
        {:ok, DBConnection.Result.decode(result, opts)}
-      {:ok, other} ->
+      other ->
         other
     end
   end
@@ -1085,7 +1082,7 @@ defmodule DBConnection do
 
   defp run_begin(conn, fun, opts) do
     try do
-      {:ok, fun.(conn)}
+      fun.(conn)
     after
       run_end(conn, opts)
     end

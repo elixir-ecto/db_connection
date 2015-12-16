@@ -26,7 +26,7 @@ defmodule ClientTest do
     end)
 
     assert_receive :reconnected
-    assert P.run(pool, fn(_) -> :result end) == {:ok, :result}
+    assert P.run(pool, fn(_) -> :result end) == :result
 
     assert [
       {:connect, _},
@@ -52,7 +52,7 @@ defmodule ClientTest do
     end)
 
     assert_receive :reconnected
-    assert P.run(pool, fn(_) -> :result end) == {:ok, :result}
+    assert P.run(pool, fn(_) -> :result end) == :result
     assert_receive {:DOWN, ^ref, _, _, _}
 
     assert [
@@ -77,7 +77,7 @@ defmodule ClientTest do
     runner = spawn_link(fn() ->
       assert_receive {:pool, pool}
       assert_receive :reconnected
-      assert P.run(pool, fn(_) -> :result end) == {:ok, :result}
+      assert P.run(pool, fn(_) -> :result end) == :result
     end)
 
     opts = [agent: agent, parent: self(), runner: runner]
@@ -89,7 +89,7 @@ defmodule ClientTest do
         :timer.sleep(50)
         assert {:error, %RuntimeError{}} = P.execute(conn, %Q{}, [:param])
         :result
-    end, [timeout: 0])  == {:ok, :result}
+    end, [timeout: 0])  == :result
 
     assert P.execute(pool, %Q{}, [:param]) == {:ok, %R{}}
 
@@ -119,7 +119,7 @@ defmodule ClientTest do
     runner = spawn_link(fn() ->
       assert_receive {:pool, pool}
       assert_receive :reconnected
-      assert P.run(pool, fn(_) -> :result end) == {:ok, :result}
+      assert P.run(pool, fn(_) -> :result end) == :result
     end)
 
     opts = [agent: agent, parent: self(), runner: runner]

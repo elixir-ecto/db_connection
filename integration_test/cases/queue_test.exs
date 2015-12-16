@@ -31,7 +31,7 @@ defmodule QueueTest do
 
     run = fn() -> P.run(pool, fn(_) -> :timer.sleep(20) end) end
     for task <- Enum.map(1..10, fn(_) -> Task.async(run) end) do
-      assert {:ok, :ok} = Task.await(task)
+      assert :ok = Task.await(task)
     end
   end
 
@@ -69,7 +69,7 @@ defmodule QueueTest do
     end
 
     send(runner, {:done, self()})
-    assert P.run(pool, fn(_) -> :result end) == {:ok, :result}
+    assert P.run(pool, fn(_) -> :result end) == :result
   end
 
   test "queue many async exits" do
@@ -101,6 +101,6 @@ defmodule QueueTest do
     end
 
     send(runner, {:done, self()})
-    assert P.run(pool, fn(_) -> :result end) == {:ok, :result}
+    assert P.run(pool, fn(_) -> :result end) == :result
   end
 end

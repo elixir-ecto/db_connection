@@ -19,9 +19,9 @@ defmodule ProxyTest do
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
 
-    assert P.run(pool, fn(_) -> :hi end, [proxy_mod: Proxy]) == {:ok, :hi}
+    assert P.run(pool, fn(_) -> :hi end, [proxy_mod: Proxy]) == :hi
     assert P.run(pool, fn(_) -> :hi end,
-      [proxy_mod: Proxy, key: :value]) == {:ok, :hi}
+      [proxy_mod: Proxy, key: :value]) == :hi
 
     assert [
       connect: [_],
@@ -47,7 +47,7 @@ defmodule ProxyTest do
     assert_raise RuntimeError, "oops",
       fn() -> P.run(pool, fn(_) -> flunk("ran") end, [proxy_mod: Proxy]) end
 
-    assert P.run(pool, fn(_) -> :hi end, [proxy_mod: Proxy]) == {:ok, :hi}
+    assert P.run(pool, fn(_) -> :hi end, [proxy_mod: Proxy]) == :hi
 
     assert [
       connect: [_],
@@ -159,7 +159,7 @@ defmodule ProxyTest do
     assert_raise RuntimeError, "oops",
       fn() -> P.run(pool, fn(_) -> :ok end, [proxy_mod: Proxy]) end
 
-    assert P.run(pool, fn(_) -> :hi end, [proxy_mod: Proxy]) == {:ok, :hi}
+    assert P.run(pool, fn(_) -> :hi end, [proxy_mod: Proxy]) == :hi
 
     assert [
       connect: [_],
