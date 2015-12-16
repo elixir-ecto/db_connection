@@ -34,6 +34,16 @@ defmodule TestConnection do
         DBConnection.prepare!(pool, query, opts2 ++ unquote(opts))
       end
 
+      def prepare_execute(pool, query, params, opts2 \\ []) do
+        DBConnection.prepare_execute(pool, query, params,
+          opts2 ++ unquote(opts))
+      end
+
+      def prepare_execute!(pool, query, params, opts2 \\ []) do
+        DBConnection.prepare_execute!(pool, query, params,
+          opts2 ++ unquote(opts))
+      end
+
       def execute(pool, query, params, opts2 \\ []) do
         DBConnection.execute(pool, query, params, opts2 ++ unquote(opts))
       end
