@@ -36,7 +36,7 @@ defprotocol DBConnection.Query do
 
   See `DBConnection.execute/3`.
   """
-  @spec encode(any, [any], Keyword.t) :: any
+  @spec encode(any, any, Keyword.t) :: any
   def encode(query, params, opts)
 end
 

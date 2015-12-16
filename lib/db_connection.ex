@@ -54,7 +54,7 @@ defmodule DBConnection do
                          proxy_mod: module | nil}
   @type conn :: GenSever.server | t
   @type query :: any
-  @type params :: [any]
+  @type params :: any
   @type result :: any
 
   @doc """
