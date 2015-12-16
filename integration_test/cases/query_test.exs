@@ -41,12 +41,12 @@ defmodule QueryTest do
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
 
-    opts2 = [parse: fn(%Q{}) -> :parsed end]
+    opts2 = [parse: fn(%Q{}) -> %Q{state: :parsed} end]
     assert P.query(pool, %Q{}, [:param], opts2) == {:ok, %R{}}
 
     assert [
       connect: [_],
-      handle_prepare: [:parsed, _, :state],
+      handle_prepare: [%Q{state: :parsed}, _, :state],
       handle_execute_close: [%Q{}, [:param], _, :new_state]] = A.record(agent)
   end
 
@@ -61,13 +61,14 @@ defmodule QueryTest do
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
 
-    opts2 = [describe: fn(%Q{}) -> :described end]
+    opts2 = [describe: fn(%Q{}) -> %Q{state: :described} end]
     assert P.query(pool, %Q{}, [:param], opts2) == {:ok, %R{}}
 
     assert [
       connect: [_],
       handle_prepare: [%Q{}, _, :state],
-      handle_execute_close: [:described, [:param], _, :new_state]] = A.record(agent)
+      handle_execute_close: [%Q{state: :described},
+        [:param], _, :new_state]] = A.record(agent)
   end
 
   test "query encodes parameters" do

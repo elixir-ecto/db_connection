@@ -8,15 +8,15 @@ defmodule PrepareTest do
   test "prepare returns query" do
     stack = [
       {:ok, :state},
-      {:ok, :prepared, :new_state},
-      {:ok, :prepared, :new_state}
+      {:ok, %Q{state: :prepared}, :new_state},
+      {:ok, %Q{state: :prepared}, :new_state}
       ]
     {:ok, agent} = A.start_link(stack)
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
-    assert P.prepare(pool, %Q{}) == {:ok, :prepared}
-    assert P.prepare(pool, %Q{}, [key: :value]) == {:ok, :prepared}
+    assert P.prepare(pool, %Q{}) == {:ok, %Q{state: :prepared}}
+    assert P.prepare(pool, %Q{}, [key: :value]) == {:ok, %Q{state: :prepared}}
 
     assert [
       connect: [_],
@@ -28,19 +28,19 @@ defmodule PrepareTest do
   test "prepare parses query" do
     stack = [
       {:ok, :state},
-      {:ok, :prepared, :new_state}
+      {:ok, %Q{state: :prepared}, :new_state}
       ]
     {:ok, agent} = A.start_link(stack)
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
 
-    opts2 = [parse: fn(%Q{}) -> :parsed end]
-    assert P.prepare(pool, %Q{}, opts2) == {:ok, :prepared}
+    opts2 = [parse: fn(%Q{}) -> %Q{state: :parsed} end]
+    assert P.prepare(pool, %Q{}, opts2) == {:ok, %Q{state: :prepared}}
 
     assert [
       connect: [_],
-      handle_prepare: [:parsed, _, :state]] = A.record(agent)
+      handle_prepare: [%Q{state: :parsed}, _, :state]] = A.record(agent)
   end
 
   test "prepare describes query" do
@@ -53,8 +53,8 @@ defmodule PrepareTest do
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
 
-    opts2 = [describe: fn(%Q{}) -> :described end]
-    assert P.prepare(pool, %Q{}, opts2) == {:ok, :described}
+    opts2 = [describe: fn(%Q{}) -> %Q{state: :described} end]
+    assert P.prepare(pool, %Q{}, opts2) == {:ok, %Q{state: :described}}
 
     assert [
       connect: [_],

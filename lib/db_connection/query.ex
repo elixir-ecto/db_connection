@@ -4,8 +4,6 @@ defprotocol DBConnection.Query do
   encoding queries.
   """
 
-  @fallback_to_any true
-
   @doc """
   Parse a query.
 
@@ -49,11 +47,4 @@ defprotocol DBConnection.Query do
   """
   @spec decode(any, any, Keyword.t) :: any
   def decode(query, result, opts)
-end
-
-defimpl DBConnection.Query, for: Any do
-  def parse(query, _), do: query
-  def describe(query, _), do: query
-  def encode(_, params, _), do: params
-  def decode(_, result, _), do: result
 end

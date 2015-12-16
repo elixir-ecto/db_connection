@@ -2,6 +2,11 @@ defmodule DBAgent do
 
   use DBConnection
 
+
+  defmodule Query do
+    defstruct [:query]
+  end
+
   @spec start_link((() -> state :: any), Keyword.t) :: GenServer.on_start
   def start_link(fun, opts \\ []) when is_function(fun, 0) do
     opts = [init: fun, pool_mod: DBConnection.Connection, sync_connect: true,
@@ -11,20 +16,23 @@ defmodule DBAgent do
 
   @spec get(DBConnection.conn, ((state :: any) -> value), timeout) ::
     value when value: var
-  def get(conn, fun, timeout \\ 5_000) when is_function(fun, 1) do
-    DBConnection.query!(conn, :get, [fun], [queue_timeout: timeout])
+  def get(conn, fun, timeout \\ 5_000) do
+    DBConnection.query!(conn, %Query{query: :get}, fun,
+      [queue_timeout: timeout])
   end
 
   @spec update(DBConnection.conn, ((state :: any) -> new_state :: any), timeout) ::
     :ok
-  def update(conn, fun, timeout \\ 5_000) when is_function(fun, 1) do
-    DBConnection.query!(conn, :update, [fun], [queue_timeout: timeout])
+  def update(conn, fun, timeout \\ 5_000) do
+    DBConnection.query!(conn, %Query{query: :update}, fun,
+      [queue_timeout: timeout])
   end
 
   @spec get(DBConnection.conn, ((state :: any) -> {value, new_state :: any}), timeout) ::
     value when value: var
-  def get_and_update(conn, fun, timeout \\ 5_000) when is_function(fun, 2) do
-    DBConnection.query!(conn, :get_and_update, [fun], [queue_timeout: timeout])
+  def get_and_update(conn, fun, timeout \\ 5_000) do
+    DBConnection.query!(conn, %Query{query: :get_and_update}, fun,
+      [queue_timeout: timeout])
   end
 
   @spec transaction(DBConnection.conn, ((DBConnection.t) -> res),  timeout) ::
@@ -47,13 +55,14 @@ defmodule DBAgent do
 
   def checkin(s), do: {:ok, s}
 
-  def handle_execute(:get, [fun], _, %{state: state} = s) do
+  def handle_execute(%Query{query: :get}, fun, _, %{state: state} = s) do
     {:ok, fun.(state), s}
   end
-  def handle_execute(:update, [fun], _, %{state: state} = s) do
+  def handle_execute(%Query{query: :update}, fun, _, %{state: state} = s) do
     {:ok, :ok, %{s | state: fun.(state)}}
   end
-  def handle_execute(:get_and_update, [fun], _, %{state: state} = s) do
+  def handle_execute(%Query{query: :get_nad_update}, fun, _, s) do
+    %{state: state} = s
     {res, state} = fun.(state)
     {:ok, res, %{s | state: state}}
   end
@@ -69,4 +78,23 @@ defmodule DBAgent do
   def handle_rollback(_, %{status: :transaction, rollback: state} = s) do
     {:ok, %{s | state: state, status: :idle, rollback: nil}}
   end
+end
+
+defimpl DBConnection.Query, for: DBAgent.Query do
+
+  alias DBAgent.Query
+
+  def parse(%Query{query: tag} = query, _)
+  when tag in [:get, :update, :get_and_update] do
+    query
+  end
+
+  def describe(query, _), do: query
+
+  def encode(_, fun, _) when is_function(fun, 1), do: fun
+  def encode(_, other, _) do
+    raise ArgumentError, "#{inspect other} is not 1-arity fun"
+  end
+
+  def decode(_, result, _), do: result
 end

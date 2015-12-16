@@ -9,31 +9,33 @@ defmodule PrepareExecuteTest do
   test "prepare_execute returns query and result" do
     stack = [
       {:ok, :state},
-      {:ok, :prepared, :new_state},
+      {:ok, %Q{state: :prepared}, :new_state},
       {:ok, %R{}, :newer_state},
-      {:ok, :prepared, :newest_state},
+      {:ok, %Q{state: :prepared}, :newest_state},
       {:ok, %R{}, :state2}
       ]
     {:ok, agent} = A.start_link(stack)
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
-    assert P.prepare_execute(pool, %Q{}, [:param]) == {:ok, :prepared, %R{}}
+    assert P.prepare_execute(pool, %Q{}, [:param]) ==
+      {:ok, %Q{state: :prepared}, %R{}}
     assert P.prepare_execute(pool, %Q{}, [:param],
-      [key: :value]) == {:ok, :prepared, %R{}}
+      [key: :value]) == {:ok, %Q{state: :prepared}, %R{}}
 
     assert [
       connect: [_],
       handle_prepare: [%Q{}, _, :state],
-      handle_execute: [:prepared, [:param], _, :new_state],
+      handle_execute: [%Q{state: :prepared}, [:param], _, :new_state],
       handle_prepare: [%Q{}, [{:key, :value} | _], :newer_state],
-      handle_execute: [:prepared, [:param], _, :newest_state]] = A.record(agent)
+      handle_execute: [%Q{state: :prepared},
+        [:param], _, :newest_state]] = A.record(agent)
   end
 
   test "prepare_execute parses query" do
     stack = [
       {:ok, :state},
-      {:ok, :prepared, :new_state},
+      {:ok, %Q{state: :prepared}, :new_state},
       {:ok, %R{}, :newer_stater}
       ]
     {:ok, agent} = A.start_link(stack)
@@ -41,14 +43,15 @@ defmodule PrepareExecuteTest do
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
 
-    opts2 = [parse: fn(%Q{}) -> :parsed end]
+    opts2 = [parse: fn(%Q{}) -> %Q{state: :parsed} end]
     assert P.prepare_execute(pool, %Q{}, [:param],
-      opts2) == {:ok, :prepared, %R{}}
+      opts2) == {:ok, %Q{state: :prepared}, %R{}}
 
     assert [
       connect: [_],
-      handle_prepare: [:parsed, _, :state],
-      handle_execute: [:prepared, [:param], _, :new_state]] = A.record(agent)
+      handle_prepare: [%Q{state: :parsed}, _, :state],
+      handle_execute: [%Q{state: :prepared},
+        [:param], _, :new_state]] = A.record(agent)
   end
 
   test "prepare_execute describes query" do
@@ -62,14 +65,15 @@ defmodule PrepareExecuteTest do
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
 
-    opts2 = [describe: fn(%Q{}) -> :described end]
+    opts2 = [describe: fn(%Q{}) -> %Q{state: :described} end]
     assert P.prepare_execute(pool, %Q{}, [:param],
-      opts2) == {:ok, :described, %R{}}
+      opts2) == {:ok, %Q{state: :described}, %R{}}
 
     assert [
       connect: [_],
       handle_prepare: [%Q{}, _, :state],
-      handle_execute: [:described, [:param], _, :new_state]] = A.record(agent)
+      handle_execute: [%Q{state: :described},
+        [:param], _, :new_state]] = A.record(agent)
   end
 
   test "prepare_execute encodes params and decodes result" do

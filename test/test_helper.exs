@@ -123,7 +123,7 @@ end
 
 
 defmodule TestQuery do
-  defstruct []
+  defstruct [:state]
 end
 
 defmodule TestResult do

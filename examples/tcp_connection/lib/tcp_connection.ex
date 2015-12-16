@@ -2,6 +2,10 @@ defmodule TCPConnection do
 
   use DBConnection
 
+  defmodule Query do
+    defstruct [:query]
+  end
+
   defmodule Error do
     defexception [:function, :reason, :message]
 
@@ -21,14 +25,14 @@ defmodule TCPConnection do
   end
 
   def send(conn, data) do
-    case DBConnection.query(conn, :send, [data]) do
+    case DBConnection.query(conn, %Query{query: :send}, data) do
       {:ok, :ok}        -> :ok
       {:error, _} = err -> err
     end
   end
 
   def recv(conn, bytes, timeout \\ 3000) do
-    DBConnection.query(conn, :recv, [bytes, timeout])
+    DBConnection.query(conn, %Query{query: :recv}, [bytes, timeout])
   end
 
   def run(conn, fun, opts \\ []) when is_function(fun, 1) do
@@ -80,7 +84,7 @@ defmodule TCPConnection do
     end
   end
 
-  def handle_execute(:send, [data], _, {sock, _} = state) do
+  def handle_execute(%Query{query: :send}, data, _, {sock, _} = state) do
     case :gen_tcp.send(sock, data) do
       :ok ->
         # A result is always required for handle_query/3
@@ -90,7 +94,7 @@ defmodule TCPConnection do
     end
   end
 
-  def handle_execute(:recv, [bytes, timeout], _, {sock, <<>>} = state) do
+  def handle_execute(%Query{query: :recv}, [bytes, timeout], _, {sock, <<>>} = state) do
     # The simplest case when there is no buffer. This callback is called
     # in the process that called DBConnection.query/3 or query!/3 so has
     # to block until there is a result or error. `active: :once` can't
@@ -107,7 +111,7 @@ defmodule TCPConnection do
         {:disconnect, TCPConnection.Error.exception({:recv, reason}), state}
     end
   end
-  def handle_execute(:recv, [bytes, _], _, {sock, buffer})
+  def handle_execute(%Query{query: :recv}, [bytes, _], _, {sock, buffer})
   when byte_size(buffer) >= bytes do
     # If the state contains a buffer of data the client calls will need
     # to use the buffer before receiving more data.
@@ -119,7 +123,7 @@ defmodule TCPConnection do
         {:ok, data, {sock, buffer}}
     end
   end
-  def handle_execute(:recv, [bytes, timeout], _, {sock, buffer} = state) do
+  def handle_execute(%Query{query: :recv}, [bytes, timeout], _, {sock, buffer} = state) do
     # The buffer may not have enough data, so a combination might be
     # required.
     bytes = bytes - byte_size(buffer)
@@ -176,4 +180,18 @@ defmodule TCPConnection do
         {:ok, state}
     end
   end
+end
+
+defimpl DBConnection.Query, for: TCPConnection.Query do
+
+  alias TCPConnection.Query
+
+  def parse(%Query{query: tag} = query, _) when tag in [:send, :recv], do: query
+
+  def describe(query, _), do: query
+
+  def encode(%Query{query: :send}, data, _) when is_binary(data), do: data
+  def encode(%Query{query: :recv}, [_bytes, _timeout] = args, _), do: args
+
+  def decode(_, result, _), do: result
 end
