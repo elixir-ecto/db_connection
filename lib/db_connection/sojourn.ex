@@ -9,6 +9,10 @@ defmodule DBConnection.Sojourn do
     default: `DBConnection.Sojourn.Timeout`)
     * `:broker_start_opts` - Start options for the broker (see
     `:sbroker`, default: `[]`)
+    * `:max_restarts` - the maximum amount of connection restarts allowed in a
+    time frame (default `3`)
+    * `:max_seconds` - the time frame in which `:max_restarts` applies (default
+    `5`)
 
   All options are passed as the argument to the sbroker callback module.
   """
@@ -73,7 +77,9 @@ defmodule DBConnection.Sojourn do
 
   defp conn_sup(mod, opts) do
     conn = DBConnection.Connection.child_spec(mod, opts, :sojourn, [])
-    supervisor(Supervisor, [[conn], [strategy: :simple_one_for_one]])
+    sup_opts = Keyword.take(opts, [:max_restarts, :max_seconds])
+    sup_opts = [strategy: :simple_one_for_one] ++ sup_opts
+    supervisor(Supervisor, [[conn], sup_opts])
   end
 
   defp starter(opts) do
