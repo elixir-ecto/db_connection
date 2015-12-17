@@ -8,7 +8,10 @@ defmodule ProxyTest do
 
   test "proxy checks out and checks in" do
     stack = [
-      {:ok, :state},
+      fn(opts) ->
+        send(opts[:parent], :connected)
+        {:ok, :state}
+      end,
       {:ok, :proxy},
       {:ok, :new_state, :new_proxy},
       {:ok, :newer_state},
@@ -20,6 +23,8 @@ defmodule ProxyTest do
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
+
+    assert_receive :connected
 
     assert P.run(pool, fn(_) -> :hi end, [proxy_mod: Proxy]) == :hi
     assert P.run(pool, fn(_) -> :hi end,
@@ -38,7 +43,10 @@ defmodule ProxyTest do
   test "proxy init error raises" do
     err = RuntimeError.exception("oops")
     stack = [
-      {:ok, :state},
+      fn(opts) ->
+        send(opts[:parent], :connected)
+        {:ok, :state}
+      end,
       {:error, err},
       {:ok, :proxy},
       {:ok, :new_state, :new_proxy},
@@ -48,6 +56,8 @@ defmodule ProxyTest do
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
+
+    assert_receive :connected
 
     assert_raise RuntimeError, "oops",
       fn() -> P.run(pool, fn(_) -> flunk("ran") end, [proxy_mod: Proxy]) end
@@ -65,7 +75,10 @@ defmodule ProxyTest do
   test "proxy checkout error raises" do
     err = RuntimeError.exception("oops")
     stack = [
-      {:ok, :state},
+      fn(opts) ->
+        send(opts[:parent], :connected)
+        {:ok, :state}
+      end,
       {:ok, :proxy},
       {:error, err, :new_state},
       {:ok, :proxy2},
@@ -76,6 +89,8 @@ defmodule ProxyTest do
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
+
+    assert_receive :connected
 
     assert_raise RuntimeError, "oops",
       fn() -> P.run(pool, fn(_) -> flunk("ran") end, [proxy_mod: Proxy]) end
@@ -94,7 +109,10 @@ defmodule ProxyTest do
   test "proxy checkout disconnect raises" do
     err = RuntimeError.exception("oops")
     stack = [
-      {:ok, :state},
+      fn(opts) ->
+        send(opts[:parent], :connected)
+        {:ok, :state}
+      end,
       {:ok, :proxy},
       {:disconnect, err, :new_state},
       :ok,
@@ -107,6 +125,8 @@ defmodule ProxyTest do
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
+
+    assert_receive :connected
 
     assert_raise RuntimeError, "oops",
       fn() -> P.run(pool, fn(_) -> flunk("ran") end, [proxy_mod: Proxy]) end
@@ -186,7 +206,10 @@ defmodule ProxyTest do
   test "proxy checkin error raises" do
     err = RuntimeError.exception("oops")
     stack = [
-      {:ok, :state},
+      fn(opts) ->
+        send(opts[:parent], :connected)
+        {:ok, :state}
+      end,
       {:ok, :proxy},
       {:ok, :new_state, :new_proxy},
       {:error, err, :newer_state},
@@ -198,6 +221,8 @@ defmodule ProxyTest do
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
+
+    assert_receive :connected
 
     assert_raise RuntimeError, "oops",
       fn() -> P.run(pool, fn(_) -> :ok end, [proxy_mod: Proxy]) end
@@ -217,7 +242,10 @@ defmodule ProxyTest do
   test "proxy checkin disconnect raises" do
     err = RuntimeError.exception("oops")
     stack = [
-      {:ok, :state},
+      fn(opts) ->
+        send(opts[:parent], :connected)
+        {:ok, :state}
+      end,
       {:ok, :proxy},
       {:ok, :new_state, :new_proxy},
       {:disconnect, err, :newer_state},
@@ -231,6 +259,10 @@ defmodule ProxyTest do
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
+
+    assert_receive :connected
+
+
 
     assert_raise RuntimeError, "oops",
       fn() -> P.run(pool, fn(_) -> :ok end, [proxy_mod: Proxy]) end

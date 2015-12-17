@@ -11,7 +11,10 @@ defmodule ProxyExecuteTest do
 
   test "proxy ignore does not proxy" do
     stack = [
-      {:ok, :state},
+      fn(opts) ->
+        send(opts[:parent], :connected)
+        {:ok, :state}
+      end,
       :ignore,
       {:ok, %R{}, :new_state}
     ]
@@ -19,6 +22,8 @@ defmodule ProxyExecuteTest do
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
+
+    assert_receive :connected
 
     assert P.execute(pool, %Q{}, [:param], [proxy_mod: Proxy]) == {:ok, %R{}}
 
@@ -30,7 +35,10 @@ defmodule ProxyExecuteTest do
 
   test "proxy execute returns result" do
     stack = [
-      {:ok, :state},
+      fn(opts) ->
+        send(opts[:parent], :connected)
+        {:ok, :state}
+      end,
       {:ok, :proxy},
       {:ok, :new_state, :new_proxy},
       {:ok, %R{}, :newer_state},
@@ -44,6 +52,9 @@ defmodule ProxyExecuteTest do
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
+
+    assert_receive :connected
+
     assert P.execute(pool, %Q{}, [:param], [proxy_mod: Proxy]) == {:ok, %R{}}
     assert P.execute(pool, %Q{}, [:param],
       [key: :value, proxy_mod: Proxy]) == {:ok, %R{}}
@@ -64,7 +75,10 @@ defmodule ProxyExecuteTest do
   test "proxy execute error returns error" do
     err = RuntimeError.exception("oops")
     stack = [
-      {:ok, :state},
+      fn(opts) ->
+        send(opts[:parent], :connected)
+        {:ok, :state}
+      end,
       {:ok, :proxy},
       {:ok, :new_state, :new_proxy},
       {:error, err, :newer_state},
@@ -74,6 +88,9 @@ defmodule ProxyExecuteTest do
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
+
+    assert_receive :connected
+
     assert P.execute(pool, %Q{}, [:param], [proxy_mod: Proxy]) == {:error, err}
 
     assert [
@@ -87,7 +104,10 @@ defmodule ProxyExecuteTest do
   test "proxy execute! error raises error" do
     err = RuntimeError.exception("oops")
     stack = [
-      {:ok, :state},
+      fn(opts) ->
+        send(opts[:parent], :connected)
+        {:ok, :state}
+      end,
       {:ok, :proxy},
       {:ok, :new_state, :new_proxy},
       {:error, err, :newer_state},
@@ -97,6 +117,9 @@ defmodule ProxyExecuteTest do
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
+ 
+    assert_receive :connected
+
     assert_raise RuntimeError, "oops",
       fn() -> P.execute!(pool, %Q{}, [:param], [proxy_mod: Proxy]) end
 
@@ -111,7 +134,10 @@ defmodule ProxyExecuteTest do
   test "proxy execute disconnect returns error" do
     err = RuntimeError.exception("oops")
     stack = [
-      {:ok, :state},
+      fn(opts) ->
+        send(opts[:parent], :connected)
+        {:ok, :state}
+      end,
       {:ok, :proxy},
       {:ok, :new_state, :new_proxy},
       {:disconnect, err, :newer_state},
@@ -125,6 +151,9 @@ defmodule ProxyExecuteTest do
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
+  
+    assert_receive :connected
+ 
     assert P.execute(pool, %Q{}, [:param], [proxy_mod: Proxy]) == {:error, err}
 
     assert_receive :reconnected
@@ -206,7 +235,10 @@ defmodule ProxyExecuteTest do
 
  test "proxy execute prepares query and then re-executes" do
    stack = [
-      {:ok, :state},
+      fn(opts) ->
+        send(opts[:parent], :connected)
+        {:ok, :state}
+      end,
       {:ok, :proxy},
       {:ok, :new_state, :new_proxy},
       {:prepare, :newer_state},
@@ -218,6 +250,9 @@ defmodule ProxyExecuteTest do
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
+  
+    assert_receive :connected
+
     assert P.execute(pool, %Q{}, [:param], [proxy_mod: Proxy]) == {:ok, %R{}}
 
     assert [
@@ -233,7 +268,10 @@ defmodule ProxyExecuteTest do
  test "proxy execute errors when preparing query" do
    err = RuntimeError.exception("oops")
    stack = [
-      {:ok, :state},
+      fn(opts) ->
+        send(opts[:parent], :connected)
+        {:ok, :state}
+      end,
       {:ok, :proxy},
       {:ok, :new_state, :new_proxy},
       {:prepare, :newer_state},
@@ -244,6 +282,9 @@ defmodule ProxyExecuteTest do
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
+ 
+    assert_receive :connected
+ 
     assert P.execute(pool, %Q{}, [:param], [proxy_mod: Proxy]) == {:error, err}
 
     assert [
@@ -257,7 +298,10 @@ defmodule ProxyExecuteTest do
 
  test "proxy execute asks to prepare on retry raises" do
    stack = [
-      {:ok, :state},
+      fn(opts) ->
+        send(opts[:parent], :connected)
+        {:ok, :state}
+      end,
       {:ok, :proxy},
       {:ok, :new_state, :new_proxy},
       {:prepare, :newer_state},
@@ -269,6 +313,9 @@ defmodule ProxyExecuteTest do
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
+ 
+    assert_receive :connected
+     
     assert_raise DBConnection.Error, "connection did not prepare query",
       fn() -> P.execute(pool, %Q{}, [:param], [proxy_mod: Proxy]) end
 

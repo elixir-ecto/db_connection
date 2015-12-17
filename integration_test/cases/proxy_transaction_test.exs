@@ -8,7 +8,10 @@ defmodule ProxyTransactionTest do
 
   test "proxy transaction returns result" do
     stack = [
-      {:ok, :state},
+      fn(opts) ->
+        send(opts[:parent], :connected)
+        {:ok, :state}
+      end,
       {:ok, :proxy},
       {:ok, :new_state, :new_proxy},
       {:ok, :newer_state},
@@ -24,6 +27,8 @@ defmodule ProxyTransactionTest do
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
+
+    assert_receive :connected
 
     assert P.transaction(pool, fn(conn) ->
       assert %DBConnection{} = conn
@@ -51,7 +56,10 @@ defmodule ProxyTransactionTest do
 
   test "proxy transaction rollback returns error" do
     stack = [
-      {:ok, :state},
+      fn(opts) ->
+        send(opts[:parent], :connected)
+        {:ok, :state}
+      end,
       {:ok, :proxy},
       {:ok, :new_state, :new_proxy},
       {:ok, :newer_state},
@@ -67,6 +75,8 @@ defmodule ProxyTransactionTest do
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
+
+    assert_receive :connected
 
     assert P.transaction(pool, fn(conn) ->
       P.rollback(conn, :oops)
@@ -91,7 +101,10 @@ defmodule ProxyTransactionTest do
 
   test "proxy transaction and transaction returns result" do
     stack = [
-      {:ok, :state},
+      fn(opts) ->
+        send(opts[:parent], :connected)
+        {:ok, :state}
+      end,
       {:ok, :proxy},
       {:ok, :new_state, :new_proxy},
       {:ok, :newer_state},
@@ -102,6 +115,8 @@ defmodule ProxyTransactionTest do
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
+
+    assert_receive :connected
 
     assert P.transaction(pool, fn(conn) ->
       assert P.transaction(conn, fn(conn2) ->
@@ -123,7 +138,10 @@ defmodule ProxyTransactionTest do
 
   test "proxy transaction and run returns result" do
     stack = [
-      {:ok, :state},
+      fn(opts) ->
+        send(opts[:parent], :connected)
+        {:ok, :state}
+      end,
       {:ok, :proxy},
       {:ok, :new_state, :new_proxy},
       {:ok, :newer_state},
@@ -134,6 +152,8 @@ defmodule ProxyTransactionTest do
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
+
+    assert_receive :connected
 
     assert P.transaction(pool, fn(conn) ->
       assert P.run(conn, fn(conn2) ->
@@ -156,7 +176,10 @@ defmodule ProxyTransactionTest do
   test "proxy transaction begin error raises error" do
     err = RuntimeError.exception("oops")
     stack = [
-      {:ok, :state},
+      fn(opts) ->
+        send(opts[:parent], :connected)
+        {:ok, :state}
+      end,
       {:ok, :proxy},
       {:ok, :new_state, :new_proxy},
       {:error, err, :newer_state},
@@ -171,6 +194,8 @@ defmodule ProxyTransactionTest do
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
+
+    assert_receive :connected
 
     assert_raise RuntimeError, "oops",
       fn() ->
@@ -197,7 +222,10 @@ defmodule ProxyTransactionTest do
   test "proxy transaction begin disconnect raises error" do
     err = RuntimeError.exception("oops")
     stack = [
-      {:ok, :state},
+      fn(opts) ->
+        send(opts[:parent], :connected)
+        {:ok, :state}
+      end,
       {:ok, :proxy},
       {:ok, :new_state, :new_proxy},
       {:disconnect, err, :newer_state},
@@ -211,6 +239,8 @@ defmodule ProxyTransactionTest do
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
+
+    assert_receive :connected
 
     assert_raise RuntimeError, "oops",
       fn() ->
@@ -304,7 +334,10 @@ defmodule ProxyTransactionTest do
   test "proxy transaction commit error raises error" do
     err = RuntimeError.exception("oops")
     stack = [
-      {:ok, :state},
+      fn(opts) ->
+        send(opts[:parent], :connected)
+        {:ok, :state}
+      end,
       {:ok, :proxy},
       {:ok, :new_state, :new_proxy},
       {:ok, :newer_state},
@@ -320,6 +353,8 @@ defmodule ProxyTransactionTest do
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
+
+    assert_receive :connected
 
     assert_raise RuntimeError, "oops",
       fn() -> P.transaction(pool, fn(_) -> :ok end, [proxy_mod: Proxy]) end
@@ -344,7 +379,10 @@ defmodule ProxyTransactionTest do
   test "proxy transaction commit disconnect raises error" do
     err = RuntimeError.exception("oops")
     stack = [
-      {:ok, :state},
+      fn(opts) ->
+        send(opts[:parent], :connected)
+        {:ok, :state}
+      end,
       {:ok, :proxy},
       {:ok, :new_state, :new_proxy},
       {:ok, :newer_state},
@@ -359,6 +397,8 @@ defmodule ProxyTransactionTest do
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
+
+    assert_receive :connected
 
     assert_raise RuntimeError, "oops",
       fn() -> P.transaction(pool, fn(_) -> :result end, [proxy_mod: Proxy]) end
@@ -448,7 +488,10 @@ defmodule ProxyTransactionTest do
   test "proxy transaction rollback error raises error" do
     err = RuntimeError.exception("oops")
     stack = [
-      {:ok, :state},
+      fn(opts) ->
+        send(opts[:parent], :connected)
+        {:ok, :state}
+      end,
       {:ok, :proxy},
       {:ok, :new_state, :new_proxy},
       {:ok, :newer_state},
@@ -464,6 +507,8 @@ defmodule ProxyTransactionTest do
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
+
+    assert_receive :connected
 
     assert_raise RuntimeError, "oops",
       fn() ->
