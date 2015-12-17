@@ -182,8 +182,11 @@ end
 defmodule TestProxy do
   use DBConnection.Proxy
 
-  def checkout(mod, opts, conn) do
-    TestAgent.eval(:checkout, [mod, opts, conn])
+  def init(opts) do
+    TestAgent.eval(:init, [opts])
+  end
+  def checkout(mod, opts, conn, state) do
+    TestAgent.eval(:checkout, [mod, opts, conn, state])
   end
   def checkin(mod, opts, conn, state) do
     TestAgent.eval(:checkin, [mod, opts, conn, state])

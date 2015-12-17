@@ -9,11 +9,13 @@ defmodule ProxyTransactionTest do
   test "proxy transaction returns result" do
     stack = [
       {:ok, :state},
-      {:ok, :new_state, :proxy},
+      {:ok, :proxy},
+      {:ok, :new_state, :new_proxy},
       {:ok, :newer_state},
       {:ok, :newest_state},
       {:ok, :state2},
-      {:ok, :new_state2, :proxy2},
+      {:ok, :proxy2},
+      {:ok, :new_state2, :new_proxy2},
       {:ok, :newer_state2},
       {:ok, :newest_state2},
       {:ok, :state3}
@@ -35,24 +37,28 @@ defmodule ProxyTransactionTest do
 
     assert [
       connect: [_],
-      checkout: [C, _, :state],
+      init: [_],
+      checkout: [C, _, :state, :proxy],
       handle_begin: [_, :new_state],
       handle_commit: [_, :newer_state],
-      checkin: [C, _, :newest_state, :proxy],
-      checkout: [C, _, :state2],
+      checkin: [C, _, :newest_state, :new_proxy],
+      init: [_],
+      checkout: [C, _, :state2, :proxy2],
       handle_begin: [[{:key, :value} | _], :new_state2],
       handle_commit: [[{:key, :value} | _], :newer_state2],
-      checkin: [C, _, :newest_state2, :proxy2]] = A.record(agent)
+      checkin: [C, _, :newest_state2, :new_proxy2]] = A.record(agent)
   end
 
   test "proxy transaction rollback returns error" do
     stack = [
       {:ok, :state},
-      {:ok, :new_state, :proxy},
+      {:ok, :proxy},
+      {:ok, :new_state, :new_proxy},
       {:ok, :newer_state},
       {:ok, :newest_state},
       {:ok, :state2},
-      {:ok, :new_state2, :proxy2},
+      {:ok, :proxy2},
+      {:ok, :new_state2, :new_proxy2},
       {:ok, :newer_state2},
       {:ok, :newest_state2},
       {:ok, :state3}
@@ -71,20 +77,23 @@ defmodule ProxyTransactionTest do
 
     assert [
       connect: [_],
-      checkout: [C, _, :state],
+      init: [_],
+      checkout: [C, _, :state, :proxy],
       handle_begin: [ _, :new_state],
       handle_rollback: [_, :newer_state],
-      checkin: [C, _, :newest_state, :proxy],
-      checkout: [C, _, :state2],
+      checkin: [C, _, :newest_state, :new_proxy],
+      init: [_],
+      checkout: [C, _, :state2, :proxy2],
       handle_begin: [_, :new_state2],
       handle_commit: [_, :newer_state2],
-      checkin: [C, _, :newest_state2, :proxy2]] = A.record(agent)
+      checkin: [C, _, :newest_state2, :new_proxy2]] = A.record(agent)
   end
 
   test "proxy transaction and transaction returns result" do
     stack = [
       {:ok, :state},
-      {:ok, :new_state, :proxy},
+      {:ok, :proxy},
+      {:ok, :new_state, :new_proxy},
       {:ok, :newer_state},
       {:ok, :newest_state},
       {:ok, :state2}
@@ -105,16 +114,18 @@ defmodule ProxyTransactionTest do
 
     assert [
       connect: [_],
-      checkout: [C, _, :state],
+      init: [_],
+      checkout: [C, _, :state, :proxy],
       handle_begin: [ _, :new_state],
       handle_commit: [_, :newer_state],
-      checkin: [C, _, :newest_state, :proxy]] = A.record(agent)
+      checkin: [C, _, :newest_state, :new_proxy]] = A.record(agent)
   end
 
   test "proxy transaction and run returns result" do
     stack = [
       {:ok, :state},
-      {:ok, :new_state, :proxy},
+      {:ok, :proxy},
+      {:ok, :new_state, :new_proxy},
       {:ok, :newer_state},
       {:ok, :newest_state},
       {:ok, :state2}
@@ -135,20 +146,23 @@ defmodule ProxyTransactionTest do
 
     assert [
       connect: [_],
-      checkout: [C, _, :state],
+      init: [_],
+      checkout: [C, _, :state, :proxy],
       handle_begin: [ _, :new_state],
       handle_commit: [_, :newer_state],
-      checkin: [C, _, :newest_state, :proxy]] = A.record(agent)
+      checkin: [C, _, :newest_state, :new_proxy]] = A.record(agent)
   end
 
   test "proxy transaction begin error raises error" do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
-      {:ok, :new_state, :proxy},
+      {:ok, :proxy},
+      {:ok, :new_state, :new_proxy},
       {:error, err, :newer_state},
       {:ok, :newest_state},
-      {:ok, :state2, :proxy2},
+      {:ok, :proxy2},
+      {:ok, :state2, :new_proxy2},
       {:ok, :new_state2},
       {:ok, :newer_state2},
       {:ok, :newest_state2},
@@ -169,20 +183,23 @@ defmodule ProxyTransactionTest do
 
     assert [
       connect: [_],
-      checkout: [C, _, :state],
+      init: [_],
+      checkout: [C, _, :state, :proxy],
       handle_begin: [ _, :new_state],
-      checkin: [C, _, :newer_state, :proxy],
-      checkout: [C, _, :newest_state],
+      checkin: [C, _, :newer_state, :new_proxy],
+      init: [_],
+      checkout: [C, _, :newest_state, :proxy2],
       handle_begin: [_, :state2],
       handle_commit: [_, :new_state2],
-      checkin: [C, _, :newer_state2, :proxy2]] = A.record(agent)
+      checkin: [C, _, :newer_state2, :new_proxy2]] = A.record(agent)
   end
 
   test "proxy transaction begin disconnect raises error" do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
-      {:ok, :new_state, :proxy},
+      {:ok, :proxy},
+      {:ok, :new_state, :new_proxy},
       {:disconnect, err, :newer_state},
       :ok,
       fn(opts) ->
@@ -205,7 +222,8 @@ defmodule ProxyTransactionTest do
 
     assert [
       connect: [_],
-      checkout: [C, _, :state],
+      init: [_],
+      checkout: [C, _, :state, :proxy],
       handle_begin: [_, :new_state],
       disconnect: [_, :newer_state],
       connect: [_]] = A.record(agent)
@@ -218,7 +236,8 @@ defmodule ProxyTransactionTest do
         Process.link(opts[:parent])
         {:ok, :state}
       end,
-      {:ok, :new_state, :proxy},
+      {:ok, :proxy},
+      {:ok, :new_state, :new_proxy},
       :oops,
       {:ok, :state2}
       ]
@@ -240,7 +259,8 @@ defmodule ProxyTransactionTest do
 
     assert [
       {:connect, _},
-      {:checkout, [C, _, :state]},
+      {:init, _},
+      {:checkout, [C, _, :state, :proxy]},
       {:handle_begin, [_, :new_state]}| _] = A.record(agent)
   end
 
@@ -251,7 +271,8 @@ defmodule ProxyTransactionTest do
         Process.link(opts[:parent])
         {:ok, :state}
       end,
-      {:ok, :new_state, :proxy},
+      {:ok, :proxy},
+      {:ok, :new_state, :new_proxy},
       fn(_, _) ->
         raise "oops"
       end,
@@ -275,7 +296,8 @@ defmodule ProxyTransactionTest do
 
     assert [
       {:connect, _},
-      {:checkout, [C, _, :state]},
+      {:init, _},
+      {:checkout, [C, _, :state, :proxy]},
       {:handle_begin, [_, :new_state]} | _] = A.record(agent)
   end
 
@@ -283,11 +305,13 @@ defmodule ProxyTransactionTest do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
-      {:ok, :new_state, :proxy},
+      {:ok, :proxy},
+      {:ok, :new_state, :new_proxy},
       {:ok, :newer_state},
       {:error, err, :newest_state},
       {:ok, :state2},
-      {:ok, :new_state2, :proxy2},
+      {:ok, :proxy2},
+      {:ok, :new_state2, :new_proxy2},
       {:ok, :newer_state2},
       {:ok, :newest_state2},
       {:ok, :state3}
@@ -305,21 +329,24 @@ defmodule ProxyTransactionTest do
 
     assert [
       connect: [_],
-      checkout: [C, _, :state],
+      init: [_],
+      checkout: [C, _, :state, :proxy],
       handle_begin: [_, :new_state],
       handle_commit: [_, :newer_state],
-      checkin: [C, _, :newest_state, :proxy],
-      checkout: [C, _, :state2],
+      checkin: [C, _, :newest_state, :new_proxy],
+      init: [_],
+      checkout: [C, _, :state2, :proxy2],
       handle_begin: [_, :new_state2],
       handle_commit: [_, :newer_state2],
-      checkin: [C, _, :newest_state2, :proxy2]] = A.record(agent)
+      checkin: [C, _, :newest_state2, :new_proxy2]] = A.record(agent)
   end
 
   test "proxy transaction commit disconnect raises error" do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
-      {:ok, :new_state, :proxy},
+      {:ok, :proxy},
+      {:ok, :new_state, :new_proxy},
       {:ok, :newer_state},
       {:disconnect, err, :newest_state},
       :ok,
@@ -340,7 +367,8 @@ defmodule ProxyTransactionTest do
 
     assert [
       connect: [_],
-      checkout: [C, _, :state],
+      init: [_],
+      checkout: [C, _, :state, :proxy],
       handle_begin: [_, :new_state],
       handle_commit: [_, :newer_state],
       disconnect: [_, :newest_state],
@@ -354,7 +382,8 @@ defmodule ProxyTransactionTest do
         Process.link(opts[:parent])
         {:ok, :state}
       end,
-      {:ok, :new_state, :proxy},
+      {:ok, :proxy},
+      {:ok, :new_state, :new_proxy},
       {:ok, :newer_state},
       :oops,
       {:ok, :state2}
@@ -374,7 +403,8 @@ defmodule ProxyTransactionTest do
 
     assert [
       {:connect, _},
-      {:checkout, [C, _, :state]},
+      {:init, _},
+      {:checkout, [C, _, :state, :proxy]},
       {:handle_begin, [_, :new_state]},
       {:handle_commit, [_, :newer_state]} | _] = A.record(agent)
   end
@@ -386,7 +416,8 @@ defmodule ProxyTransactionTest do
         Process.link(opts[:parent])
         {:ok, :state}
       end,
-      {:ok, :new_state, :proxy},
+      {:ok, :proxy},
+      {:ok, :new_state, :new_proxy},
       {:ok, :newer_state},
       fn(_, _) ->
         raise "oops"
@@ -408,7 +439,8 @@ defmodule ProxyTransactionTest do
 
     assert [
       {:connect, _},
-      {:checkout, [C, _, :state]},
+      {:init, _},
+      {:checkout, [C, _, :state, :proxy]},
       {:handle_begin, [_, :new_state]},
       {:handle_commit, [_, :newer_state]} | _] = A.record(agent)
   end
@@ -417,11 +449,13 @@ defmodule ProxyTransactionTest do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
-      {:ok, :new_state, :proxy},
+      {:ok, :proxy},
+      {:ok, :new_state, :new_proxy},
       {:ok, :newer_state},
       {:error, err, :newest_state},
       {:ok, :state2},
-      {:ok, :new_state2, :proxy2},
+      {:ok, :proxy2},
+      {:ok, :new_state2, :new_proxy2},
       {:ok, :newer_state2},
       {:ok, :newest_state2},
       {:ok, :state3}
@@ -441,13 +475,15 @@ defmodule ProxyTransactionTest do
 
     assert [
       connect: [_],
-      checkout: [C, _, :state],
+      init: [_],
+      checkout: [C, _, :state, :proxy],
       handle_begin: [_, :new_state],
       handle_rollback: [_, :newer_state],
-      checkin: [C, _, :newest_state, :proxy],
-      checkout: [C, _, :state2],
+      checkin: [C, _, :newest_state, :new_proxy],
+      init: [_],
+      checkout: [C, _, :state2, :proxy2],
       handle_begin: [_, :new_state2],
       handle_commit: [_, :newer_state2],
-      checkin: [C, _, :newest_state2, :proxy2]] = A.record(agent)
+      checkin: [C, _, :newest_state2, :new_proxy2]] = A.record(agent)
   end
 end

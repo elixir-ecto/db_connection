@@ -8,13 +8,35 @@ defmodule ProxyExecuteTest do
   alias TestConnection, as: C
   alias TestProxy, as: Proxy
 
+
+  test "proxy ignore does not proxy" do
+    stack = [
+      {:ok, :state},
+      :ignore,
+      {:ok, %R{}, :new_state}
+    ]
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self()]
+    {:ok, pool} = P.start_link(opts)
+
+    assert P.execute(pool, %Q{}, [:param], [proxy_mod: Proxy]) == {:ok, %R{}}
+
+    assert [
+      connect: [_],
+      init: [_],
+      handle_execute: [%Q{}, [:param], _, :state]]= A.record(agent)
+  end
+
   test "proxy execute returns result" do
     stack = [
       {:ok, :state},
-      {:ok, :new_state, :proxy},
+      {:ok, :proxy},
+      {:ok, :new_state, :new_proxy},
       {:ok, %R{}, :newer_state},
       {:ok, :newest_state},
-      {:ok, :state2, :proxy2},
+      {:ok, :proxy2},
+      {:ok, :state2, :new_proxy2},
       {:ok, %R{}, :new_state2},
       {:ok, :newer_state2}
       ]
@@ -28,20 +50,23 @@ defmodule ProxyExecuteTest do
 
     assert [
       connect: [_],
-      checkout: [C, _, :state],
+      init: [_],
+      checkout: [C, _, :state, :proxy],
       handle_execute: [%Q{}, [:param], [{:proxy_mod, Proxy} | _], :new_state],
-      checkin: [C, _, :newer_state, :proxy],
-      checkout: [C, _, :newest_state],
+      checkin: [C, _, :newer_state, :new_proxy],
+      init: [_],
+      checkout: [C, _, :newest_state, :proxy2],
       handle_execute: [%Q{}, [:param],
         [{:key, :value}, {:proxy_mod, Proxy} | _], :state2],
-      checkin: [C, _, :new_state2, :proxy2]]= A.record(agent)
+      checkin: [C, _, :new_state2, :new_proxy2]]= A.record(agent)
   end
 
   test "proxy execute error returns error" do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
-      {:ok, :new_state, :proxy},
+      {:ok, :proxy},
+      {:ok, :new_state, :new_proxy},
       {:error, err, :newer_state},
       {:ok, :newest_state}
       ]
@@ -53,16 +78,18 @@ defmodule ProxyExecuteTest do
 
     assert [
       connect: [_],
-      checkout: [C, _, :state],
+      init: [_],
+      checkout: [C, _, :state, :proxy],
       handle_execute: [%Q{}, [:param], _, :new_state],
-      checkin: [C, _, :newer_state, :proxy]] = A.record(agent)
+      checkin: [C, _, :newer_state, :new_proxy]] = A.record(agent)
   end
 
   test "proxy execute! error raises error" do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
-      {:ok, :new_state, :proxy},
+      {:ok, :proxy},
+      {:ok, :new_state, :new_proxy},
       {:error, err, :newer_state},
       {:ok, :newest_state}
       ]
@@ -75,16 +102,18 @@ defmodule ProxyExecuteTest do
 
     assert [
       connect: [_],
-      checkout: [C, _, :state],
+      init: [_],
+      checkout: [C, _, :state, :proxy],
       handle_execute: [%Q{}, [:param], _, :new_state],
-      checkin: [C, _, :newer_state, :proxy]] = A.record(agent)
+      checkin: [C, _, :newer_state, :new_proxy]] = A.record(agent)
   end
 
   test "proxy execute disconnect returns error" do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
-      {:ok, :new_state, :proxy},
+      {:ok, :proxy},
+      {:ok, :new_state, :new_proxy},
       {:disconnect, err, :newer_state},
       :ok,
       fn(opts) ->
@@ -102,7 +131,8 @@ defmodule ProxyExecuteTest do
 
     assert [
       connect: [opts2],
-      checkout: [C, _, :state],
+      init: [_],
+      checkout: [C, _, :state, :proxy],
       handle_execute: [%Q{}, [:param], _, :new_state],
       disconnect: [^err, :newer_state],
       connect: [opts2]] = A.record(agent)
@@ -115,7 +145,8 @@ defmodule ProxyExecuteTest do
         Process.link(opts[:parent])
         {:ok, :state}
       end,
-      {:ok, :new_state, :proxy},
+      {:ok, :proxy},
+      {:ok, :new_state, :new_proxy},
       :oops,
       {:ok, :state}
       ]
@@ -134,7 +165,8 @@ defmodule ProxyExecuteTest do
 
     assert [
       {:connect, _},
-      {:checkout, [C, _, :state]},
+      {:init, _},
+      {:checkout, [C, _, :state, :proxy]},
       {:handle_execute, [%Q{}, [:param], _, :new_state]} | _] = A.record(agent)
   end
 
@@ -145,7 +177,8 @@ defmodule ProxyExecuteTest do
         Process.link(opts[:parent])
         {:ok, :state}
       end,
-      {:ok, :new_state, :proxy},
+      {:ok, :proxy},
+      {:ok, :new_state, :new_proxy},
       fn(_, _, _, _) ->
         raise "oops"
       end,
@@ -166,14 +199,16 @@ defmodule ProxyExecuteTest do
 
     assert [
       {:connect, _},
-      {:checkout, [C, _, :state]},
+      {:init, _},
+      {:checkout, [C, _, :state, :proxy]},
       {:handle_execute, [%Q{}, [:param], _, :new_state]}| _] = A.record(agent)
   end
 
  test "proxy execute prepares query and then re-executes" do
    stack = [
       {:ok, :state},
-      {:ok, :new_state, :proxy},
+      {:ok, :proxy},
+      {:ok, :new_state, :new_proxy},
       {:prepare, :newer_state},
       {:ok, %Q{}, :newest_state},
       {:ok, %R{}, :state2},
@@ -187,18 +222,20 @@ defmodule ProxyExecuteTest do
 
     assert [
       connect: [_],
-      checkout: [C, _, :state],
+      init: [_],
+      checkout: [C, _, :state, :proxy],
       handle_execute: [%Q{}, [:param], _, :new_state],
       handle_prepare: [%Q{}, _, :newer_state],
       handle_execute: [%Q{}, [:param], _, :newest_state],
-      checkin: [C, _, :state2, :proxy]] = A.record(agent)
+      checkin: [C, _, :state2, :new_proxy]] = A.record(agent)
   end
 
  test "proxy execute errors when preparing query" do
    err = RuntimeError.exception("oops")
    stack = [
       {:ok, :state},
-      {:ok, :new_state, :proxy},
+      {:ok, :proxy},
+      {:ok, :new_state, :new_proxy},
       {:prepare, :newer_state},
       {:error, err, :newest_state},
       {:ok, :state2}
@@ -211,16 +248,18 @@ defmodule ProxyExecuteTest do
 
     assert [
       connect: [_],
-      checkout: [C, _, :state],
+      init: [_],
+      checkout: [C, _, :state, :proxy],
       handle_execute: [%Q{}, [:param], _, :new_state],
       handle_prepare: [%Q{}, _, :newer_state],
-      checkin: [C, _, :newest_state, :proxy]] = A.record(agent)
+      checkin: [C, _, :newest_state, :new_proxy]] = A.record(agent)
   end
 
  test "proxy execute asks to prepare on retry raises" do
    stack = [
       {:ok, :state},
-      {:ok, :new_state, :proxy},
+      {:ok, :proxy},
+      {:ok, :new_state, :new_proxy},
       {:prepare, :newer_state},
       {:ok, %Q{}, :newest_state},
       {:prepare, :state2},
@@ -235,10 +274,11 @@ defmodule ProxyExecuteTest do
 
     assert [
       connect: [_],
-      checkout: [C, _, :state],
+      init: [_],
+      checkout: [C, _, :state, :proxy],
       handle_execute: [%Q{}, [:param], _, :new_state],
       handle_prepare: [%Q{}, _, :newer_state],
       handle_execute: [%Q{}, [:param], _, :newest_state],
-      checkin: [C, _, :state2, :proxy]] = A.record(agent)
+      checkin: [C, _, :state2, :new_proxy]] = A.record(agent)
   end
 end

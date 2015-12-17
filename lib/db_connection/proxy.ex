@@ -6,18 +6,28 @@ defmodule DBConnection.Proxy do
   `DBConnection.Proxy` callback modules can wrap a `DBConnection` callback
   module and state while it is outside the pool.
   """
+
   @doc """
-  Checks out the connection state and creates the proxy state. Return
+  Setup the initial state of the proxy. Return `{:ok, state}` to continue,
+  `:ignore` not to use the proxy or `{:error, exception}` to raise an exception.
+
+  This callback is called before checking out a connection from the pool.
+  """
+  @callback init(Keyword.t) ::
+    {:ok, state :: any} | :ignore | {:error, Exception.t}
+
+  @doc """
+  Checks out the connection state to the proxy module. Return
   `{:ok, conn, state}` to allow the checkout and continue,
   `{:error, exception, conn}` to disallow the checkout and to raise an exception
   or `{:disconnect, exception, conn}` to disconnect the connection and raise an
   exception.
 
   This callback is called after the connections `checkout/1` callback and should
-  setup the state for the proxy module.
+  setup the connection state for use by the proxy module.
   """
-  @callback checkout(module, Keyword.t, conn :: any) ::
-    {:ok, new_conn :: any, state :: any} |
+  @callback checkout(module, Keyword.t, conn :: any, state :: any) ::
+    {:ok, new_conn :: any, new_state :: any} |
     {:error | :disconnect, Exception.t, new_conn :: any}
 
   @doc """

@@ -813,7 +813,7 @@ defmodule DBConnection do
 
   defp checkout(pool, opts) do
     pool_mod = Keyword.get(opts, :pool_mod, DBConnection.Connection)
-    proxy_mod = Keyword.get(opts, :proxy_mod)
+    {proxy_mod, proxy_state} = proxy_mod(opts)
     case apply(pool_mod, :checkout, [pool, opts]) do
       {:ok, pool_ref, conn_mod, conn_state} when is_nil(proxy_mod) ->
         conn = %DBConnection{pool_mod: pool_mod, pool_ref: pool_ref,
@@ -822,15 +822,30 @@ defmodule DBConnection do
       {:ok, pool_ref, conn_mod, conn_state} ->
         conn = %DBConnection{pool_mod: pool_mod, pool_ref: pool_ref,
           conn_mod: conn_mod, conn_ref: make_ref(), proxy_mod: proxy_mod}
-        checkout(conn, proxy_mod, conn_mod, opts, conn_state)
+        checkout(conn, proxy_mod, proxy_state, conn_mod, opts, conn_state)
       :error ->
         raise DBConnection.Error, "connection not available"
     end
   end
 
-  defp checkout(conn, proxy_mod, conn_mod, opts, conn_state) do
+  defp proxy_mod(opts) do
+    case Keyword.get(opts, :proxy_mod) do
+      nil       -> {nil, nil}
+      proxy_mod -> proxy_init(proxy_mod, opts)
+    end
+  end
+
+  def proxy_init(proxy_mod, opts) do
+    case apply(proxy_mod, :init, [opts]) do
+      {:ok, proxy_state} -> {proxy_mod, proxy_state}
+      :ignore            -> {nil, nil}
+      {:error, err}      -> raise err
+    end
+  end
+
+  defp checkout(conn, proxy_mod, proxy_state, conn_mod, opts, conn_state) do
     try do
-      apply(proxy_mod, :checkout, [conn_mod, opts, conn_state])
+      apply(proxy_mod, :checkout, [conn_mod, opts, conn_state, proxy_state])
     else
       {:ok, conn_state, proxy_state} ->
         {conn, conn_state, proxy_state}

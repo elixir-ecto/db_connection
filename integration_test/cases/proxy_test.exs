@@ -9,9 +9,11 @@ defmodule ProxyTest do
   test "proxy checks out and checks in" do
     stack = [
       {:ok, :state},
-      {:ok, :new_state, :proxy},
+      {:ok, :proxy},
+      {:ok, :new_state, :new_proxy},
       {:ok, :newer_state},
-      {:ok, :newest_state, :proxy2},
+      {:ok, :proxy2},
+      {:ok, :newest_state, :new_proxy2},
       {:ok, :state2}
      ]
     {:ok, agent} = A.start_link(stack)
@@ -25,18 +27,49 @@ defmodule ProxyTest do
 
     assert [
       connect: [_],
-      checkout: [C, _, :state],
-      checkin: [C, _, :new_state, :proxy],
-      checkout: [C, _, :newer_state],
-      checkin: [C, _, :newest_state, :proxy2]]= A.record(agent)
+      init: [_],
+      checkout: [C, _, :state, :proxy],
+      checkin: [C, _, :new_state, :new_proxy],
+      init: [_],
+      checkout: [C, _, :newer_state, :proxy2],
+      checkin: [C, _, :newest_state, :new_proxy2]]= A.record(agent)
+  end
+
+  test "proxy init error raises" do
+    err = RuntimeError.exception("oops")
+    stack = [
+      {:ok, :state},
+      {:error, err},
+      {:ok, :proxy},
+      {:ok, :new_state, :new_proxy},
+      {:ok, :newer_state}
+     ]
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self()]
+    {:ok, pool} = P.start_link(opts)
+
+    assert_raise RuntimeError, "oops",
+      fn() -> P.run(pool, fn(_) -> flunk("ran") end, [proxy_mod: Proxy]) end
+
+    assert P.run(pool, fn(_) -> :hi end, [proxy_mod: Proxy]) == :hi
+
+    assert [
+      connect: [_],
+      init: [_],
+      init: [_],
+      checkout: [C, _, :state, :proxy],
+      checkin: [C, _, :new_state, :new_proxy]]= A.record(agent)
   end
 
   test "proxy checkout error raises" do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
+      {:ok, :proxy},
       {:error, err, :new_state},
-      {:ok, :newer_state, :proxy2},
+      {:ok, :proxy2},
+      {:ok, :newer_state, :new_proxy2},
       {:ok, :newest_state}
      ]
     {:ok, agent} = A.start_link(stack)
@@ -51,15 +84,18 @@ defmodule ProxyTest do
 
     assert [
       connect: [_],
-      checkout: [C, _, :state],
-      checkout: [C, _, :new_state],
-      checkin: [C, _, :newer_state, :proxy2]]= A.record(agent)
+      init: [_],
+      checkout: [C, _, :state, :proxy],
+      init: [_],
+      checkout: [C, _, :new_state, :proxy2],
+      checkin: [C, _, :newer_state, :new_proxy2]]= A.record(agent)
   end
 
   test "proxy checkout disconnect raises" do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
+      {:ok, :proxy},
       {:disconnect, err, :new_state},
       :ok,
       fn(opts) ->
@@ -79,7 +115,8 @@ defmodule ProxyTest do
 
     assert [
       connect: [_],
-      checkout: [C, _, :state],
+      init: [_],
+      checkout: [C, _, :state, :proxy],
       disconnect: [^err, :new_state],
       connect: [_]] = A.record(agent)
   end
@@ -91,6 +128,7 @@ defmodule ProxyTest do
         Process.link(opts[:parent])
         {:ok, :state}
       end,
+      {:ok, :proxy},
       :oops,
       {:ok, :state}
       ]
@@ -109,7 +147,8 @@ defmodule ProxyTest do
 
     assert [
       {:connect, _},
-      {:checkout, [C, _, :state]} | _] = A.record(agent)
+      {:init, [_]},
+      {:checkout, [C, _, :state, :proxy]} | _] = A.record(agent)
   end
 
   test "proxy checkout raises and stops connection" do
@@ -119,7 +158,8 @@ defmodule ProxyTest do
         Process.link(opts[:parent])
         {:ok, :state}
       end,
-      fn(_, _, _) ->
+      {:ok, :proxy},
+      fn(_, _, _, _) ->
         raise "oops"
       end,
       {:ok, :state}
@@ -139,16 +179,19 @@ defmodule ProxyTest do
 
     assert [
       {:connect, _},
-      {:checkout, [C, _, :state]} | _] = A.record(agent)
+      {:init, _},
+      {:checkout, [C, _, :state, :proxy]} | _] = A.record(agent)
   end
 
   test "proxy checkin error raises" do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
-      {:ok, :new_state, :proxy},
+      {:ok, :proxy},
+      {:ok, :new_state, :new_proxy},
       {:error, err, :newer_state},
-      {:ok, :newest_state, :proxy2},
+      {:ok, :proxy2},
+      {:ok, :newest_state, :new_proxy2},
       {:ok, :state2}
      ]
     {:ok, agent} = A.start_link(stack)
@@ -163,17 +206,20 @@ defmodule ProxyTest do
 
     assert [
       connect: [_],
-      checkout: [C, _, :state],
-      checkin: [C, _, :new_state, :proxy],
-      checkout: [C, _, :newer_state],
-      checkin: [C, _, :newest_state, :proxy2]]= A.record(agent)
+      init: [_],
+      checkout: [C, _, :state, :proxy],
+      checkin: [C, _, :new_state, :new_proxy],
+      init: [_],
+      checkout: [C, _, :newer_state, :proxy2],
+      checkin: [C, _, :newest_state, :new_proxy2]]= A.record(agent)
   end
 
   test "proxy checkin disconnect raises" do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
-      {:ok, :new_state, :proxy},
+      {:ok, :proxy},
+      {:ok, :new_state, :new_proxy},
       {:disconnect, err, :newer_state},
       :ok,
       fn(opts) ->
@@ -193,8 +239,9 @@ defmodule ProxyTest do
 
     assert [
       connect: [_],
-      checkout: [C, _, :state],
-      checkin: [C, _, :new_state, :proxy],
+      init: [_],
+      checkout: [C, _, :state, :proxy],
+      checkin: [C, _, :new_state, :new_proxy],
       disconnect: [^err, :newer_state],
       connect: [_]] = A.record(agent)
   end
@@ -206,7 +253,8 @@ defmodule ProxyTest do
         Process.link(opts[:parent])
         {:ok, :state}
       end,
-      {:ok, :new_state, :proxy},
+      {:ok, :proxy},
+      {:ok, :new_state, :new_proxy},
       :oops,
       {:ok, :state}
       ]
@@ -225,8 +273,9 @@ defmodule ProxyTest do
 
     assert [
       {:connect, _},
-      {:checkout, [C, _, :state]},
-      {:checkin, [C, _, :new_state, :proxy]} | _] = A.record(agent)
+      {:init, _},
+      {:checkout, [C, _, :state, :proxy]},
+      {:checkin, [C, _, :new_state, :new_proxy]} | _] = A.record(agent)
   end
 
   test "proxy checkin raises and stops connection" do
@@ -236,7 +285,8 @@ defmodule ProxyTest do
         Process.link(opts[:parent])
         {:ok, :state}
       end,
-      {:ok, :new_state, :proxy},
+      {:ok, :proxy},
+      {:ok, :new_state, :new_proxy},
       fn(_, _, _, _) ->
         raise "oops"
       end,
@@ -257,7 +307,8 @@ defmodule ProxyTest do
 
     assert [
       {:connect, _},
-      {:checkout, [C, _, :state]},
-      {:checkin, [C, _, :new_state, :proxy]} | _] = A.record(agent)
+      {:init, _},
+      {:checkout, [C, _, :state, :proxy]},
+      {:checkin, [C, _, :new_state, :new_proxy]} | _] = A.record(agent)
   end
 end
