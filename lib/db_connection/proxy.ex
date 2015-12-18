@@ -130,16 +130,18 @@ defmodule DBConnection.Proxy do
 
   @doc """
   Use `DBConnection.Proxy` to set the behaviour and include default
-  implementations. The default implementation of `checkout/3` stores
-  the checkout options as the proxy's state, `checkin/4` acts a no-op
-  and the remaining callbacks call the internal connection module with
+  implementations. The default implementation of `init/1` stores
+  the checkout options as the proxy's state, `checkout/4` and `checkin/4` act
+  as no-ops and the remaining callbacks call the internal connection module with
   the given arguments and state.
   """
   defmacro __using__(_) do
     quote location: :keep do
       @behaviour DBConnection.Proxy
+    
+      def init(opts), do: {:ok, opts}
 
-      def checkout(_, opts, conn), do: {:ok, conn, opts}
+      def checkout(_, opts, conn, state), do: {:ok, conn, state}
 
       def checkin(_, _, conn, _), do: {:ok, conn}
 
@@ -238,7 +240,7 @@ defmodule DBConnection.Proxy do
         end
       end
 
-      defoverridable [checkout: 3, checkin: 4, handle_begin: 4,
+      defoverridable [init: 1, checkout: 4, checkin: 4, handle_begin: 4,
                       handle_commit: 4, handle_rollback: 4, handle_prepare: 5,
                       handle_execute: 6, handle_execute_close: 6,
                       handle_close: 5]
