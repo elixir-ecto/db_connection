@@ -83,8 +83,8 @@ defmodule DBConnection.Poolboy do
   defp name_opts(opts) do
     case Keyword.get(opts, :name) do
       nil                     -> []
-      name when is_atom(name) -> {:local, name}
-      name                    -> name
+      name when is_atom(name) -> [name: {:local, name}]
+      name                    -> [name: name]
     end
   end
 
