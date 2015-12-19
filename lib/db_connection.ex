@@ -1005,21 +1005,9 @@ defmodule DBConnection do
   end
 
   defp describe_execute(conn, fun, query, params, opts, return) do
-    try do
-      query = DBConnection.Query.describe(query, opts)
-      params = DBConnection.Query.encode(query, params, opts)
-      {query, params}
-    catch
-      kind, reason ->
-        stack = System.stacktrace()
-        case close(conn, query, opts) do
-          :ok                 -> :erlang.raise(kind, reason, stack)
-          {:error, _} = error -> error
-        end
-    else
-      {query, params} ->
-        prepared_execute(conn, fun, query, params, opts, return)
-    end
+    query = DBConnection.Query.describe(query, opts)
+    params = DBConnection.Query.encode(query, params, opts)
+    prepared_execute(conn, fun, query, params, opts, return)
   end
 
   defp run_prepare_execute(conn, query, params, opts) do
@@ -1070,26 +1058,8 @@ defmodule DBConnection do
         raise DBConnection.Error, "connection did not prepare query"
       {:ok, result} when return == :query_result ->
         {:ok, query, result}
-      {:error, err} when return == :query_result ->
-        prepared_close(conn, query, err, opts)
       other ->
         other
-    end
-  end
-
-  defp prepared_close(conn, query, err, opts) do
-    case get_info(conn) do
-      :closed ->
-        {:error, err}
-      _ ->
-        do_prepared_close(conn, query, err, opts)
-    end
-  end
-
-  defp do_prepared_close(conn, query, err, opts) do
-    case close(conn, query, opts) do
-      :ok   -> {:error, err}
-      other -> other
     end
   end
 

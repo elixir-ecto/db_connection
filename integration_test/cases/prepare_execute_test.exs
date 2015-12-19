@@ -134,27 +134,6 @@ defmodule PrepareExecuteTest do
       handle_prepare: [%Q{}, _, :state]] = A.record(agent)
   end
 
-  test "prepare_execute execute error returns error and closes" do
-    err = RuntimeError.exception("oops")
-    stack = [
-      {:ok, :state},
-      {:ok, %Q{}, :new_state},
-      {:error, err, :newer_state},
-      {:ok, :newest_state}
-      ]
-    {:ok, agent} = A.start_link(stack)
-
-    opts = [agent: agent, parent: self()]
-    {:ok, pool} = P.start_link(opts)
-    assert P.prepare_execute(pool, %Q{}, [:param]) == {:error, err}
-
-    assert [
-      connect: [_],
-      handle_prepare: [%Q{}, _, :state],
-      handle_execute: [%Q{}, [:param], _, :new_state],
-      handle_close: [%Q{}, _, :newer_state]] = A.record(agent)
-  end
-
   test "prepare_execute execute disconnect returns error" do
     err = RuntimeError.exception("oops")
     stack = [
@@ -181,27 +160,5 @@ defmodule PrepareExecuteTest do
       handle_execute: [%Q{}, [:param], _, :new_state],
       disconnect: [^err, :newer_state],
       connect: [opts2]] = A.record(agent)
-  end
-
-  test "prepare_execute execute and close error returns close error" do
-    err1 = RuntimeError.exception("execute oops")
-    err2 = RuntimeError.exception("close oops")
-    stack = [
-      {:ok, :state},
-      {:ok, %Q{}, :new_state},
-      {:error, err1, :newer_state},
-      {:error, err2, :newest_state}
-      ]
-    {:ok, agent} = A.start_link(stack)
-
-    opts = [agent: agent, parent: self()]
-    {:ok, pool} = P.start_link(opts)
-    assert P.prepare_execute(pool, %Q{}, [:param]) == {:error, err2}
-
-    assert [
-      connect: [_],
-      handle_prepare: [%Q{}, _, :state],
-      handle_execute: [%Q{}, [:param], _, :new_state],
-      handle_close: [%Q{}, _, :newer_state]] = A.record(agent)
   end
 end

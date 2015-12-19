@@ -138,7 +138,7 @@ defmodule DBConnection.Proxy do
   defmacro __using__(_) do
     quote location: :keep do
       @behaviour DBConnection.Proxy
-    
+
       def init(opts), do: {:ok, opts}
 
       def checkout(_, opts, conn, state), do: {:ok, conn, state}
