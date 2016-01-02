@@ -201,4 +201,30 @@ defmodule TransactionExecuteTest do
       {:handle_begin, [_, :state]},
       {:handle_execute, [%Q{}, [:param], _, :new_state]}| _] = A.record(agent)
   end
+
+  test "execute raises after inner transaction rollback" do
+    stack = [
+      {:ok, :state},
+      {:ok, :new_state},
+      {:ok, :newer_state}
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self()]
+    {:ok, pool} = P.start_link(opts)
+
+    assert P.transaction(pool, fn(conn) ->
+      assert P.transaction(conn, fn(conn2) ->
+        P.rollback(conn2, :oops)
+      end) == {:error, :oops}
+
+      assert_raise DBConnection.Error, "transaction rolling back",
+        fn() -> P.execute(conn, %Q{}, [:param]) end
+    end) == {:error, :rollback}
+
+    assert [
+      connect: [_],
+      handle_begin: [ _, :state],
+      handle_rollback: [_, :new_state]] = A.record(agent)
+  end
 end

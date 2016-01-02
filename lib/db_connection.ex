@@ -730,9 +730,12 @@ defmodule DBConnection do
   connection disconnects all future calls using that connection
   reference will fail.
 
-  `run/3` and `transaction/3` can be nested multiple times but a
-  `transaction/3` call inside another `transaction/3` will be treated
-  the same as `run/3`.
+  `run/3` and `transaction/3` can be nested multiple times. If a transaction is
+  rolled back or a nested transaction `fun` raises the transaction is marked as
+  failed. Any calls inside a failed transaction (except `rollback/2`) will raise
+  until the outer transaction call returns. All running `transaction/3` calls
+  will return `{:error, :rollback}` if the transaction failed and `rollback/2`
+  is not called for that `transaction/3`.
 
   ### Options
 
@@ -762,9 +765,9 @@ defmodule DBConnection do
   def transaction(%DBConnection{} = conn, fun, opts) do
     case fetch_info(conn) do
       {:transaction, _} ->
-        {:ok, fun.(conn)}
+        transaction_nested(conn, fun)
       {:transaction, _, _} ->
-        {:ok, fun.(conn)}
+        transaction_nested(conn, fun)
       {:idle, conn_state} ->
         transaction_begin(conn, conn_state, fun, opts)
       {:idle, conn_state, proxy_state} ->
@@ -790,15 +793,17 @@ defmodule DBConnection do
   """
   @spec rollback(t, reason :: any) :: no_return
   def rollback(%DBConnection{conn_ref: conn_ref} = conn, err) do
-    case fetch_info(conn) do
-      {:transaction, _} ->
+    case get_info(conn) do
+      {transaction, _} when transaction in [:transaction, :failed] ->
         throw({:rollback, conn_ref, err})
-      {:transaction, _, _} ->
+      {transaction, _, _} when transaction in [:transaction, :failed] ->
         throw({:rollback, conn_ref, err})
       {:idle, _} ->
         raise "not inside transaction"
       {:idle, _, _} ->
         raise "not inside transaction"
+      :closed ->
+        raise DBConnection.Error, "connection is closed"
     end
   end
 
@@ -1173,8 +1178,15 @@ defmodule DBConnection do
   defp transaction_end(conn, fun, opts, result) do
     case get_info(conn) do
       {:transaction, conn_state} ->
-        transaction_end(conn, conn_state,  fun, opts, result)
+        transaction_end(conn, conn_state, fun, opts, result)
       {:transaction, conn_state, proxy_state} ->
+        transaction_end(conn, conn_state, proxy_state, fun, opts, result)
+      {:failed, conn_state} ->
+        result = failed_result(result)
+        transaction_end(conn, conn_state, :handle_rollback, opts, result)
+      {:failed, conn_state, proxy_state} ->
+        fun = :handle_rollback
+        result = failed_result(result)
         transaction_end(conn, conn_state, proxy_state, fun, opts, result)
       {:idle, conn_state} ->
         delete_stop(conn, conn_state, :bad_transaction, opts)
@@ -1186,6 +1198,9 @@ defmodule DBConnection do
         result
     end
   end
+
+  defp failed_result({:ok, _}), do: {:error, :rollback}
+  defp failed_result(other),    do: other
 
   defp transaction_end(conn, conn_state, fun, opts, result) do
     %DBConnection{conn_mod: conn_mod} = conn
@@ -1239,6 +1254,46 @@ defmodule DBConnection do
     end
   end
 
+  defp transaction_nested(conn, fun) do
+    %DBConnection{conn_ref: conn_ref} = conn
+    try do
+      fun.(conn)
+    else
+      result ->
+        transaction_ok(conn, {:ok, result})
+    catch
+      :throw, {:rollback, ^conn_ref, reason} ->
+        transaction_failed(conn)
+        {:error, reason}
+      kind, reason ->
+        stack = System.stacktrace()
+        transaction_failed(conn)
+        :erlang.raise(kind, reason, stack)
+    end
+  end
+
+  defp transaction_ok(conn, result) do
+    case get_info(conn) do
+      {:failed, _} ->
+        {:error, :rollback}
+      {:failed, _, _} ->
+        {:error, :rollback}
+      _ ->
+        result
+    end
+  end
+
+  defp transaction_failed(conn) do
+    case get_info(conn) do
+      {:transaction, conn_state} ->
+        put_info(conn, :failed, conn_state)
+      {:transaction, conn_state, proxy_state} ->
+        put_info(conn, :failed, conn_state, proxy_state)
+      _ ->
+        :ok
+    end
+  end
+
   defp put_info(conn, status, conn_state) do
     _ = Process.put(key(conn), {status, conn_state})
     :ok
@@ -1251,6 +1306,8 @@ defmodule DBConnection do
 
   defp fetch_info(conn) do
     case get_info(conn) do
+      {:failed, _}     -> raise DBConnection.Error, "transaction rolling back"
+      {:failed, _, _}  -> raise DBConnection.Error, "transaction rolling back"
       {_, _} = info    -> info
       {_, _, _} = info -> info
       :closed          -> raise DBConnection.Error, "connection is closed"

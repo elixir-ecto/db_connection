@@ -62,6 +62,100 @@ defmodule TransactionTest do
       handle_commit: [_, :newest_state]] = A.record(agent)
   end
 
+  test "inner transaction rollback returns error on outer transaction" do
+    stack = [
+      {:ok, :state},
+      {:ok, :new_state},
+      {:ok, :newer_state},
+      {:ok, :newest_state},
+      {:ok, :newest_state}
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self()]
+    {:ok, pool} = P.start_link(opts)
+
+    assert P.transaction(pool, fn(conn) ->
+      assert P.transaction(conn, fn(conn2) ->
+        P.rollback(conn2, :oops)
+      end) == {:error, :oops}
+
+      assert_raise DBConnection.Error, "transaction rolling back",
+        fn() -> P.transaction(conn, fn(_) -> nil end) end
+    end) == {:error, :rollback}
+
+    assert P.transaction(pool, fn(_) -> :result end) == {:ok, :result}
+
+    assert [
+      connect: [_],
+      handle_begin: [ _, :state],
+      handle_rollback: [_, :new_state],
+      handle_begin: [_, :newer_state],
+      handle_commit: [_, :newest_state]] = A.record(agent)
+  end
+
+  test "outer transaction rolls back after inner rollback" do
+    stack = [
+      {:ok, :state},
+      {:ok, :new_state},
+      {:ok, :newer_state},
+      {:ok, :newest_state},
+      {:ok, :newest_state}
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self()]
+    {:ok, pool} = P.start_link(opts)
+
+    assert P.transaction(pool, fn(conn) ->
+      assert P.transaction(conn, fn(conn2) ->
+        P.rollback(conn2, :oops)
+      end) == {:error, :oops}
+
+      P.rollback(conn, :oops2)
+    end) == {:error, :oops2}
+
+    assert P.transaction(pool, fn(_) -> :result end) == {:ok, :result}
+
+    assert [
+      connect: [_],
+      handle_begin: [ _, :state],
+      handle_rollback: [_, :new_state],
+      handle_begin: [_, :newer_state],
+      handle_commit: [_, :newest_state]] = A.record(agent)
+  end
+
+  test "inner transaction raise returns error on outer transaction" do
+    stack = [
+      {:ok, :state},
+      {:ok, :new_state},
+      {:ok, :newer_state},
+      {:ok, :newest_state},
+      {:ok, :newest_state}
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self()]
+    {:ok, pool} = P.start_link(opts)
+
+    assert P.transaction(pool, fn(conn) ->
+      assert_raise RuntimeError, "oops",
+       fn() -> P.transaction(conn, fn(_) -> raise "oops" end) end
+
+      assert_raise DBConnection.Error, "transaction rolling back",
+        fn() -> P.transaction(conn, fn(_) -> nil end) end
+    end) == {:error, :rollback}
+
+    assert P.transaction(pool, fn(_) -> :result end) == {:ok, :result}
+
+    assert [
+      connect: [_],
+      handle_begin: [ _, :state],
+      handle_rollback: [_, :new_state],
+      handle_begin: [_, :newer_state],
+      handle_commit: [_, :newest_state]] = A.record(agent)
+  end
+
   test "transaction and transaction returns result" do
     stack = [
       {:ok, :state},
