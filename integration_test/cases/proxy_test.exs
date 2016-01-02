@@ -14,10 +14,10 @@ defmodule ProxyTest do
       end,
       {:ok, :proxy},
       {:ok, :new_state, :new_proxy},
-      {:ok, :newer_state},
+      {:ok, :newer_state, :newer_proxy},
       {:ok, :proxy2},
       {:ok, :newest_state, :new_proxy2},
-      {:ok, :state2}
+      {:ok, :state2, :newer_proxy2}
      ]
     {:ok, agent} = A.start_link(stack)
 
@@ -50,7 +50,7 @@ defmodule ProxyTest do
       {:error, err},
       {:ok, :proxy},
       {:ok, :new_state, :new_proxy},
-      {:ok, :newer_state}
+      {:ok, :newer_state, :newer_proxy}
      ]
     {:ok, agent} = A.start_link(stack)
 
@@ -80,10 +80,11 @@ defmodule ProxyTest do
         {:ok, :state}
       end,
       {:ok, :proxy},
-      {:error, err, :new_state},
+      {:error, err, :new_state, :new_proxy},
+      {:ok, :newer_state, :newer_proxy},
       {:ok, :proxy2},
-      {:ok, :newer_state, :new_proxy2},
-      {:ok, :newest_state}
+      {:ok, :newest_state, :new_proxy2},
+      {:ok, :state2, :newer_proxy2}
      ]
     {:ok, agent} = A.start_link(stack)
 
@@ -101,9 +102,10 @@ defmodule ProxyTest do
       connect: [_],
       init: [_],
       checkout: [C, _, :state, :proxy],
+      checkin: [C, _, :new_state, :new_proxy],
       init: [_],
-      checkout: [C, _, :new_state, :proxy2],
-      checkin: [C, _, :newer_state, :new_proxy2]]= A.record(agent)
+      checkout: [C, _, :newer_state, :proxy2],
+      checkin: [C, _, :newest_state, :new_proxy2]]= A.record(agent)
   end
 
   test "proxy checkout disconnect raises" do
@@ -114,7 +116,7 @@ defmodule ProxyTest do
         {:ok, :state}
       end,
       {:ok, :proxy},
-      {:disconnect, err, :new_state},
+      {:disconnect, err, :new_state, :new_proxy},
       :ok,
       fn(opts) ->
         send(opts[:parent], :reconnected)
@@ -212,10 +214,10 @@ defmodule ProxyTest do
       end,
       {:ok, :proxy},
       {:ok, :new_state, :new_proxy},
-      {:error, err, :newer_state},
+      {:error, err, :newer_state, :newer_proxy},
       {:ok, :proxy2},
       {:ok, :newest_state, :new_proxy2},
-      {:ok, :state2}
+      {:ok, :state2, :newer_proxy2}
      ]
     {:ok, agent} = A.start_link(stack)
 
@@ -248,7 +250,7 @@ defmodule ProxyTest do
       end,
       {:ok, :proxy},
       {:ok, :new_state, :new_proxy},
-      {:disconnect, err, :newer_state},
+      {:disconnect, err, :newer_state, :newer_proxy},
       :ok,
       fn(opts) ->
         send(opts[:parent], :reconnected)
@@ -261,8 +263,6 @@ defmodule ProxyTest do
     {:ok, pool} = P.start_link(opts)
 
     assert_receive :connected
-
-
 
     assert_raise RuntimeError, "oops",
       fn() -> P.run(pool, fn(_) -> :ok end, [proxy: Proxy]) end

@@ -42,11 +42,11 @@ defmodule ProxyExecuteTest do
       {:ok, :proxy},
       {:ok, :new_state, :new_proxy},
       {:ok, %R{}, :newer_state},
-      {:ok, :newest_state},
+      {:ok, :newest_state, :newer_proxy},
       {:ok, :proxy2},
       {:ok, :state2, :new_proxy2},
       {:ok, %R{}, :new_state2},
-      {:ok, :newer_state2}
+      {:ok, :newer_state2, :newer_proxy2}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -82,7 +82,7 @@ defmodule ProxyExecuteTest do
       {:ok, :proxy},
       {:ok, :new_state, :new_proxy},
       {:error, err, :newer_state},
-      {:ok, :newest_state}
+      {:ok, :newest_state, :newer_proxy}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -111,13 +111,13 @@ defmodule ProxyExecuteTest do
       {:ok, :proxy},
       {:ok, :new_state, :new_proxy},
       {:error, err, :newer_state},
-      {:ok, :newest_state}
+      {:ok, :newest_state, :newer_proxy}
       ]
     {:ok, agent} = A.start_link(stack)
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
- 
+
     assert_receive :connected
 
     assert_raise RuntimeError, "oops",
@@ -151,9 +151,9 @@ defmodule ProxyExecuteTest do
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
-  
+
     assert_receive :connected
- 
+
     assert P.execute(pool, %Q{}, [:param], [proxy: Proxy]) == {:error, err}
 
     assert_receive :reconnected
@@ -244,13 +244,13 @@ defmodule ProxyExecuteTest do
       {:prepare, :newer_state},
       {:ok, %Q{}, :newest_state},
       {:ok, %R{}, :state2},
-      {:ok, :new_state2}
+      {:ok, :new_state2, :newer_proxy}
       ]
     {:ok, agent} = A.start_link(stack)
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
-  
+
     assert_receive :connected
 
     assert P.execute(pool, %Q{}, [:param], [proxy: Proxy]) == {:ok, %R{}}
@@ -276,15 +276,15 @@ defmodule ProxyExecuteTest do
       {:ok, :new_state, :new_proxy},
       {:prepare, :newer_state},
       {:error, err, :newest_state},
-      {:ok, :state2}
+      {:ok, :state2, :newer_proxy}
       ]
     {:ok, agent} = A.start_link(stack)
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
- 
+
     assert_receive :connected
- 
+
     assert P.execute(pool, %Q{}, [:param], [proxy: Proxy]) == {:error, err}
 
     assert [
@@ -307,15 +307,15 @@ defmodule ProxyExecuteTest do
       {:prepare, :newer_state},
       {:ok, %Q{}, :newest_state},
       {:prepare, :state2},
-      {:ok, :new_state2},
+      {:ok, :new_state2, :newer_proxy},
       ]
     {:ok, agent} = A.start_link(stack)
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
- 
+
     assert_receive :connected
-     
+
     assert_raise DBConnection.Error, "connection did not prepare query",
       fn() -> P.execute(pool, %Q{}, [:param], [proxy: Proxy]) end
 
