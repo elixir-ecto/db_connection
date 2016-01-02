@@ -26,9 +26,9 @@ defmodule ProxyTest do
 
     assert_receive :connected
 
-    assert P.run(pool, fn(_) -> :hi end, [proxy_mod: Proxy]) == :hi
+    assert P.run(pool, fn(_) -> :hi end, [proxy: Proxy]) == :hi
     assert P.run(pool, fn(_) -> :hi end,
-      [proxy_mod: Proxy, key: :value]) == :hi
+      [proxy: Proxy, key: :value]) == :hi
 
     assert [
       connect: [_],
@@ -60,9 +60,9 @@ defmodule ProxyTest do
     assert_receive :connected
 
     assert_raise RuntimeError, "oops",
-      fn() -> P.run(pool, fn(_) -> flunk("ran") end, [proxy_mod: Proxy]) end
+      fn() -> P.run(pool, fn(_) -> flunk("ran") end, [proxy: Proxy]) end
 
-    assert P.run(pool, fn(_) -> :hi end, [proxy_mod: Proxy]) == :hi
+    assert P.run(pool, fn(_) -> :hi end, [proxy: Proxy]) == :hi
 
     assert [
       connect: [_],
@@ -93,9 +93,9 @@ defmodule ProxyTest do
     assert_receive :connected
 
     assert_raise RuntimeError, "oops",
-      fn() -> P.run(pool, fn(_) -> flunk("ran") end, [proxy_mod: Proxy]) end
+      fn() -> P.run(pool, fn(_) -> flunk("ran") end, [proxy: Proxy]) end
 
-    assert P.run(pool, fn(_) -> :hi end, [proxy_mod: Proxy]) == :hi
+    assert P.run(pool, fn(_) -> :hi end, [proxy: Proxy]) == :hi
 
     assert [
       connect: [_],
@@ -129,7 +129,7 @@ defmodule ProxyTest do
     assert_receive :connected
 
     assert_raise RuntimeError, "oops",
-      fn() -> P.run(pool, fn(_) -> flunk("ran") end, [proxy_mod: Proxy]) end
+      fn() -> P.run(pool, fn(_) -> flunk("ran") end, [proxy: Proxy]) end
 
     assert_receive :reconnected
 
@@ -160,7 +160,7 @@ defmodule ProxyTest do
 
     Process.flag(:trap_exit, true)
     assert_raise DBConnection.Error, "bad return value: :oops",
-      fn() -> P.run(pool, fn(_) -> flunk("ran") end, [proxy_mod: Proxy]) end
+      fn() -> P.run(pool, fn(_) -> flunk("ran") end, [proxy: Proxy]) end
 
     assert_receive {:EXIT, ^conn,
       {%DBConnection.Error{message: "client stopped: " <> _}, [_|_]}}
@@ -192,7 +192,7 @@ defmodule ProxyTest do
 
     Process.flag(:trap_exit, true)
     assert_raise RuntimeError, "oops",
-      fn() -> P.run(pool, fn(_) -> flunk("ran") end, [proxy_mod: Proxy]) end
+      fn() -> P.run(pool, fn(_) -> flunk("ran") end, [proxy: Proxy]) end
 
     assert_receive {:EXIT, ^conn,
       {%DBConnection.Error{message: "client stopped: " <> _}, [_|_]}}
@@ -225,9 +225,9 @@ defmodule ProxyTest do
     assert_receive :connected
 
     assert_raise RuntimeError, "oops",
-      fn() -> P.run(pool, fn(_) -> :ok end, [proxy_mod: Proxy]) end
+      fn() -> P.run(pool, fn(_) -> :ok end, [proxy: Proxy]) end
 
-    assert P.run(pool, fn(_) -> :hi end, [proxy_mod: Proxy]) == :hi
+    assert P.run(pool, fn(_) -> :hi end, [proxy: Proxy]) == :hi
 
     assert [
       connect: [_],
@@ -265,7 +265,7 @@ defmodule ProxyTest do
 
 
     assert_raise RuntimeError, "oops",
-      fn() -> P.run(pool, fn(_) -> :ok end, [proxy_mod: Proxy]) end
+      fn() -> P.run(pool, fn(_) -> :ok end, [proxy: Proxy]) end
 
     assert_receive :reconnected
 
@@ -298,7 +298,7 @@ defmodule ProxyTest do
 
     Process.flag(:trap_exit, true)
     assert_raise DBConnection.Error, "bad return value: :oops",
-      fn() -> P.run(pool, fn(_) -> :ok end, [proxy_mod: Proxy]) end
+      fn() -> P.run(pool, fn(_) -> :ok end, [proxy: Proxy]) end
 
     assert_receive {:EXIT, ^conn,
       {%DBConnection.Error{message: "client stopped: " <> _}, [_|_]}}
@@ -332,7 +332,7 @@ defmodule ProxyTest do
 
     Process.flag(:trap_exit, true)
     assert_raise RuntimeError, "oops",
-      fn() -> P.run(pool, fn(_) -> :ok end, [proxy_mod: Proxy]) end
+      fn() -> P.run(pool, fn(_) -> :ok end, [proxy: Proxy]) end
 
     assert_receive {:EXIT, ^conn,
       {%DBConnection.Error{message: "client stopped: " <> _}, [_|_]}}

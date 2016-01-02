@@ -5,7 +5,7 @@ defmodule DBConnection.Sojourn do
   ### Options
 
     * `:pool_size` - The number of connections (default: `10`)
-    * `:broker_mod` - The sbroker callback module (see `:sbroker`,
+    * `:broker` - The sbroker callback module (see `:sbroker`,
     default: `DBConnection.Sojourn.Timeout`)
     * `:broker_start_opts` - Start options for the broker (see
     `:sbroker`, default: `[]`)

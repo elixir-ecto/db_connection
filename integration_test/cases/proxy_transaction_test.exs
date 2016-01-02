@@ -33,12 +33,12 @@ defmodule ProxyTransactionTest do
     assert P.transaction(pool, fn(conn) ->
       assert %DBConnection{} = conn
       :result
-    end, [proxy_mod: Proxy]) == {:ok, :result}
+    end, [proxy: Proxy]) == {:ok, :result}
 
     assert P.transaction(pool, fn(conn) ->
       assert %DBConnection{} = conn
       :result
-    end, [key: :value, proxy_mod: Proxy]) == {:ok, :result}
+    end, [key: :value, proxy: Proxy]) == {:ok, :result}
 
     assert [
       connect: [_],
@@ -80,10 +80,10 @@ defmodule ProxyTransactionTest do
 
     assert P.transaction(pool, fn(conn) ->
       P.rollback(conn, :oops)
-    end, [proxy_mod: Proxy]) == {:error, :oops}
+    end, [proxy: Proxy]) == {:error, :oops}
 
     assert P.transaction(pool, fn(_) -> :result end,
-      [proxy_mod: Proxy]) == {:ok, :result}
+      [proxy: Proxy]) == {:ok, :result}
 
     assert [
       connect: [_],
@@ -125,7 +125,7 @@ defmodule ProxyTransactionTest do
         :result
       end) == {:ok, :result}
       :result
-    end, [proxy_mod: Proxy]) == {:ok, :result}
+    end, [proxy: Proxy]) == {:ok, :result}
 
     assert [
       connect: [_],
@@ -162,7 +162,7 @@ defmodule ProxyTransactionTest do
         :result
       end) == :result
       :result
-    end, [proxy_mod: Proxy]) == {:ok, :result}
+    end, [proxy: Proxy]) == {:ok, :result}
 
     assert [
       connect: [_],
@@ -200,11 +200,11 @@ defmodule ProxyTransactionTest do
     assert_raise RuntimeError, "oops",
       fn() ->
         P.transaction(pool, fn(_) -> flunk("transaction ran") end,
-          [proxy_mod: Proxy])
+          [proxy: Proxy])
       end
 
     assert P.transaction(pool, fn(_) -> :result end,
-      [proxy_mod: Proxy]) == {:ok, :result}
+      [proxy: Proxy]) == {:ok, :result}
 
     assert [
       connect: [_],
@@ -245,7 +245,7 @@ defmodule ProxyTransactionTest do
     assert_raise RuntimeError, "oops",
       fn() ->
         P.transaction(pool, fn(_) -> flunk("transaction ran") end,
-          [proxy_mod: Proxy])
+          [proxy: Proxy])
       end
 
     assert_receive :reconnected
@@ -281,7 +281,7 @@ defmodule ProxyTransactionTest do
     assert_raise DBConnection.Error, "bad return value: :oops",
       fn() ->
         P.transaction(pool, fn(_) -> flunk("transaction ran") end,
-          [proxy_mod: Proxy])
+          [proxy: Proxy])
       end
 
     assert_receive {:EXIT, ^conn,
@@ -318,7 +318,7 @@ defmodule ProxyTransactionTest do
     assert_raise RuntimeError, "oops",
       fn() ->
         P.transaction(pool, fn(_) -> flunk("transaction ran") end,
-          [proxy_mod: Proxy])
+          [proxy: Proxy])
       end
 
     assert_receive {:EXIT, ^conn,
@@ -357,10 +357,10 @@ defmodule ProxyTransactionTest do
     assert_receive :connected
 
     assert_raise RuntimeError, "oops",
-      fn() -> P.transaction(pool, fn(_) -> :ok end, [proxy_mod: Proxy]) end
+      fn() -> P.transaction(pool, fn(_) -> :ok end, [proxy: Proxy]) end
 
     assert P.transaction(pool, fn(_) -> :result end,
-      [proxy_mod: Proxy]) == {:ok, :result}
+      [proxy: Proxy]) == {:ok, :result}
 
     assert [
       connect: [_],
@@ -401,7 +401,7 @@ defmodule ProxyTransactionTest do
     assert_receive :connected
 
     assert_raise RuntimeError, "oops",
-      fn() -> P.transaction(pool, fn(_) -> :result end, [proxy_mod: Proxy]) end
+      fn() -> P.transaction(pool, fn(_) -> :result end, [proxy: Proxy]) end
 
     assert_receive :reconnected
 
@@ -436,7 +436,7 @@ defmodule ProxyTransactionTest do
 
     Process.flag(:trap_exit, true)
     assert_raise DBConnection.Error, "bad return value: :oops",
-      fn() -> P.transaction(pool, fn(_) -> :result end, [proxy_mod: Proxy]) end
+      fn() -> P.transaction(pool, fn(_) -> :result end, [proxy: Proxy]) end
 
     assert_receive {:EXIT, ^conn,
       {%DBConnection.Error{message: "client stopped: " <> _}, [_|_]}}
@@ -472,7 +472,7 @@ defmodule ProxyTransactionTest do
 
     Process.flag(:trap_exit, true)
     assert_raise RuntimeError, "oops",
-      fn() -> P.transaction(pool, fn(_) -> :result end, [proxy_mod: Proxy]) end
+      fn() -> P.transaction(pool, fn(_) -> :result end, [proxy: Proxy]) end
 
     assert_receive {:EXIT, ^conn,
       {%DBConnection.Error{message: "client stopped: " <> _}, [_|_]}}
@@ -512,11 +512,11 @@ defmodule ProxyTransactionTest do
 
     assert_raise RuntimeError, "oops",
       fn() ->
-        P.transaction(pool, &P.rollback(&1, :oops), [proxy_mod: Proxy])
+        P.transaction(pool, &P.rollback(&1, :oops), [proxy: Proxy])
       end
 
     assert P.transaction(pool, fn(_) -> :result end,
-      [proxy_mod: Proxy]) == {:ok, :result}
+      [proxy: Proxy]) == {:ok, :result}
 
     assert [
       connect: [_],

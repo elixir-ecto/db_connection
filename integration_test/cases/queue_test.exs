@@ -55,7 +55,7 @@ defmodule QueueTest do
 
     run = fn() ->
       try do
-        P.run(pool, fn(_) -> flunk("run ran") end, [queue_timeout: 50])
+        P.run(pool, fn(_) -> flunk("run ran") end, [pool_timeout: 50])
       rescue
         DBConnection.Error ->
           :error

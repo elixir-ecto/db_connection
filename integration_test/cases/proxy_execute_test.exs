@@ -25,7 +25,7 @@ defmodule ProxyExecuteTest do
 
     assert_receive :connected
 
-    assert P.execute(pool, %Q{}, [:param], [proxy_mod: Proxy]) == {:ok, %R{}}
+    assert P.execute(pool, %Q{}, [:param], [proxy: Proxy]) == {:ok, %R{}}
 
     assert [
       connect: [_],
@@ -55,20 +55,20 @@ defmodule ProxyExecuteTest do
 
     assert_receive :connected
 
-    assert P.execute(pool, %Q{}, [:param], [proxy_mod: Proxy]) == {:ok, %R{}}
+    assert P.execute(pool, %Q{}, [:param], [proxy: Proxy]) == {:ok, %R{}}
     assert P.execute(pool, %Q{}, [:param],
-      [key: :value, proxy_mod: Proxy]) == {:ok, %R{}}
+      [key: :value, proxy: Proxy]) == {:ok, %R{}}
 
     assert [
       connect: [_],
       init: [_],
       checkout: [C, _, :state, :proxy],
-      handle_execute: [%Q{}, [:param], [{:proxy_mod, Proxy} | _], :new_state],
+      handle_execute: [%Q{}, [:param], [{:proxy, Proxy} | _], :new_state],
       checkin: [C, _, :newer_state, :new_proxy],
       init: [_],
       checkout: [C, _, :newest_state, :proxy2],
       handle_execute: [%Q{}, [:param],
-        [{:key, :value}, {:proxy_mod, Proxy} | _], :state2],
+        [{:key, :value}, {:proxy, Proxy} | _], :state2],
       checkin: [C, _, :new_state2, :new_proxy2]]= A.record(agent)
   end
 
@@ -91,7 +91,7 @@ defmodule ProxyExecuteTest do
 
     assert_receive :connected
 
-    assert P.execute(pool, %Q{}, [:param], [proxy_mod: Proxy]) == {:error, err}
+    assert P.execute(pool, %Q{}, [:param], [proxy: Proxy]) == {:error, err}
 
     assert [
       connect: [_],
@@ -121,7 +121,7 @@ defmodule ProxyExecuteTest do
     assert_receive :connected
 
     assert_raise RuntimeError, "oops",
-      fn() -> P.execute!(pool, %Q{}, [:param], [proxy_mod: Proxy]) end
+      fn() -> P.execute!(pool, %Q{}, [:param], [proxy: Proxy]) end
 
     assert [
       connect: [_],
@@ -154,7 +154,7 @@ defmodule ProxyExecuteTest do
   
     assert_receive :connected
  
-    assert P.execute(pool, %Q{}, [:param], [proxy_mod: Proxy]) == {:error, err}
+    assert P.execute(pool, %Q{}, [:param], [proxy: Proxy]) == {:error, err}
 
     assert_receive :reconnected
 
@@ -187,7 +187,7 @@ defmodule ProxyExecuteTest do
 
     Process.flag(:trap_exit, true)
     assert_raise DBConnection.Error, "bad return value: :oops",
-      fn() -> P.execute(pool, %Q{}, [:param], [proxy_mod: Proxy]) end
+      fn() -> P.execute(pool, %Q{}, [:param], [proxy: Proxy]) end
 
     assert_receive {:EXIT, ^conn,
       {%DBConnection.Error{message: "client stopped: " <> _}, [_|_]}}
@@ -221,7 +221,7 @@ defmodule ProxyExecuteTest do
 
     Process.flag(:trap_exit, true)
     assert_raise RuntimeError, "oops",
-      fn() -> P.execute(pool, %Q{}, [:param], [proxy_mod: Proxy]) end
+      fn() -> P.execute(pool, %Q{}, [:param], [proxy: Proxy]) end
 
     assert_receive {:EXIT, ^conn,
       {%DBConnection.Error{message: "client stopped: " <> _}, [_|_]}}
@@ -253,7 +253,7 @@ defmodule ProxyExecuteTest do
   
     assert_receive :connected
 
-    assert P.execute(pool, %Q{}, [:param], [proxy_mod: Proxy]) == {:ok, %R{}}
+    assert P.execute(pool, %Q{}, [:param], [proxy: Proxy]) == {:ok, %R{}}
 
     assert [
       connect: [_],
@@ -285,7 +285,7 @@ defmodule ProxyExecuteTest do
  
     assert_receive :connected
  
-    assert P.execute(pool, %Q{}, [:param], [proxy_mod: Proxy]) == {:error, err}
+    assert P.execute(pool, %Q{}, [:param], [proxy: Proxy]) == {:error, err}
 
     assert [
       connect: [_],
@@ -317,7 +317,7 @@ defmodule ProxyExecuteTest do
     assert_receive :connected
      
     assert_raise DBConnection.Error, "connection did not prepare query",
-      fn() -> P.execute(pool, %Q{}, [:param], [proxy_mod: Proxy]) end
+      fn() -> P.execute(pool, %Q{}, [:param], [proxy: Proxy]) end
 
     assert [
       connect: [_],

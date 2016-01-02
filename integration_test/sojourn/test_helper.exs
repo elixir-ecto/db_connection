@@ -1,7 +1,7 @@
 Code.require_file "../../test/test_helper.exs", __DIR__
 
 defmodule TestPool do
-  @opts [pool_mod: DBConnection.Sojourn, pool_size: 1]
+  @opts [pool: DBConnection.Sojourn, pool_size: 1]
 
   use TestConnection, @opts
 

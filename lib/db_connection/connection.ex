@@ -11,7 +11,7 @@ defmodule DBConnection.Connection do
   use Connection
   require Logger
 
-  @queue_timeout 5_000
+  @pool_timeout  5_000
   @timeout       15_000
   @idle_timeout  15_000
   @backoff_start 200
@@ -32,13 +32,13 @@ defmodule DBConnection.Connection do
 
   @doc false
   def checkout(pool, opts) do
-    queue_timeout = opts[:queue_timeout] || @queue_timeout
+    pool_timeout = opts[:pool_timeout] || @pool_timeout
     queue?        = Keyword.get(opts, :queue, true)
     timeout       = opts[:timeout] || @timeout
 
     ref = make_ref()
     try do
-      Connection.call(pool, {:checkout, ref, queue?, timeout}, queue_timeout)
+      Connection.call(pool, {:checkout, ref, queue?, timeout}, pool_timeout)
     catch
       :exit, {_, {_, :call, [pool | _]}} = reason ->
         Connection.cast(pool, {:cancel, ref})
@@ -63,7 +63,7 @@ defmodule DBConnection.Connection do
 
   @doc false
   def sync_stop({pid, ref}, reason, state, opts) do
-    timeout = Keyword.get(opts, :queue_timeout, @queue_timeout)
+    timeout = Keyword.get(opts, :pool_timeout, @pool_timeout)
     {_, mref} = spawn_monitor(fn() ->
       sync_stop(pid, ref, reason, state, timeout)
     end)

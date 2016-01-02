@@ -35,7 +35,7 @@ defmodule DBConnection do
   blocking the connection or pool.
 
   By default the `DBConnection` provides a single connection. However
-  the `:pool_mod` option can be set to use a pool of connections. If a
+  the `:pool` option can be set to use a pool of connections. If a
   pool is used the module must be passed as an option - unless inside a
   `run/3` or `transaction/3` fun and using the run/transaction
   connection reference (`t`).
@@ -354,7 +354,7 @@ defmodule DBConnection do
 
   ### Options
 
-    * `:pool_mod` - The `DBConnection.Pool` module to use, (default:
+    * `:pool` - The `DBConnection.Pool` module to use, (default:
     `DBConnection.Connection`)
     * `:idle_timeout` - The idle timeout to ping the database (default:
     `15_000`)
@@ -372,7 +372,7 @@ defmodule DBConnection do
   """
   @spec start_link(module, opts :: Keyword.t) :: GenServer.on_start
   def start_link(conn_mod, opts) do
-    pool_mod = Keyword.get(opts, :pool_mod, DBConnection.Connection)
+    pool_mod = Keyword.get(opts, :pool, DBConnection.Connection)
     apply(pool_mod, :start_link, [conn_mod, opts])
   end
 
@@ -384,7 +384,7 @@ defmodule DBConnection do
   @spec child_spec(module, opts :: Keyword.t, child_opts :: Keyword.t) ::
     Supervisor.Spec.spec
   def child_spec(conn_mod, opts, child_opts \\ []) do
-    pool_mod = Keyword.get(opts, :pool_mod, DBConnection.Connection)
+    pool_mod = Keyword.get(opts, :pool, DBConnection.Connection)
     apply(pool_mod, :child_spec, [conn_mod, opts, child_opts])
   end
 
@@ -394,15 +394,14 @@ defmodule DBConnection do
 
   ### Options
 
-    * `:queue_timeout` - The time to wait for control of the
-    connection's state, if the pool allows setting the timeout per
-    request (default: `5_000`)
+    * `:pool_timeout` - The maximum time to wait for a reply when making a
+    synchronous call to the pool (default: `5_000`)
     * `:queue` - Whether to block waiting in an internal queue for the
     connection's state (boolean, default: `true`)
     * `:timeout` - The maximum time that the caller is allowed the
     to hold the connection's state (ignored when using a run/transaction
     connection, default: `15_000`)
-    * `:proxy_mod` - The `DBConnection.Proxy` module, if any, to proxy the
+    * `:proxy` - The `DBConnection.Proxy` module, if any, to proxy the
     connection's state (ignored when using a run/transaction connection,
     default: `nil`)
 
@@ -448,15 +447,14 @@ defmodule DBConnection do
 
   ### Options
 
-    * `:queue_timeout` - The time to wait for control of the connection's
-    state, the pool allows setting the timeout per request
-    (default: `5_000`)
+    * `:pool_timeout` - The maximum time to wait for a reply when making a
+    synchronous call to the pool (default: `5_000`)
     * `:queue` - Whether to block waiting in an internal queue for the
     connection's state (boolean, default: `true`)
     * `:timeout` - The maximum time that the caller is allowed the
     to hold the connection's state (ignored when using a run/transaction
     connection, default: `15_000`)
-   * `:proxy_mod` - The `DBConnection.Proxy` module, if any, to proxy the
+    * `:proxy` - The `DBConnection.Proxy` module, if any, to proxy the
     connection's state (ignored when using a run/transaction connection,
     default: `nil`)
 
@@ -508,15 +506,14 @@ defmodule DBConnection do
 
   ### Options
 
-    * `:queue_timeout` - The time to wait for control of the connection's
-    state, the pool allows setting the timeout per request
-    (default: `5_000`)
+    * `:pool_timeout` - The maximum time to wait for a reply when making a
+    synchronous call to the pool (default: `5_000`)
     * `:queue` - Whether to block waiting in an internal queue for the
     connection's state (boolean, default: `true`)
     * `:timeout` - The maximum time that the caller is allowed the
     to hold the connection's state (ignored when using a run/transaction
     connection, default: `15_000`)
-   * `:proxy_mod` - The `DBConnection.Proxy` module, if any, to proxy the
+    * `:proxy` - The `DBConnection.Proxy` module, if any, to proxy the
     connection's state (ignored when using a run/transaction connection,
     default: `nil`)
 
@@ -563,15 +560,14 @@ defmodule DBConnection do
 
   ### Options
 
-    * `:queue_timeout` - The time to wait for control of the
-    connection's state, if the pool allows setting the timeout per
-    request (default: `5_000`)
+    * `:pool_timeout` - The maximum time to wait for a reply when making a
+    synchronous call to the pool (default: `5_000`)
     * `:queue` - Whether to block waiting in an internal queue for the
     connection's state (boolean, default: `true`)
     * `:timeout` - The maximum time that the caller is allowed the
     to hold the connection's state (ignored when using a run/transaction
     connection, default: `15_000`)
-    * `:proxy_mod` - The `DBConnection.Proxy` module, if any, to proxy the
+    * `:proxy` - The `DBConnection.Proxy` module, if any, to proxy the
     connection's state (ignored when using a run/transaction connection,
     default: `nil`)
 
@@ -638,15 +634,14 @@ defmodule DBConnection do
 
   ## Options
 
-    * `:queue_timeout` - The time to wait for control of the
-    connection's state, if the pool allows setting the timeout per
-    request (default: `5_000`)
+    * `:pool_timeout` - The maximum time to wait for a reply when making a
+    synchronous call to the pool (default: `5_000`)
     * `:queue` - Whether to block waiting in an internal queue for the
     connection's state (boolean, default: `true`)
     * `:timeout` - The maximum time that the caller is allowed the
     to hold the connection's state (ignored when using a run/transaction
     connection, default: `15_000`)
-    * `:proxy_mod` - The `DBConnection.Proxy` module, if any, to proxy the
+    * `:proxy` - The `DBConnection.Proxy` module, if any, to proxy the
     connection's state (ignored when using a run/transaction connection,
     default: `nil`)
 
@@ -690,14 +685,13 @@ defmodule DBConnection do
 
   ### Options
 
-    * `:queue_timeout` - The time to wait for control of the
-    connection's state, if the pool allows setting the timeout per
-    request (default: `5_000`)
+    * `:pool_timeout` - The maximum time to wait for a reply when making a
+    synchronous call to the pool (default: `5_000`)
     * `:queue` - Whether to block waiting in an internal queue for the
     connection's state (boolean, default: `true`)
     * `:timeout` - The maximum time that the caller is allowed the
     to hold the connection's state (default: `15_000`)
-    * `:proxy_mod` - The `DBConnection.Proxy` module, if any, to proxy the
+    * `:proxy` - The `DBConnection.Proxy` module, if any, to proxy the
     connection's state (ignored when using a run/transaction connection,
     default: `nil`)
 
@@ -742,14 +736,13 @@ defmodule DBConnection do
 
   ### Options
 
-    * `:queue_timeout` - The time to wait for control of the
-    connection's state, if the pool allows setting the timeout per
-    request (default: `5_000`)
+    * `:pool_timeout` - The maximum time to wait for a reply when making a
+    synchronous call to the pool (default: `5_000`)
     * `:queue` - Whether to block waiting in an internal queue for the
     connection's state (boolean, default: `true`)
     * `:timeout` - The maximum time that the caller is allowed the
     to hold the connection's state (default: `15_000`)
-    * `:proxy_mod` - The `DBConnection.Proxy` module, if any, to proxy the
+    * `:proxy` - The `DBConnection.Proxy` module, if any, to proxy the
     connection's state (ignored when using a run/transaction connection,
     default: `nil`)
 
@@ -812,7 +805,7 @@ defmodule DBConnection do
   ## Helpers
 
   defp checkout(pool, opts) do
-    pool_mod = Keyword.get(opts, :pool_mod, DBConnection.Connection)
+    pool_mod = Keyword.get(opts, :pool, DBConnection.Connection)
     {proxy_mod, proxy_state} = proxy_mod(opts)
     case apply(pool_mod, :checkout, [pool, opts]) do
       {:ok, pool_ref, conn_mod, conn_state} when is_nil(proxy_mod) ->
@@ -829,7 +822,7 @@ defmodule DBConnection do
   end
 
   defp proxy_mod(opts) do
-    case Keyword.get(opts, :proxy_mod) do
+    case Keyword.get(opts, :proxy) do
       nil       -> {nil, nil}
       proxy_mod -> proxy_init(proxy_mod, opts)
     end

@@ -13,7 +13,7 @@ defmodule DBConnection.Poolboy do
 
   @behaviour DBConnection.Pool
 
-  @timeout 5000
+  @pool_timeout 5000
 
   @doc false
   def start_link(mod, opts) do
@@ -30,10 +30,10 @@ defmodule DBConnection.Poolboy do
 
   @doc false
   def checkout(pool, opts) do
-    queue_timeout = Keyword.get(opts, :queue_timeout, @timeout)
-    queue?        = Keyword.get(opts, :queue, true)
+    pool_timeout = Keyword.get(opts, :pool_timeout, @pool_timeout)
+    queue?       = Keyword.get(opts, :queue, true)
 
-    case :poolboy.checkout(pool, queue?, queue_timeout) do
+    case :poolboy.checkout(pool, queue?, pool_timeout) do
       :full  -> :error
       worker -> checkout(pool, worker, opts)
     end

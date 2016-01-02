@@ -20,7 +20,7 @@ defmodule DBConnection.Task do
       {:go, ^ref, mon} ->
         Process.unlink(conn)
         pool = {:via, __MODULE__, {{conn, mon}, mod, state}}
-        _ = DBConnection.run(pool, make(fun), [pool_mod: __MODULE__] ++ opts)
+        _ = DBConnection.run(pool, make(fun), [pool: __MODULE__] ++ opts)
         exit(:normal)
     end
   end
