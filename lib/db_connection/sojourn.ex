@@ -13,6 +13,7 @@ defmodule DBConnection.Sojourn do
     time frame (default `3`)
     * `:max_seconds` - the time frame in which `:max_restarts` applies (default
     `5`)
+    * `:shutdown` - the shutdown strategy for connections (default `5_000`)
 
   All options are passed as the argument to the sbroker callback module.
   """
@@ -76,7 +77,8 @@ defmodule DBConnection.Sojourn do
   end
 
   defp conn_sup(mod, opts) do
-    conn = DBConnection.Connection.child_spec(mod, opts, :sojourn, [])
+    child_opts = Keyword.take(opts, [:shutdown])
+    conn = DBConnection.Connection.child_spec(mod, opts, :sojourn, child_opts)
     sup_opts = Keyword.take(opts, [:max_restarts, :max_seconds])
     sup_opts = [strategy: :simple_one_for_one] ++ sup_opts
     supervisor(Supervisor, [[conn], sup_opts])
