@@ -9,7 +9,7 @@ defmodule DBAgent do
 
   @spec start_link((() -> state :: any), Keyword.t) :: GenServer.on_start
   def start_link(fun, opts \\ []) when is_function(fun, 0) do
-    opts = [init: fun, pool_mod: DBConnection.Connection, sync_connect: true,
+    opts = [init: fun, pool: DBConnection.Connection, sync_connect: true,
             backoff: nil] ++ opts
     DBConnection.start_link(__MODULE__, opts)
   end
@@ -18,27 +18,27 @@ defmodule DBAgent do
     value when value: var
   def get(conn, fun, timeout \\ 5_000) do
     DBConnection.query!(conn, %Query{query: :get}, fun,
-      [queue_timeout: timeout])
+      [pool_timeout: timeout])
   end
 
   @spec update(DBConnection.conn, ((state :: any) -> new_state :: any), timeout) ::
     :ok
   def update(conn, fun, timeout \\ 5_000) do
     DBConnection.query!(conn, %Query{query: :update}, fun,
-      [queue_timeout: timeout])
+      [pool_timeout: timeout])
   end
 
   @spec get(DBConnection.conn, ((state :: any) -> {value, new_state :: any}), timeout) ::
     value when value: var
   def get_and_update(conn, fun, timeout \\ 5_000) do
     DBConnection.query!(conn, %Query{query: :get_and_update}, fun,
-      [queue_timeout: timeout])
+      [pool_timeout: timeout])
   end
 
   @spec transaction(DBConnection.conn, ((DBConnection.t) -> res),  timeout) ::
     {:ok, res} | {:error, reason :: any} when res: var
   def transaction(conn, fun, timeout \\ 5_000) when is_function(fun, 1) do
-    DBConnection.transaction(conn, fun, [queue_timeout: timeout])
+    DBConnection.transaction(conn, fun, [pool_timeout: timeout])
   end
 
   @spec rollback(DBConnection.t, reason :: any) :: no_return
@@ -61,7 +61,7 @@ defmodule DBAgent do
   def handle_execute(%Query{query: :update}, fun, _, %{state: state} = s) do
     {:ok, :ok, %{s | state: fun.(state)}}
   end
-  def handle_execute(%Query{query: :get_nad_update}, fun, _, s) do
+  def handle_execute(%Query{query: :get_and_update}, fun, _, s) do
     %{state: state} = s
     {res, state} = fun.(state)
     {:ok, res, %{s | state: state}}
