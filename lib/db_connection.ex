@@ -417,7 +417,7 @@ defmodule DBConnection do
   def query(conn, query, params, opts \\ []) do
     query = DBConnection.Query.parse(query, opts)
     case run_query(conn, query, params, opts) do
-      {:ok, result} ->
+      {:ok, query, result} ->
         {:ok, DBConnection.Query.decode(query, result, opts)}
       other ->
         other
@@ -1012,26 +1012,24 @@ defmodule DBConnection do
     run(conn, fn(conn2) ->
       case handle(conn2, :handle_prepare, [query], opts, :result) do
         {:ok, query} ->
-          fun = :handle_execute_close
-          describe_execute(conn2, fun, query, params, opts, :result)
+          describe_execute(conn2, :handle_execute_close, query, params, opts)
         other ->
           other
       end
     end, opts)
   end
 
-  defp describe_execute(conn, fun, query, params, opts, return) do
+  defp describe_execute(conn, fun, query, params, opts) do
     query = DBConnection.Query.describe(query, opts)
     params = DBConnection.Query.encode(query, params, opts)
-    prepared_execute(conn, fun, query, params, opts, return)
+    prepared_execute(conn, fun, query, params, opts)
   end
 
   defp run_prepare_execute(conn, query, params, opts) do
     run(conn, fn(conn2) ->
       case handle(conn2, :handle_prepare, [query], opts, :result) do
         {:ok, query} ->
-          return = :query_result
-          describe_execute(conn2, :handle_execute, query, params, opts, return)
+          describe_execute(conn2, :handle_execute, query, params, opts)
         other ->
           other
       end
@@ -1041,7 +1039,7 @@ defmodule DBConnection do
   defp execute(conn, callback, query, params, opts) do
     params = DBConnection.Query.encode(query, params, opts)
     case run_execute(conn, callback, query, params, opts)  do
-      {:ok, result} ->
+      {:ok, query, result} ->
        {:ok, DBConnection.Query.decode(query, result, opts)}
       other ->
         other
@@ -1053,6 +1051,8 @@ defmodule DBConnection do
       case handle(conn2, callback, [query, params], opts, :execute) do
         :prepare ->
           execute_prepare(conn2, callback, query, params, opts)
+        {:ok, result} ->
+          {:ok, query, result}
         other ->
           other
       end
@@ -1062,17 +1062,17 @@ defmodule DBConnection do
   defp execute_prepare(conn, callback, query, params, opts) do
     case handle(conn, :handle_prepare, [query], opts, :result) do
       {:ok, query} ->
-        prepared_execute(conn, callback, query, params, opts, :result)
+        prepared_execute(conn, callback, query, params, opts)
       other ->
         other
     end
   end
 
-  defp prepared_execute(conn, callback, query, params, opts, return) do
+  defp prepared_execute(conn, callback, query, params, opts) do
     case handle(conn, callback, [query, params], opts, :execute) do
       :prepare ->
         raise DBConnection.Error, "connection did not prepare query"
-      {:ok, result} when return == :query_result ->
+      {:ok, result} ->
         {:ok, query, result}
       other ->
         other
