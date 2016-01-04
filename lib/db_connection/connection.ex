@@ -41,7 +41,7 @@ defmodule DBConnection.Connection do
       Connection.call(pool, {:checkout, ref, queue?, timeout}, pool_timeout)
     catch
       :exit, {_, {_, :call, [pool | _]}} = reason ->
-        Connection.cast(pool, {:cancel, ref})
+        cancel(pool, ref)
         exit(reason)
     end
   end
@@ -347,6 +347,15 @@ defmodule DBConnection.Connection do
   end
   defp start_opts(mode, opts) when mode in [:poolboy, :sojourn] do
     Keyword.take(opts, [:debug, :timeout, :spawn_opt])
+  end
+
+  defp cancel(pool, ref) do
+    try do
+      Connection.cast(pool, {:cancel, ref})
+    rescue
+      ArgumentError ->
+        :ok
+    end
   end
 
   defp sync_stop(pid, ref, reason, state, timeout) do
