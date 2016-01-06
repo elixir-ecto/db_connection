@@ -793,7 +793,7 @@ defmodule DBConnection do
       {{:error, _} = error, meter} ->
         _ = transaction_log(:handle_rollback, meter, :ok)
         error
-      {{:error, err, call}, meter} ->
+      {{:raise, err, call}, meter} ->
         _ = transaction_log(call, meter, {:error, err})
         raise err
       {{kind, stack, reason}, meter} ->
@@ -1239,7 +1239,7 @@ defmodule DBConnection do
       fun.(conn2)
     end
     case transaction(conn, idle, log, fun, opts) do
-      {:error, _, :handle_begin} = error ->
+      {:raise, _, :handle_begin} = error ->
         meter = {log, [stop: time()] ++ times}
         {error, meter}
       other ->
@@ -1266,10 +1266,10 @@ defmodule DBConnection do
         transaction_run(conn, log, fun, opts)
       {:error, err, conn_state} ->
         put_info(conn, :idle, conn_state)
-        {:error, err, :handle_begin}
+        {:raise, err, :handle_begin}
       {:disconnect, err, conn_state} ->
         delete_disconnect(conn, conn_state, err, opts)
-        {:error, err, :handle_begin}
+        {:raise, err, :handle_begin}
        other ->
         delete_stop(conn, conn_state, {:bad_return_value, other}, opts)
         raise DBConnection.Error, "bad return value: #{inspect other}"
@@ -1291,10 +1291,10 @@ defmodule DBConnection do
         transaction_run(conn, log, fun, opts)
       {:error, err, conn_state, proxy_state} ->
         put_info(conn, :idle, conn_state, proxy_state)
-        {:error, err, :handle_begin}
+        {:raise, err, :handle_begin}
       {:disconnect, err, conn_state, proxy_state} ->
         delete_disconnect(conn, conn_state, proxy_state, err, opts)
-        {:error, err, :handle_begin}
+        {:raise, err, :handle_begin}
        other ->
         reason = {:bad_return_value, other}
         delete_stop(conn, conn_state, proxy_state, reason, opts)
@@ -1373,10 +1373,10 @@ defmodule DBConnection do
         result
       {:error, err, conn_state} ->
         put_info(conn, :idle, conn_state)
-        {:error, err, fun}
+        {:raise, err, fun}
       {:disconnect, err, conn_state} ->
         delete_disconnect(conn, conn_state, err, opts)
-        {:error, err, fun}
+        {:raise, err, fun}
        other ->
         delete_stop(conn, conn_state, {:bad_return_value, other}, opts)
         raise DBConnection.Error, "bad return value: #{inspect other}"
@@ -1398,10 +1398,10 @@ defmodule DBConnection do
         result
       {:error, err, conn_state, proxy_state} ->
         put_info(conn, :idle, conn_state, proxy_state)
-        {:error, err, fun}
+        {:raise, err, fun}
       {:disconnect, err, conn_state, proxy_state} ->
         delete_disconnect(conn, conn_state, proxy_state, err, opts)
-        {:error, err, fun}
+        {:raise, err, fun}
        other ->
         reason = {:bad_return_value, other}
         delete_stop(conn, conn_state, proxy_state, reason, opts)

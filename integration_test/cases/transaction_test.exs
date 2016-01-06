@@ -593,4 +593,55 @@ defmodule TransactionTest do
       handle_begin: [_, :newer_state],
       handle_commit: [_, :newest_state]] = A.record(agent)
   end
+
+  test "transaction fun raise rolls back and re-raises" do
+   stack = [
+      {:ok, :state},
+      {:ok, :new_state},
+      {:ok, :newer_state},
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self()]
+    {:ok, pool} = P.start_link(opts)
+
+    assert_raise RuntimeError, "oops",
+      fn() -> P.transaction(pool, fn(_) -> raise "oops"end) end
+
+    assert [
+      connect: [_],
+      handle_begin: [_, :state],
+      handle_rollback: [_, :new_state]] = A.record(agent)
+  end
+
+  test "transaction logs on fun raise" do
+   stack = [
+      {:ok, :state},
+      {:ok, :new_state},
+      {:ok, :newer_state},
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    parent = self()
+    opts = [agent: agent, parent: parent]
+    {:ok, pool} = P.start_link(opts)
+
+    log = &send(parent, &1)
+
+    assert_raise RuntimeError, "oops",
+      fn() ->
+        P.transaction(pool, fn(_) ->
+          assert_received %DBConnection.LogEntry{call: :transaction,
+            query: :begin}
+          raise "oops"
+        end, [log: log])
+      end
+
+    assert_received %DBConnection.LogEntry{call: :transaction, query: :rollback}
+
+    assert [
+      connect: [_],
+      handle_begin: [_, :state],
+      handle_rollback: [_, :new_state]] = A.record(agent)
+  end
 end
