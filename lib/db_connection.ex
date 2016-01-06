@@ -365,6 +365,8 @@ defmodule DBConnection do
     * `:after_connect` - A function to run on connect using `run/3`, either
     a 1-arity fun, `{module, function, args}` with `DBConnection.t` prepended
     to `args` or `nil` (default: `nil`)
+    * `:owner` - supported only by `DBConnection.Connection`, links the connection
+      process to the given owner
 
   ### Example
 
