@@ -13,6 +13,7 @@ defmodule DBConnection.Mixfile do
      description: description,
      package: package,
      build_per_environment: false,
+     consolidate_protocols: false,
      test_paths: test_paths(Mix.env),
      aliases: ["test.all": ["test", "test.pools"],
                "test.pools": &test_pools/1],
