@@ -111,6 +111,39 @@ defmodule QueryTest do
       handle_execute_close: [%Q{}, [:param], _, :new_state]] = A.record(agent)
   end
 
+  test "query logs result" do
+    stack = [
+      {:ok, :state},
+      {:ok, %Q{}, :new_state},
+      {:ok, %R{}, :newer_state},
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    parent = self()
+    opts = [agent: agent, parent: parent]
+    {:ok, pool} = P.start_link(opts)
+
+    log = fn(entry) ->
+      assert %DBConnection.LogEntry{call: :query, query: %Q{},
+                                    params: [:param],
+                                    result: {:ok, %R{}}} = entry
+      assert is_integer(entry.pool_time)
+      assert entry.pool_time >= 0
+      assert is_integer(entry.connection_time)
+      assert entry.connection_time >= 0
+      assert is_integer(entry.decode_time)
+      assert entry.decode_time >= 0
+      send(parent, :logged)
+    end
+    assert P.query(pool, %Q{}, [:param], [log: log]) == {:ok, %R{}}
+    assert_received :logged
+
+    assert [
+      connect: [_],
+      handle_prepare: [%Q{}, _, :state],
+      handle_execute_close: [%Q{}, [:param], _, :new_state]] = A.record(agent)
+  end
+
   test "query handle_prepare error returns error" do
     err = RuntimeError.exception("oops")
     stack = [
@@ -145,6 +178,36 @@ defmodule QueryTest do
       connect: [_],
       handle_prepare: [%Q{}, _, :state],
       handle_execute_close: [%Q{}, [:param], _, :new_state]] = A.record(agent)
+  end
+
+ test "query logs error" do
+    err = RuntimeError.exception("oops")
+    stack = [
+      {:ok, :state},
+      {:error, err, :new_state}
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    parent = self()
+    opts = [agent: agent, parent: parent]
+    {:ok, pool} = P.start_link(opts)
+    log = fn(entry) ->
+      assert %DBConnection.LogEntry{call: :query, query: %Q{},
+                                    params: [:param],
+                                    result: {:error, ^err}} = entry
+      assert is_integer(entry.pool_time)
+      assert entry.pool_time >= 0
+      assert is_integer(entry.connection_time)
+      assert entry.connection_time >= 0
+      assert is_nil(entry.decode_time)
+      send(parent, :logged)
+    end
+    assert P.query(pool, %Q{}, [:param], [log: log]) == {:error, err}
+    assert_received :logged
+
+    assert [
+      connect: [_],
+      handle_prepare: [%Q{}, _, :state]] = A.record(agent)
   end
 
   test "query! error raises error" do

@@ -35,6 +35,61 @@ defmodule TransactionTest do
       handle_commit: [[{:key, :value} | _], :newest_state]] = A.record(agent)
   end
 
+  test "transaction logs begin/commit/rollback" do
+    stack = [
+      {:ok, :state},
+      {:ok, :new_state},
+      {:ok, :newer_state},
+      {:ok, :newest_state},
+      {:ok, :newest_state}
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    parent = self()
+    opts = [agent: agent, parent: parent]
+    {:ok, pool} = P.start_link(opts)
+
+    log = &send(parent, &1)
+
+    assert P.transaction(pool, fn(_) ->
+      assert_received %DBConnection.LogEntry{call: :transaction} = entry
+      assert %{query: :begin, params: nil, result: :ok} = entry
+      assert is_integer(entry.pool_time)
+      assert entry.pool_time >= 0
+      assert is_integer(entry.connection_time)
+      assert entry.connection_time >= 0
+      assert is_nil(entry.decode_time)
+
+      :result
+    end, [log: log]) == {:ok, :result}
+
+    assert_received %DBConnection.LogEntry{call: :transaction} = entry
+    assert %{query: :commit, params: nil, result: :ok} = entry
+    assert is_nil(entry.pool_time)
+    assert is_integer(entry.connection_time)
+    assert entry.connection_time >= 0
+    assert is_nil(entry.decode_time)
+
+    assert P.transaction(pool, fn(conn) ->
+      assert_received %DBConnection.LogEntry{}
+      P.rollback(conn, :result)
+    end, [log: log]) == {:error, :result}
+
+    assert_received %DBConnection.LogEntry{call: :transaction} = entry
+    assert %{query: :rollback, params: nil, result: :ok} = entry
+    assert is_nil(entry.pool_time)
+    assert is_integer(entry.connection_time)
+    assert entry.connection_time >= 0
+    assert is_nil(entry.decode_time)
+
+    assert [
+      connect: [_],
+      handle_begin: [ _, :state],
+      handle_commit: [_, :new_state],
+      handle_begin: [_, :newer_state],
+      handle_rollback: [_, :newest_state]] = A.record(agent)
+  end
+
   test "transaction rollback returns error" do
     stack = [
       {:ok, :state},
@@ -233,6 +288,37 @@ defmodule TransactionTest do
       handle_commit: [_, :newer_state]] = A.record(agent)
   end
 
+  test "transaction logs begin error" do
+    err = RuntimeError.exception("oops")
+    stack = [
+      {:ok, :state},
+      {:error, err, :new_state}
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    parent = self()
+    opts = [agent: agent, parent: parent]
+    {:ok, pool} = P.start_link(opts)
+
+    log = &send(parent, &1)
+    assert_raise RuntimeError, "oops",
+      fn() ->
+        P.transaction(pool, fn(_) -> flunk("transaction ran") end, [log: log])
+      end
+
+    assert_received %DBConnection.LogEntry{call: :transaction} = entry
+    assert %{query: :begin, params: nil, result: {:error, ^err}} = entry
+    assert is_integer(entry.pool_time)
+    assert entry.pool_time >= 0
+    assert is_integer(entry.connection_time)
+    assert entry.connection_time >= 0
+    assert is_nil(entry.decode_time)
+
+    assert [
+      connect: [_],
+      handle_begin: [ _, :state]] = A.record(agent)
+  end
+
   test "transaction begin disconnect raises error" do
     err = RuntimeError.exception("oops")
     stack = [
@@ -348,6 +434,41 @@ defmodule TransactionTest do
       handle_commit: [_, :new_state],
       handle_begin: [_, :newer_state],
       handle_commit: [_, :newest_state]] = A.record(agent)
+  end
+
+  test "transaction logs commit error" do
+    err = RuntimeError.exception("oops")
+    stack = [
+      {:ok, :state},
+      {:ok, :new_state},
+      {:error, err, :newer_state},
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    parent = self()
+    opts = [agent: agent, parent: self()]
+    {:ok, pool} = P.start_link(opts)
+
+    log = &send(parent, &1)
+
+    assert_raise RuntimeError, "oops",
+      fn() ->
+        P.transaction(pool, fn(_) ->
+          assert_received %DBConnection.LogEntry{}
+        end, [log: log])
+      end
+
+    assert_received %DBConnection.LogEntry{call: :transaction} = entry
+    assert %{query: :commit, params: nil, result: {:error, ^err}} = entry
+    assert is_nil(entry.pool_time)
+    assert is_integer(entry.connection_time)
+    assert entry.connection_time >= 0
+    assert is_nil(entry.decode_time)
+
+    assert [
+      connect: [_],
+      handle_begin: [_, :state],
+      handle_commit: [_, :new_state]] = A.record(agent)
   end
 
   test "transaction commit disconnect raises error" do

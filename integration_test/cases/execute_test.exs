@@ -45,6 +45,37 @@ defmodule ExecuteTest do
       handle_execute: [_, :encoded, _, :state]] = A.record(agent)
   end
 
+  test "execute logs result" do
+    stack = [
+      {:ok, :state},
+      {:ok, %R{}, :new_state},
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    parent = self()
+    opts = [agent: agent, parent: parent]
+    {:ok, pool} = P.start_link(opts)
+
+    log = fn(entry) ->
+      assert %DBConnection.LogEntry{call: :execute, query: %Q{},
+                                    params: [:param],
+                                    result: {:ok, %R{}}} = entry
+      assert is_integer(entry.pool_time)
+      assert entry.pool_time >= 0
+      assert is_integer(entry.connection_time)
+      assert entry.connection_time >= 0
+      assert is_integer(entry.decode_time)
+      assert entry.decode_time >= 0
+      send(parent, :logged)
+    end
+    assert P.execute(pool, %Q{}, [:param], [log: log]) == {:ok, %R{}}
+    assert_received :logged
+
+    assert [
+      connect: [_],
+      handle_execute: [%Q{}, [:param], _, :state]] = A.record(agent)
+  end
+
   test "execute error returns error" do
     err = RuntimeError.exception("oops")
     stack = [
@@ -56,6 +87,36 @@ defmodule ExecuteTest do
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
     assert P.execute(pool, %Q{}, [:param]) == {:error, err}
+
+    assert [
+      connect: [_],
+      handle_execute: [%Q{}, [:param], _, :state]] = A.record(agent)
+  end
+
+  test "execute logs error" do
+    err = RuntimeError.exception("oops")
+    stack = [
+      {:ok, :state},
+      {:error, err, :new_state}
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    parent = self()
+    opts = [agent: agent, parent: parent]
+    {:ok, pool} = P.start_link(opts)
+    log = fn(entry) ->
+      assert %DBConnection.LogEntry{call: :execute, query: %Q{},
+                                    params: [:param],
+                                    result: {:error, ^err}} = entry
+      assert is_integer(entry.pool_time)
+      assert entry.pool_time >= 0
+      assert is_integer(entry.connection_time)
+      assert entry.connection_time >= 0
+      assert is_nil(entry.decode_time)
+      send(parent, :logged)
+    end
+    assert P.execute(pool, %Q{}, [:param], [log: log]) == {:error, err}
+    assert_received :logged
 
     assert [
       connect: [_],

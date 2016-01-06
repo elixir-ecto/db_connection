@@ -33,6 +33,43 @@ defmodule TransactionExecuteTest do
       handle_commit: [_, :newest_state]] = A.record(agent)
   end
 
+  test "execute logs result" do
+    stack = [
+      {:ok, :state},
+      {:ok, :new_state},
+      {:ok, %R{}, :newer_state},
+      {:ok, :newest_state}
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    parent = self()
+    opts = [agent: agent, parent: parent]
+    {:ok, pool} = P.start_link(opts)
+
+    log = fn(entry) ->
+      assert %DBConnection.LogEntry{call: :execute, query: %Q{},
+                                    params: [:param],
+                                    result: {:ok, %R{}}} = entry
+      assert is_nil(entry.pool_time)
+      assert is_integer(entry.connection_time)
+      assert entry.connection_time >= 0
+      assert is_integer(entry.decode_time)
+      assert entry.decode_time >= 0
+      send(parent, :logged)
+    end
+    assert P.transaction(pool, fn(conn) ->
+      assert P.execute(conn, %Q{}, [:param], [log: log]) == {:ok, %R{}}
+      :hi
+    end) == {:ok, :hi}
+
+    assert_received :logged
+    assert [
+      connect: [_],
+      handle_begin: [_, :state],
+      handle_execute: [%Q{}, [:param], _, :new_state],
+      handle_commit: [_, :newer_state]] = A.record(agent)
+  end
+
   test "execute error returns error" do
     err = RuntimeError.exception("oops")
     stack = [

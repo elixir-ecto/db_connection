@@ -401,6 +401,9 @@ defmodule DBConnection do
     * `:timeout` - The maximum time that the caller is allowed the
     to hold the connection's state (ignored when using a run/transaction
     connection, default: `15_000`)
+    * `:log` - A function to log information about a call, either
+    a 1-arity fun, `{module, function, args}` with `DBConnection.LogEntry.t`
+    prepended to `args` or `nil`. See `DBConnection.LogEntry` (default: `nil`)
     * `:proxy` - The `DBConnection.Proxy` module, if any, to proxy the
     connection's state (ignored when using a run/transaction connection,
     default: `nil`)
@@ -417,10 +420,11 @@ defmodule DBConnection do
   def query(conn, query, params, opts \\ []) do
     query = DBConnection.Query.parse(query, opts)
     case run_query(conn, query, params, opts) do
-      {:ok, query, result} ->
-        {:ok, DBConnection.Query.decode(query, result, opts)}
-      other ->
-        other
+      {{:ok, query, result}, meter} ->
+        ok = {:ok, DBConnection.Query.decode(query, result, opts)}
+        decode_log(:query, query, params, meter, ok)
+      {{:error, _} = error, meter} ->
+        log(:query, query, params, meter, error)
     end
   end
 
@@ -454,6 +458,9 @@ defmodule DBConnection do
     * `:timeout` - The maximum time that the caller is allowed the
     to hold the connection's state (ignored when using a run/transaction
     connection, default: `15_000`)
+    * `:log` - A function to log information about a call, either
+    a 1-arity fun, `{module, function, args}` with `DBConnection.LogEntry.t`
+    prepended to `args` or `nil`. See `DBConnection.LogEntry` (default: `nil`)
     * `:proxy` - The `DBConnection.Proxy` module, if any, to proxy the
     connection's state (ignored when using a run/transaction connection,
     default: `nil`)
@@ -471,11 +478,12 @@ defmodule DBConnection do
     {:ok, query} | {:error, Exception.t}
   def prepare(conn, query, opts \\ []) do
     query = DBConnection.Query.parse(query, opts)
-    case handle(conn, :handle_prepare, [query], opts, :result) do
-      {:ok, query} ->
-        {:ok, DBConnection.Query.describe(query, opts)}
-      other ->
-        other
+    case run_prepare(conn, query, opts) do
+      {{:ok, query}, meter} ->
+        query = DBConnection.Query.describe(query, opts)
+        log(:prepare, query, nil, meter, {:ok, query})
+      {{:error, _} = error, meter} ->
+        log(:prepare, query, nil, meter, error)
     end
   end
 
@@ -513,6 +521,9 @@ defmodule DBConnection do
     * `:timeout` - The maximum time that the caller is allowed the
     to hold the connection's state (ignored when using a run/transaction
     connection, default: `15_000`)
+    * `:log` - A function to log information about a call, either
+    a 1-arity fun, `{module, function, args}` with `DBConnection.LogEntry.t`
+    prepended to `args` or `nil`. See `DBConnection.LogEntry` (default: `nil`)
     * `:proxy` - The `DBConnection.Proxy` module, if any, to proxy the
     connection's state (ignored when using a run/transaction connection,
     default: `nil`)
@@ -529,10 +540,11 @@ defmodule DBConnection do
   def prepare_execute(conn, query, params, opts \\ []) do
     query = DBConnection.Query.parse(query, opts)
     case run_prepare_execute(conn, query, params, opts) do
-      {:ok, query, result} ->
-        {:ok, query, DBConnection.Query.decode(query, result, opts)}
-      other ->
-        other
+      {{:ok, query, result}, meter} ->
+        ok = {:ok, query, DBConnection.Query.decode(query, result, opts)}
+        decode_log(:prepare_execute, query, params, meter, ok)
+      {{:error, _} = error, meter} ->
+        log(:prepare_execute, query, params, meter, error)
     end
   end
 
@@ -567,6 +579,9 @@ defmodule DBConnection do
     * `:timeout` - The maximum time that the caller is allowed the
     to hold the connection's state (ignored when using a run/transaction
     connection, default: `15_000`)
+    * `:log` - A function to log information about a call, either
+    a 1-arity fun, `{module, function, args}` with `DBConnection.LogEntry.t`
+    prepended to `args` or `nil`. See `DBConnection.LogEntry` (default: `nil`)
     * `:proxy` - The `DBConnection.Proxy` module, if any, to proxy the
     connection's state (ignored when using a run/transaction connection,
     default: `nil`)
@@ -579,7 +594,7 @@ defmodule DBConnection do
   @spec execute(conn, query, params, opts :: Keyword.t) ::
     {:ok, result} | {:error, Exception.t}
   def execute(conn, query, params, opts) do
-    execute(conn, :handle_execute, query, params, opts)
+    execute(conn, :execute, :handle_execute, query, params, opts)
   end
 
   @doc """
@@ -608,7 +623,7 @@ defmodule DBConnection do
   @spec execute_close(conn, query, params, opts :: Keyword.t) ::
     {:ok, result} | {:error, Exception.t}
   def execute_close(conn, query, params, opts \\ []) do
-    execute(conn, :handle_execute_close, query, params, opts)
+    execute(conn, :execute_close, :handle_execute_close, query, params, opts)
   end
 
   @doc """
@@ -641,6 +656,9 @@ defmodule DBConnection do
     * `:timeout` - The maximum time that the caller is allowed the
     to hold the connection's state (ignored when using a run/transaction
     connection, default: `15_000`)
+    * `:log` - A function to log information about a call, either
+    a 1-arity fun, `{module, function, args}` with `DBConnection.LogEntry.t`
+    prepended to `args` or `nil`. See `DBConnection.LogEntry` (default: `nil`)
     * `:proxy` - The `DBConnection.Proxy` module, if any, to proxy the
     connection's state (ignored when using a run/transaction connection,
     default: `nil`)
@@ -653,7 +671,8 @@ defmodule DBConnection do
   @spec close(conn, query, opts :: Keyword.t) ::
     :ok | {:error, Exception.t}
   def close(conn, query, opts \\ []) do
-    handle(conn, :handle_close, [query], opts, :no_result)
+    {result, meter} = run_close(conn, query, opts)
+    log(:close, query, nil, meter, result)
   end
 
   @doc """
@@ -745,6 +764,10 @@ defmodule DBConnection do
     connection's state (boolean, default: `true`)
     * `:timeout` - The maximum time that the caller is allowed the
     to hold the connection's state (default: `15_000`)
+    * `:log` - A function to log information about begin, commit and rollback
+    calls made as part of the transaction, either a 1-arity fun,
+    `{module, function, args}` with `DBConnection.LogEntry.t` prepended to
+    `args` or `nil`. See `DBConnection.LogEntry` (default: `nil`)
     * `:proxy` - The `DBConnection.Proxy` module, if any, to proxy the
     connection's state (ignored when using a run/transaction connection,
     default: `nil`)
@@ -762,20 +785,21 @@ defmodule DBConnection do
   """
   @spec transaction(conn, (conn -> result), opts :: Keyword.t) ::
     {:ok, result} | {:error, reason :: any} when result: var
-  def transaction(%DBConnection{} = conn, fun, opts) do
-    case fetch_info(conn) do
-      {:transaction, _} ->
-        transaction_nested(conn, fun)
-      {:transaction, _, _} ->
-        transaction_nested(conn, fun)
-      {:idle, conn_state} ->
-        transaction_begin(conn, conn_state, fun, opts)
-      {:idle, conn_state, proxy_state} ->
-        transaction_begin(conn, conn_state, proxy_state, fun, opts)
+  def transaction(conn, fun, opts) do
+    case transaction_meter(conn, fun, opts) do
+      {{:ok, _} = ok, meter} ->
+        _ = transaction_log(:handle_commit, meter, :ok)
+        ok
+      {{:error, _} = error, meter} ->
+        _ = transaction_log(:handle_rollback, meter, :ok)
+        error
+      {{:error, err, call}, meter} ->
+        _ = transaction_log(call, meter, {:error, err})
+        raise err
+      {{kind, stack, reason}, meter} ->
+        _ = transaction_log(:handle_rollback, meter, :ok)
+        :erlang.raise(kind, stack, reason)
     end
-  end
-  def transaction(pool, fun, opts) do
-     run(pool, &transaction(&1, fun, opts), opts)
   end
 
   @doc """
@@ -1004,12 +1028,9 @@ defmodule DBConnection do
         :erlang.raise(kind, reason, stack)
     end
   end
-  defp handle(pool, fun, args, opts, return) do
-    run(pool, &handle(&1, fun, args, opts, return), opts)
-  end
 
   defp run_query(conn, query, params, opts) do
-    run(conn, fn(conn2) ->
+    run_meter(conn, fn(conn2) ->
       case handle(conn2, :handle_prepare, [query], opts, :result) do
         {:ok, query} ->
           describe_execute(conn2, :handle_execute_close, query, params, opts)
@@ -1025,8 +1046,14 @@ defmodule DBConnection do
     prepared_execute(conn, fun, query, params, opts)
   end
 
+  defp run_prepare(conn, query, opts) do
+    run_meter(conn, fn(conn2) ->
+      handle(conn2, :handle_prepare, [query], opts, :result)
+    end, opts)
+  end
+
   defp run_prepare_execute(conn, query, params, opts) do
-    run(conn, fn(conn2) ->
+    run_meter(conn, fn(conn2) ->
       case handle(conn2, :handle_prepare, [query], opts, :result) do
         {:ok, query} ->
           describe_execute(conn2, :handle_execute, query, params, opts)
@@ -1036,18 +1063,19 @@ defmodule DBConnection do
     end, opts)
   end
 
-  defp execute(conn, callback, query, params, opts) do
-    params = DBConnection.Query.encode(query, params, opts)
-    case run_execute(conn, callback, query, params, opts)  do
-      {:ok, query, result} ->
-       {:ok, DBConnection.Query.decode(query, result, opts)}
-      other ->
-        other
+  defp execute(conn, call, callback, query, params, opts) do
+    encoded = DBConnection.Query.encode(query, params, opts)
+    case run_execute(conn, callback, query, encoded, opts)  do
+      {{:ok, query, result}, meter} ->
+        ok = {:ok, DBConnection.Query.decode(query, result, opts)}
+        decode_log(call, query, params, meter, ok)
+      {{:error, _} = error, meter} ->
+        log(call, query, params, meter, error)
     end
   end
 
   defp run_execute(conn, callback, query, params, opts) do
-    run(conn, fn(conn2) ->
+    run_meter(conn, fn(conn2) ->
       case handle(conn2, callback, [query, params], opts, :execute) do
         :prepare ->
           execute_prepare(conn2, callback, query, params, opts)
@@ -1079,6 +1107,71 @@ defmodule DBConnection do
     end
   end
 
+  defp run_close(conn, query, opts) do
+    fun = &handle(&1, :handle_close, [query], opts, :no_result)
+    run_meter(conn, fun, opts)
+  end
+
+  defmacrop time() do
+    if function_exported?(:erlang, :monotonic_time, 0) do
+      quote do: :erlang.monotonic_time()
+    else
+      quote do: :os.timestamp()
+    end
+  end
+
+  defp run_meter(%DBConnection{} = conn, fun, opts) do
+    case Keyword.get(opts, :log) do
+      nil ->
+        {run(conn, fun, opts), nil}
+      log ->
+        run_meter(conn, log, [], fun, opts)
+      end
+  end
+  defp run_meter(pool, fun, opts) do
+    case Keyword.get(opts, :log) do
+      nil ->
+        {run(pool, fun, opts), nil}
+      log ->
+        run_meter(pool, log, [checkout: time()], fun, opts)
+    end
+  end
+
+  defp run_meter(conn, log, times, fun, opts) do
+    fun = fn(conn2) ->
+      start = time()
+      result = fun.(conn2)
+      stop = time()
+      meter = {log, [stop: stop, start: start] ++ times}
+      {result, meter}
+    end
+    run(conn, fun, opts)
+  end
+
+  defp decode_log(_, _, _, nil, result), do: result
+  defp decode_log(call, query, params, {log, times}, result) do
+   log(call, query, params, {log, [decode: time()] ++ times}, result)
+  end
+
+  defp transaction_log(_, nil, result), do: result
+  defp transaction_log(callback, meter, result) do
+    log(:transaction, transaction_call(callback), nil, meter, result)
+  end
+
+  defp transaction_call(:handle_begin), do: :begin
+  defp transaction_call(:handle_commit), do: :commit
+  defp transaction_call(:handle_rollback), do: :rollback
+
+  defp log(_, _, _, nil, result), do: result
+  defp log(call, query, params, {log, times}, result) do
+    entry = DBConnection.LogEntry.new(call, query, params, times, result)
+    log(log, entry)
+    result
+  end
+
+  defp log({mod, fun, args}, entry), do: apply(mod, fun, [entry | args])
+  defp log(fun, entry), do: fun.(entry)
+
   defp run_begin(conn, fun, opts) do
     try do
       fun.(conn)
@@ -1104,20 +1197,79 @@ defmodule DBConnection do
     end
   end
 
-  defp transaction_begin(conn, conn_state, fun, opts) do
+  defp transaction_meter(%DBConnection{} = conn, fun, opts) do
+    case fetch_info(conn) do
+      {:transaction, _} ->
+        {transaction_nested(conn, fun), nil}
+      {:transaction, _, _} ->
+        {transaction_nested(conn, fun), nil}
+      idle ->
+        transaction_meter(conn, idle, fun, opts)
+    end
+  end
+  defp transaction_meter(pool, fun, opts) do
+    case Keyword.get(opts, :log) do
+      nil ->
+        fun = fn(conn) ->
+          transaction(conn, fetch_info(conn), nil, fun, opts)
+        end
+        {run(pool, fun, opts), nil}
+      log ->
+        times = [checkout: time()]
+        run(pool, fn(conn) ->
+          transaction_meter(conn, fetch_info(conn), log, times, fun, opts)
+        end, opts)
+    end
+  end
+
+  defp transaction_meter(conn, idle, fun, opts) do
+    case Keyword.get(opts, :log) do
+      nil ->
+        transaction(conn, idle, nil, fun, opts)
+      log ->
+        transaction_meter(conn, idle, log, [], fun, opts)
+    end
+  end
+
+  defp transaction_meter(conn, idle, log, times, fun, opts) do
+    times = [start: time()] ++ times
+    fun = fn(conn2) ->
+      meter = {log, [stop: time()] ++ times}
+      _ = transaction_log(:handle_begin, meter, :ok)
+      fun.(conn2)
+    end
+    case transaction(conn, idle, log, fun, opts) do
+      {:error, _, :handle_begin} = error ->
+        meter = {log, [stop: time()] ++ times}
+        {error, meter}
+      other ->
+        other
+    end
+  end
+
+  defp transaction(conn, idle, log, fun, opts) do
+    case idle do
+      {:idle, conn_state} ->
+        transaction_begin(conn, conn_state, log, fun, opts)
+      {:idle, conn_state, proxy_state} ->
+        transaction_begin(conn, conn_state, proxy_state, log, fun, opts)
+    end
+  end
+
+  defp transaction_begin(conn, conn_state, log, fun, opts) do
     %DBConnection{conn_mod: conn_mod} = conn
     try do
       apply(conn_mod, :handle_begin, [opts, conn_state])
     else
       {:ok, conn_state} ->
         put_info(conn, :transaction, conn_state)
-        transaction_run(conn, fun, opts)
+        transaction_run(conn, log, fun, opts)
       {:error, err, conn_state} ->
         put_info(conn, :idle, conn_state)
-        raise err
+        {:error, err, :handle_begin}
       {:disconnect, err, conn_state} ->
         delete_disconnect(conn, conn_state, err, opts)
-        raise err
+        {:error, err, :handle_begin}
        other ->
         delete_stop(conn, conn_state, {:bad_return_value, other}, opts)
         raise DBConnection.Error, "bad return value: #{inspect other}"
@@ -1129,20 +1281,20 @@ defmodule DBConnection do
     end
   end
 
-  defp transaction_begin(conn, conn_state, proxy_state, fun, opts) do
+  defp transaction_begin(conn, conn_state, proxy_state, log, fun, opts) do
     %DBConnection{conn_mod: conn_mod, proxy_mod: proxy_mod} = conn
     try do
       apply(proxy_mod, :handle_begin, [conn_mod, opts, conn_state, proxy_state])
     else
       {:ok, conn_state, proxy_state} ->
         put_info(conn, :transaction, conn_state, proxy_state)
-        transaction_run(conn, fun, opts)
+        transaction_run(conn, log, fun, opts)
       {:error, err, conn_state, proxy_state} ->
         put_info(conn, :idle, conn_state, proxy_state)
-        raise err
+        {:error, err, :handle_begin}
       {:disconnect, err, conn_state, proxy_state} ->
         delete_disconnect(conn, conn_state, proxy_state, err, opts)
-        raise err
+        {:error, err, :handle_begin}
        other ->
         reason = {:bad_return_value, other}
         delete_stop(conn, conn_state, proxy_state, reason, opts)
@@ -1156,23 +1308,32 @@ defmodule DBConnection do
     end
   end
 
-  defp transaction_run(conn, fun, opts) do
+  defp transaction_run(conn, log, fun, opts) do
     %DBConnection{conn_ref: conn_ref} = conn
     try do
       fun.(conn)
     else
       result ->
         result = {:ok, result}
-        transaction_end(conn, :handle_commit, opts, result)
+        transaction_end_meter(conn, log, :handle_commit, opts, result)
     catch
       :throw, {:rollback, ^conn_ref, reason} ->
         result = {:error, reason}
-        transaction_end(conn, :handle_rollback, opts, result)
+        transaction_end_meter(conn, log, :handle_rollback, opts, result)
       kind, reason ->
-        stack = System.stacktrace()
-        transaction_end(conn, :handle_rollback, opts, :raise)
-        :erlang.raise(kind, reason, stack)
+        result = {kind, reason, System.stacktrace()}
+        transaction_end_meter(conn, log, :handle_rollback, opts, result)
     end
+  end
+
+  defp transaction_end_meter(conn, nil, callback, opts, result) do
+    transaction_end(conn, callback, opts, result)
+  end
+  defp transaction_end_meter(conn, log, callback, opts, result) do
+    start = time()
+    result = transaction_end(conn, callback, opts, result)
+    meter = {log, [stop: time(), start: start]}
+    {result, meter}
   end
 
   defp transaction_end(conn, fun, opts, result) do
@@ -1212,10 +1373,10 @@ defmodule DBConnection do
         result
       {:error, err, conn_state} ->
         put_info(conn, :idle, conn_state)
-        raise err
+        {:error, err, fun}
       {:disconnect, err, conn_state} ->
         delete_disconnect(conn, conn_state, err, opts)
-        raise err
+        {:error, err, fun}
        other ->
         delete_stop(conn, conn_state, {:bad_return_value, other}, opts)
         raise DBConnection.Error, "bad return value: #{inspect other}"
@@ -1237,10 +1398,10 @@ defmodule DBConnection do
         result
       {:error, err, conn_state, proxy_state} ->
         put_info(conn, :idle, conn_state, proxy_state)
-        raise err
+        {:error, err, fun}
       {:disconnect, err, conn_state, proxy_state} ->
         delete_disconnect(conn, conn_state, proxy_state, err, opts)
-        raise err
+        {:error, err, fun}
        other ->
         reason = {:bad_return_value, other}
         delete_stop(conn, conn_state, proxy_state, reason, opts)
