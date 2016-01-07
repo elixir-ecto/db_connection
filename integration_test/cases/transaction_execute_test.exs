@@ -276,6 +276,7 @@ defmodule TransactionExecuteTest do
 
     parent = self()
     opts = [agent: agent, parent: parent]
+    Process.flag(:trap_exit, true)
     {:ok, pool} = P.start_link(opts)
 
     log = &send(parent, &1)
