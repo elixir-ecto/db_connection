@@ -109,6 +109,8 @@ defmodule DBConnectionTest do
     {:links, links} = Process.info(self, :links)
     assert conn in links
 
+    _ = :sys.get_state(conn)
+
     assert A.record(agent) == [{:connect, [opts]}]
   end
 
@@ -120,6 +122,8 @@ defmodule DBConnectionTest do
     {:ok, conn} = C.start_link(opts)
 
     assert Process.info(conn, :registered_name) == {:registered_name, :conn}
+
+    _ = :sys.get_state(conn)
 
     assert A.record(agent) == [{:connect, [opts]}]
   end
