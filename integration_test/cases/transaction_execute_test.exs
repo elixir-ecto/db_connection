@@ -264,4 +264,35 @@ defmodule TransactionExecuteTest do
       handle_begin: [ _, :state],
       handle_rollback: [_, :new_state]] = A.record(agent)
   end
+
+  test "transaction does not log commit if closed" do
+   stack = [
+      {:ok, :state},
+      {:ok, :new_state},
+      :oops,
+      {:ok, :state2}
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    parent = self()
+    opts = [agent: agent, parent: parent]
+    {:ok, pool} = P.start_link(opts)
+
+    log = &send(parent, &1)
+
+    P.transaction(pool, fn(conn) ->
+      assert_received %DBConnection.LogEntry{call: :transaction,
+        query: :begin}
+      assert_raise DBConnection.Error,
+      fn() -> P.execute(conn, %Q{}, [:param]) end
+    end, [log: log])
+
+    refute_received %DBConnection.LogEntry{call: :transaction}
+
+    assert [
+      {:connect, [_]},
+      {:handle_begin, [_, :state]},
+      {:handle_execute, [%Q{}, [:param], _, :new_state]} |
+      _] = A.record(agent)
+  end
 end

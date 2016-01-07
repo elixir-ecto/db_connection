@@ -1329,13 +1329,20 @@ defmodule DBConnection do
   end
 
   defp transaction_end_meter(conn, nil, callback, opts, result) do
-    transaction_end(conn, callback, opts, result)
+    case transaction_end(conn, callback, opts, result) do
+      :closed -> result
+      result  -> result
+    end
   end
   defp transaction_end_meter(conn, log, callback, opts, result) do
     start = time()
-    result = transaction_end(conn, callback, opts, result)
-    meter = {log, [stop: time(), start: start]}
-    {result, meter}
+    case transaction_end(conn, callback, opts, result) do
+      :closed ->
+        {result, nil}
+      result ->
+        meter = {log, [stop: time(), start: start]}
+        {result, meter}
+    end
   end
 
   defp transaction_end(conn, fun, opts, result) do
@@ -1358,7 +1365,7 @@ defmodule DBConnection do
         delete_stop(conn, conn_state, proxy_state, :bad_transaction, opts)
         raise "not in transaction"
      :closed ->
-        result
+        :closed
     end
   end
 
