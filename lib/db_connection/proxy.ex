@@ -91,15 +91,13 @@ defmodule DBConnection.Proxy do
 
   @doc """
   Execute a query. Return `{:ok, result, conn, state}` to return the result
-  `result` and continue, `{:prepare, conn, state}` to retry execute after
-  preparing the query, `{:error, exception, conn, state}` to return an error and
-  continue or `{:disconnect, exception, conn, state}` to return an error and
+  `result` and continue, `{:error, exception, conn, state}` to return an error
+  and continue or `{:disconnect, exception, conn, state}` to return an error and
   disconnect the connection.
   """
   @callback handle_execute(module, DBConneciton.query, DBConnection.params,
   opts :: Keyword.t, conn :: any, state :: any) ::
     {:ok, DBConnection.result, new_conn :: any, new_state :: any} |
-    {:prepare, new_conn :: any, new_state :: any} |
     {:error | :disconnect, Exception.t, new_conn :: any, new_state :: any}
 
   @doc """
@@ -108,7 +106,6 @@ defmodule DBConnection.Proxy do
   @callback handle_execute_close(module, DBConneciton.query,
   DBConnection.params, opts :: Keyword.t, conn :: any, state :: any) ::
     {:ok, DBConnection.result, new_conn :: any, new_state :: any} |
-    {:prepare, new_conn :: any, new_state :: any} |
     {:error | :disconnect, Exception.t, new_conn :: any, new_state :: any}
 
   @doc """
@@ -194,8 +191,6 @@ defmodule DBConnection.Proxy do
         case apply(mod, :handle_execute, [query, params, opts, conn]) do
           {:ok, _, _} = ok ->
             :erlang.append_element(ok, state)
-          {:prepare, _} = prepare ->
-            :erlang.append_element(prepare, state)
           {tag, _, _} = error when tag in [:error, :disconnect] ->
             :erlang.append_element(error, state)
           other ->
@@ -207,8 +202,6 @@ defmodule DBConnection.Proxy do
         case apply(mod, :handle_execute_close, [query, params, opts, conn]) do
           {:ok, _, _} = ok ->
             :erlang.append_element(ok, state)
-          {:prepaere, _} = prepare ->
-            :erlang.append_element(prepare, state)
           {tag, _, _} = error when tag in [:error, :disconnect] ->
             :erlang.append_element(error, state)
           other ->
