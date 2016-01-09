@@ -27,7 +27,7 @@ defmodule DBConnection.Ownership do
 
     def checkout(owner, opts) do
       timeout = Keyword.get(opts, :owner_timeout, @timeout)
-      GenServer.call(owner, :checkout, timeout)
+      GenServer.call(owner, {:checkout, opts}, timeout)
     end
 
     def checkin(owner, fun, args, opts) do
@@ -38,18 +38,45 @@ defmodule DBConnection.Ownership do
     # Callbacks
 
     def init({module, pool_mod, pool_opts}) do
-      {:ok, pid} = pool_mod.start_link(module, pool_opts)
-      {:ok, %{pool: pid, pool_mod: pool_mod}}
+      {:ok, pool} = pool_mod.start_link(module, pool_opts)
+      {:ok, %{pool: pool, pool_mod: pool_mod, checkout: nil}}
     end
 
-    def handle_call(:checkout, _from, state) do
+    def handle_call({:checkout, opts}, {caller, _ref}, state) do
       %{pool_mod: pool_mod, pool: pool} = state
-      {:reply, {pool_mod, pool}, state}
+
+      try do
+        pool_mod.checkout(pool, opts)
+      catch
+        kind, reason ->
+          {:reply, {kind, reason, System.stacktrace}, state}
+      else
+        {:ok, pool_ref, pool_module, pool_state} ->
+          ref = Process.monitor(caller)
+          reply = {:ok, {self(), pool_ref}, pool_module, pool_state}
+          checkout = {Process.monitor(caller), pool_ref, pool_state, opts}
+          {:reply, reply, %{state | checkout: checkout}}
+        :error ->
+          {:reply, :error, state}
+      end
     end
 
     def handle_call({:checkin, fun, args}, _from, state) do
       %{pool_mod: pool_mod} = state
       {:reply, apply(pool_mod, fun, args), state}
+    end
+
+    def handle_info({:DOWN, ref, _, _, reason},
+                    %{checkout: {ref, pool_ref, pool_state, pool_opts}} = state) do
+      %{pool_mod: pool_mod} = state
+      # TODO: The pool_state is certainly not the one being hold by
+      # the client. Is this an issue? Is stop the best option here?
+      pool_mod.stop(pool_ref, reason, pool_state, pool_opts)
+      {:noreply, %{state | checkout: nil}}
+    end
+
+    def handle_info(_msg, state) do
+      {:noreply, state}
     end
   end
 
@@ -62,12 +89,10 @@ defmodule DBConnection.Ownership do
   end
 
   def checkout(owner, opts) do
-    {pool_mod, pool} = Owner.checkout(owner, opts)
-    case pool_mod.checkout(pool, opts) do
-      {:ok, pool_ref, module, state} ->
-        {:ok, {owner, pool_ref}, module, state}
-      :error ->
-        :error
+    case Owner.checkout(owner, opts) do
+      {:ok, _, _, _} = ok -> ok
+      :error -> :error
+      {kind, reason, stack} -> :erlang.raise(kind, reason, stack)
     end
   end
 
