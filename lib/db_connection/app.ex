@@ -1,7 +1,13 @@
 defmodule DBConnection.App do
   use Application
 
+  import Supervisor.Spec
+
   def start(_, _) do
-    DBConnection.Task.start_link()
+    children = [
+      supervisor(DBConnection.Task, []),
+      supervisor(DBConnection.Sojourn.Supervisor, [])
+      ]
+    Supervisor.start_link(children, [strategy: :one_for_one, name: __MODULE__])
   end
 end

@@ -27,13 +27,12 @@ defmodule DBConnection.Sojourn do
 
   @doc false
   def start_link(mod, opts) do
-    Supervisor.start_link(children(mod, opts), [strategy: :rest_for_one])
+    apply(:sbroker, :start_link, broker_args(mod, opts))
   end
 
   @doc false
   def child_spec(mod, opts, child_opts \\ []) do
-    args = [children(mod, opts), [strategy: :rest_for_one]]
-    supervisor(Supervisor, args, child_opts)
+    worker(:sbroker, broker_args(mod, opts), child_opts)
   end
 
   @doc false
@@ -55,37 +54,15 @@ defmodule DBConnection.Sojourn do
 
   ## Helpers
 
-  defp children(mod, opts) do
-    [broker(opts), conn_sup(mod, opts), starter(opts)]
-  end
-
-  defp broker(opts) do
-    case Keyword.get(opts, :name, nil) do
-      nil ->
-        worker(:sbroker, broker_args(opts))
-      name when is_atom(name) ->
-        worker(:sbroker, [{:local, name} | broker_args(opts)])
-      name ->
-        worker(:sbroker, [name | broker_args(opts)])
-    end
-  end
-
-  defp broker_args(opts) do
-    mod        = Keyword.get(opts, :broker, @broker)
+  defp broker_args(mod, opts) do
+    broker     = Keyword.get(opts, :broker, @broker)
     start_opts = Keyword.get(opts, :broker_start_opt, [time_unit: @time_unit])
-    [mod, opts, start_opts]
-  end
-
-  defp conn_sup(mod, opts) do
-    child_opts = Keyword.take(opts, [:shutdown])
-    conn = DBConnection.Connection.child_spec(mod, opts, :sojourn, child_opts)
-    sup_opts = Keyword.take(opts, [:max_restarts, :max_seconds])
-    sup_opts = [strategy: :simple_one_for_one] ++ sup_opts
-    supervisor(Supervisor, [[conn], sup_opts])
-  end
-
-  defp starter(opts) do
-    worker(DBConnection.Sojourn.Starter, [opts], [restart: :transient])
+    args       = [__MODULE__.Broker, {broker, mod, opts}, start_opts]
+    case Keyword.get(opts, :name) do
+      nil                     -> args
+      name when is_atom(name) -> [{:local, name} | args]
+      name                    -> [name | args]
+    end
   end
 
   defp ask(broker, opts) do
