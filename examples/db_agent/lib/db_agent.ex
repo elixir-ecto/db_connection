@@ -68,15 +68,15 @@ defmodule DBAgent do
   end
 
   def handle_begin(_, %{status: :idle, state: state} = s) do
-    {:ok, %{s | status: :transaction, rollback: state}}
+    {:ok, :began, %{s | status: :transaction, rollback: state}}
   end
 
   def handle_commit(_, %{status: :transaction} = s) do
-    {:ok, %{s | status: :idle, rollback: nil}}
+    {:ok, :committed, %{s | status: :idle, rollback: nil}}
   end
 
   def handle_rollback(_, %{status: :transaction, rollback: state} = s) do
-    {:ok, %{s | state: state, status: :idle, rollback: nil}}
+    {:ok, :rolledback, %{s | state: state, status: :idle, rollback: nil}}
   end
 end
 
