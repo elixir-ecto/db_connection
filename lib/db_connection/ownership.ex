@@ -66,12 +66,13 @@ defmodule DBConnection.Ownership do
       {:reply, apply(pool_mod, fun, args), state}
     end
 
-    def handle_info({:DOWN, ref, _, _, reason},
+    def handle_info({:DOWN, ref, _, _, _},
                     %{checkout: {ref, pool_ref, pool_state, pool_opts}} = state) do
       %{pool_mod: pool_mod} = state
       # TODO: The pool_state is certainly not the one being hold by
       # the client. Is this an issue? Is stop the best option here?
-      pool_mod.stop(pool_ref, reason, pool_state, pool_opts)
+      err = DBConnection.Error.exception("client down")
+      pool_mod.disconnect(pool_ref, err, pool_state, pool_opts)
       {:noreply, %{state | checkout: nil}}
     end
 
