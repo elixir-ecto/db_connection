@@ -42,7 +42,8 @@ defmodule DBConnectionTest do
       assert_raise RuntimeError, "handle_execute/4 not implemented",
         fn() -> Sample.handle_execute_close(:query, [], [], :state) end
 
-      assert Sample.handle_close(:query, [], :state) == {:ok, :state}
+      assert_raise RuntimeError, "handle_close/3 not implemented",
+        fn() -> Sample.handle_close(:query, [], :state) end
 
       assert Sample.handle_info(:msg, :state) == {:ok, :state}
     after

@@ -14,13 +14,13 @@ defmodule ProxyTransactionTest do
       end,
       {:ok, :proxy},
       {:ok, :new_state, :new_proxy},
-      {:ok, :newer_state},
-      {:ok, :newest_state},
+      {:ok, :began, :newer_state},
+      {:ok, :committed, :newest_state},
       {:ok, :state2, :newer_proxy},
       {:ok, :proxy2},
       {:ok, :new_state2, :new_proxy2},
-      {:ok, :newer_state2},
-      {:ok, :newest_state2},
+      {:ok, :began, :newer_state2},
+      {:ok, :committed, :newest_state2},
       {:ok, :state3, :newer_proxy2}
       ]
     {:ok, agent} = A.start_link(stack)
@@ -62,13 +62,13 @@ defmodule ProxyTransactionTest do
       end,
       {:ok, :proxy},
       {:ok, :new_state, :new_proxy},
-      {:ok, :newer_state},
-      {:ok, :newest_state},
+      {:ok, :began, :newer_state},
+      {:ok, :committed, :newest_state},
       {:ok, :state2, :newer_proxy},
       {:ok, :proxy2},
       {:ok, :new_state2, :new_proxy2},
-      {:ok, :newer_state2},
-      {:ok, :newest_state2},
+      {:ok, :began, :newer_state2},
+      {:ok, :committed, :newest_state2},
       {:ok, :state3, :newer_proxy2}
       ]
     {:ok, agent} = A.start_link(stack)
@@ -107,8 +107,8 @@ defmodule ProxyTransactionTest do
       end,
       {:ok, :proxy},
       {:ok, :new_state, :new_proxy},
-      {:ok, :newer_state},
-      {:ok, :newest_state},
+      {:ok, :began, :newer_state},
+      {:ok, :committed, :newest_state},
       {:ok, :state2, :newer_proxy}
       ]
     {:ok, agent} = A.start_link(stack)
@@ -144,8 +144,8 @@ defmodule ProxyTransactionTest do
       end,
       {:ok, :proxy},
       {:ok, :new_state, :new_proxy},
-      {:ok, :newer_state},
-      {:ok, :newest_state},
+      {:ok, :began, :newer_state},
+      {:ok, :committed, :newest_state},
       {:ok, :state2, :newer_proxy}
       ]
     {:ok, agent} = A.start_link(stack)
@@ -186,8 +186,8 @@ defmodule ProxyTransactionTest do
       {:ok, :newest_state, :newer_proxy},
       {:ok, :proxy2},
       {:ok, :state2, :new_proxy2},
-      {:ok, :new_state2},
-      {:ok, :newer_state2},
+      {:ok, :began, :new_state2},
+      {:ok, :committed, :newer_state2},
       {:ok, :newest_state2, :newer_proxy2},
       ]
     {:ok, agent} = A.start_link(stack)
@@ -340,13 +340,13 @@ defmodule ProxyTransactionTest do
       end,
       {:ok, :proxy},
       {:ok, :new_state, :new_proxy},
-      {:ok, :newer_state},
+      {:ok, :began, :newer_state},
       {:error, err, :newest_state},
       {:ok, :state2, :newer_proxy},
       {:ok, :proxy2},
       {:ok, :new_state2, :new_proxy2},
-      {:ok, :newer_state2},
-      {:ok, :newest_state2},
+      {:ok, :began, :newer_state2},
+      {:ok, :committed, :newest_state2},
       {:ok, :state3, :newer_proxy2}
       ]
     {:ok, agent} = A.start_link(stack)
@@ -385,7 +385,7 @@ defmodule ProxyTransactionTest do
       end,
       {:ok, :proxy},
       {:ok, :new_state, :new_proxy},
-      {:ok, :newer_state},
+      {:ok, :began, :newer_state},
       {:disconnect, err, :newest_state},
       :ok,
       fn(opts) ->
@@ -424,7 +424,7 @@ defmodule ProxyTransactionTest do
       end,
       {:ok, :proxy},
       {:ok, :new_state, :new_proxy},
-      {:ok, :newer_state},
+      {:ok, :began, :newer_state},
       :oops,
       {:ok, :state2}
       ]
@@ -458,7 +458,7 @@ defmodule ProxyTransactionTest do
       end,
       {:ok, :proxy},
       {:ok, :new_state, :new_proxy},
-      {:ok, :newer_state},
+      {:ok, :began, :newer_state},
       fn(_, _) ->
         raise "oops"
       end,
@@ -494,13 +494,13 @@ defmodule ProxyTransactionTest do
       end,
       {:ok, :proxy},
       {:ok, :new_state, :new_proxy},
-      {:ok, :newer_state},
+      {:ok, :began, :newer_state},
       {:error, err, :newest_state},
       {:ok, :state2, :newer_proxy},
       {:ok, :proxy2},
       {:ok, :new_state2, :new_proxy2},
-      {:ok, :newer_state2},
-      {:ok, :newest_state2},
+      {:ok, :began, :newer_state2},
+      {:ok, :committed, :newest_state2},
       {:ok, :state3, :newer_proxy2}
       ]
     {:ok, agent} = A.start_link(stack)

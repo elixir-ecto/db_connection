@@ -8,15 +8,15 @@ defmodule CloseTest do
   test "close returns ok" do
     stack = [
       {:ok, :state},
-      {:ok, :new_state},
-      {:ok, :new_state}
+      {:ok, :result, :new_state},
+      {:ok, :result, :new_state}
       ]
     {:ok, agent} = A.start_link(stack)
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
-    assert P.close(pool, %Q{}) == :ok
-    assert P.close(pool, %Q{}, [key: :value]) == :ok
+    assert P.close(pool, %Q{}) == {:ok, :result}
+    assert P.close(pool, %Q{}, [key: :value]) == {:ok, :result}
 
     assert [
       connect: [_],
@@ -27,7 +27,7 @@ defmodule CloseTest do
   test "close logs ok" do
     stack = [
       {:ok, :state},
-      {:ok, :new_state},
+      {:ok, :result, :new_state},
      ]
     {:ok, agent} = A.start_link(stack)
 
@@ -37,7 +37,7 @@ defmodule CloseTest do
 
     log = fn(entry) ->
       assert %DBConnection.LogEntry{call: :close, query: %Q{},
-                                    params: nil, result: :ok} = entry
+                                    params: nil, result: {:ok, :result}} = entry
       assert is_integer(entry.pool_time)
       assert entry.pool_time >= 0
       assert is_integer(entry.connection_time)
@@ -45,7 +45,7 @@ defmodule CloseTest do
       assert is_nil(entry.decode_time)
       send(parent, :logged)
     end
-    assert P.close(pool, %Q{}, [log: log]) == :ok
+    assert P.close(pool, %Q{}, [log: log]) == {:ok, :result}
     assert_received :logged
 
     assert [

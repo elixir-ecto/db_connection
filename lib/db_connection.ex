@@ -112,7 +112,7 @@ defmodule DBConnection do
     {:ok, new_state :: any} | {:disconnect, Exception.t, new_state :: any}
 
   @doc """
-  Handle the beginning of a transaction. Return `{:ok, state}` to
+  Handle the beginning of a transaction. Return `{:ok, result, state}` to
   continue, `{:error, exception, state}` to abort the transaction and
   continue or `{:disconnect, exception, state}` to abort the transaction
   and disconnect.
@@ -120,11 +120,11 @@ defmodule DBConnection do
   This callback is called in the client process.
   """
   @callback handle_begin(opts :: Keyword.t, state :: any) ::
-    {:ok, new_state :: any} |
+    {:ok, result, new_state :: any} |
     {:error | :disconnect, Exception.t, new_state :: any}
 
   @doc """
-  Handle commiting a transaction. Return `{:ok, state}` on success and
+  Handle commiting a transaction. Return `{:ok, result, state}` on success and
   to continue, `{:error, exception, state}` to abort the transaction and
   continue or `{:disconnect, exception, state}` to abort the transaction
   and disconnect.
@@ -132,11 +132,11 @@ defmodule DBConnection do
   This callback is called in the client process.
   """
   @callback handle_commit(opts :: Keyword.t, state :: any) ::
-    {:ok, new_state :: any} |
+    {:ok, result, new_state :: any} |
     {:error | :disconnect, Exception.t, new_state :: any}
 
   @doc """
-  Handle rolling back a transaction. Return `{:ok, state}` on success
+  Handle rolling back a transaction. Return `{:ok, result, state}` on success
   and to continue, `{:error, exception, state}` to abort the transaction
   and continue or `{:disconnect, exception, state}` to abort the
   transaction and disconnect.
@@ -147,7 +147,7 @@ defmodule DBConnection do
   This callback is called in the client process.
   """
   @callback handle_rollback(opts :: Keyword.t, state :: any) ::
-    {:ok, new_state :: any} |
+    {:ok, result, new_state :: any} |
     {:error | :disconnect, Exception.t, new_state :: any}
 
   @doc """
@@ -200,14 +200,14 @@ defmodule DBConnection do
 
   @doc """
   Close a query prepared by `handle_prepare/3` with the database. Return
-  `{:ok, state}` on success and to continue,
+  `{:ok, result, state}` on success and to continue,
   `{:error, exception, state}` to return an error and continue, or
-  `{:disconnect, exception, state}` to return an error and disconnect.
+  `{:disconnect, exception, state}` to return an errior and disconnect.
 
   This callback is called in the client process.
   """
   @callback handle_close(query, opts :: Keyword.t, state :: any) ::
-    {:ok, new_state :: any} |
+    {:ok, result, new_state :: any} |
     {:error | :disconnect, Exception.t, new_state :: any}
 
   @doc """
@@ -334,7 +334,13 @@ defmodule DBConnection do
         end
       end
 
-      def handle_close(_, _, state), do: {:ok, state}
+      def handle_close(_, _, _) do
+        message = "handle_close/3 not implemented"
+        case :erlang.phash2(1, 1) do
+          0 -> raise message
+          1 -> {:error, RuntimeError.exception(message)}
+        end
+      end
 
       def handle_info(_, state), do: {:ok, state}
 
@@ -639,7 +645,7 @@ defmodule DBConnection do
   end
 
   @doc """
-  Close a prepared query on a database connection and return `:ok` on
+  Close a prepared query on a database connection and return `{:ok, result}` on
   success or `{:error, exception}` on error.
 
   This function should be used to free resources held by the connection
@@ -667,22 +673,23 @@ defmodule DBConnection do
   See `prepare/3`.
   """
   @spec close(conn, query, opts :: Keyword.t) ::
-    :ok | {:error, Exception.t}
+    {:ok, result} | {:error, Exception.t}
   def close(conn, query, opts \\ []) do
     {result, meter} = run_close(conn, query, opts)
     log(:close, query, nil, meter, result)
+    result
   end
 
   @doc """
-  Close a prepared query on a database connection and return `:ok`.
-  Raises an exception on error.
+  Close a prepared query on a database connection and return the result. Raises
+  an exception on error.
 
   See `close/3`.
   """
-  @spec close!(conn, query, opts :: Keyword.t) :: :ok
+  @spec close!(conn, query, opts :: Keyword.t) :: result
   def close!(conn, query, opts \\ []) do
     case close(conn, query, opts) do
-      :ok -> :ok
+      {:ok, result} -> result
       {:error, err} -> raise err
     end
   end
@@ -784,19 +791,15 @@ defmodule DBConnection do
   @spec transaction(conn, (conn -> result), opts :: Keyword.t) ::
     {:ok, result} | {:error, reason :: any} when result: var
   def transaction(conn, fun, opts) do
-    case transaction_meter(conn, fun, opts) do
-      {{:ok, _} = ok, meter} ->
-        _ = transaction_log(:handle_commit, meter, :ok)
-        ok
-      {{:error, _} = error, meter} ->
-        _ = transaction_log(:handle_rollback, meter, :ok)
-        error
-      {{:raise, err, call}, meter} ->
-        _ = transaction_log(call, meter, {:error, err})
+    {result, log_info} = transaction_meter(conn, fun, opts)
+    transaction_log(log_info)
+    case result do
+      {:raise, err} ->
         raise err
-      {{kind, stack, reason}, meter} ->
-        _ = transaction_log(:handle_rollback, meter, :ok)
-        :erlang.raise(kind, stack, reason)
+      {kind, reason, stack} ->
+        :erlang.raise(kind, reason, stack)
+      other ->
+        other
     end
   end
 
@@ -960,18 +963,15 @@ defmodule DBConnection do
     :ok
   end
 
-  defp handle(%DBConnection{proxy_mod: nil} = conn, fun, args, opts, return) do
+  defp handle(%DBConnection{proxy_mod: nil} = conn, fun, args, opts) do
     %DBConnection{conn_mod: conn_mod} = conn
     {status, conn_state} = fetch_info(conn)
     try do
       apply(conn_mod, fun, args ++ [opts, conn_state])
     else
-      {:ok, result, conn_state} when return == :result ->
+      {:ok, result, conn_state} ->
         put_info(conn, status, conn_state)
         {:ok, result}
-      {:ok, conn_state} when return == :no_result ->
-        put_info(conn, status, conn_state)
-        :ok
       {:error, _, conn_state} = error ->
         put_info(conn, status, conn_state)
         Tuple.delete_at(error, 2)
@@ -988,19 +988,16 @@ defmodule DBConnection do
         :erlang.raise(kind, reason, stack)
     end
   end
-  defp handle(%DBConnection{} = conn, fun, args, opts, return) do
+  defp handle(%DBConnection{} = conn, fun, args, opts) do
     %DBConnection{proxy_mod: proxy_mod, conn_mod: conn_mod} = conn
     {status, conn_state, proxy_state} = fetch_info(conn)
     args = [conn_mod | args] ++ [opts, conn_state, proxy_state]
     try do
       apply(proxy_mod, fun, args)
     else
-      {:ok, result, conn_state, proxy_state} when return == :result ->
+      {:ok, result, conn_state, proxy_state} ->
         put_info(conn, status, conn_state, proxy_state)
         {:ok, result}
-      {:ok, conn_state, proxy_state} when return == :no_result ->
-        put_info(conn, status, conn_state, proxy_state)
-        :ok
       {:error, err, conn_state, proxy_state} ->
         put_info(conn, status, conn_state, proxy_state)
         {:error, err}
@@ -1022,7 +1019,7 @@ defmodule DBConnection do
 
   defp run_query(conn, query, params, opts) do
     run_meter(conn, fn(conn2) ->
-      case handle(conn2, :handle_prepare, [query], opts, :result) do
+      case handle(conn2, :handle_prepare, [query], opts) do
         {:ok, query} ->
           describe_execute(conn2, :handle_execute_close, query, params, opts)
         other ->
@@ -1034,7 +1031,7 @@ defmodule DBConnection do
   defp describe_execute(conn, callback, query, params, opts) do
     query = DBConnection.Query.describe(query, opts)
     params = DBConnection.Query.encode(query, params, opts)
-    case handle(conn, callback, [query, params], opts, :result) do
+    case handle(conn, callback, [query, params], opts) do
       {:ok, result} ->
         {:ok, query, result}
       other ->
@@ -1044,13 +1041,13 @@ defmodule DBConnection do
 
   defp run_prepare(conn, query, opts) do
     run_meter(conn, fn(conn2) ->
-      handle(conn2, :handle_prepare, [query], opts, :result)
+      handle(conn2, :handle_prepare, [query], opts)
     end, opts)
   end
 
   defp run_prepare_execute(conn, query, params, opts) do
     run_meter(conn, fn(conn2) ->
-      case handle(conn2, :handle_prepare, [query], opts, :result) do
+      case handle(conn2, :handle_prepare, [query], opts) do
         {:ok, query} ->
           describe_execute(conn2, :handle_execute, query, params, opts)
         other ->
@@ -1072,7 +1069,7 @@ defmodule DBConnection do
 
   defp run_execute(conn, callback, query, params, opts) do
     run_meter(conn, fn(conn2) ->
-      case handle(conn2, callback, [query, params], opts, :result) do
+      case handle(conn2, callback, [query, params], opts) do
         {:ok, result} ->
           {:ok, query, result}
         other ->
@@ -1082,7 +1079,7 @@ defmodule DBConnection do
   end
 
   defp run_close(conn, query, opts) do
-    fun = &handle(&1, :handle_close, [query], opts, :no_result)
+    fun = &handle(&1, :handle_close, [query], opts)
     run_meter(conn, fun, opts)
   end
 
@@ -1124,20 +1121,29 @@ defmodule DBConnection do
 
   defp decode_log(_, _, _, nil, result), do: result
   defp decode_log(call, query, params, {log, times}, result) do
-   log(call, query, params, {log, [decode: time()] ++ times}, result)
+   log(call, query, params, log, [decode: time()] ++ times, result)
   end
 
-  defp transaction_log(_, nil, result), do: result
-  defp transaction_log(callback, meter, result) do
-    log(:transaction, transaction_call(callback), nil, meter, result)
+  defp transaction_log(nil), do: :ok
+  defp transaction_log({log, times, callback, result}) do
+    call = transaction_call(callback)
+    result = transaction_result(result)
+    log(:transaction, call, nil, log, times, result)
   end
 
   defp transaction_call(:handle_begin), do: :begin
   defp transaction_call(:handle_commit), do: :commit
   defp transaction_call(:handle_rollback), do: :rollback
 
+  defp transaction_result({:ok, _} = ok), do: ok
+  defp transaction_result({:raise, err}), do: {:error, err}
+
   defp log(_, _, _, nil, result), do: result
   defp log(call, query, params, {log, times}, result) do
+    log(call, query, params, log, times, result)
+  end
+
+  defp log(call, query, params, log, times, result) do
     entry = DBConnection.LogEntry.new(call, query, params, times, result)
     log(log, entry)
     result
@@ -1177,108 +1183,70 @@ defmodule DBConnection do
         {transaction_nested(conn, fun), nil}
       {:transaction, _, _} ->
         {transaction_nested(conn, fun), nil}
-      idle ->
-        transaction_meter(conn, idle, fun, opts)
+      {:idle, conn_state} ->
+        log = Keyword.get(opts, :log)
+        begin(conn, conn_state, log, [], fun, opts)
+      {:idle, conn_state, proxy_state} ->
+        log = Keyword.get(opts, :log)
+        begin(conn, conn_state, proxy_state, log, [], fun, opts)
     end
   end
   defp transaction_meter(pool, fun, opts) do
     case Keyword.get(opts, :log) do
       nil ->
-        fun = fn(conn) ->
-          transaction(conn, fetch_info(conn), nil, fun, opts)
-        end
-        {run(pool, fun, opts), nil}
+        run(pool, &begin(&1, nil, [], fun, opts), opts)
       log ->
         times = [checkout: time()]
-        run(pool, fn(conn) ->
-          transaction_meter(conn, fetch_info(conn), log, times, fun, opts)
-        end, opts)
+        run(pool, &begin(&1, log, times, fun, opts), opts)
     end
   end
 
-  defp transaction_meter(conn, idle, fun, opts) do
-    case Keyword.get(opts, :log) do
-      nil ->
-        transaction(conn, idle, nil, fun, opts)
-      log ->
-        transaction_meter(conn, idle, log, [], fun, opts)
-    end
-  end
-
-  defp transaction_meter(conn, idle, log, times, fun, opts) do
-    times = [start: time()] ++ times
-    fun = fn(conn2) ->
-      meter = {log, [stop: time()] ++ times}
-      _ = transaction_log(:handle_begin, meter, :ok)
-      fun.(conn2)
-    end
-    case transaction(conn, idle, log, fun, opts) do
-      {:raise, _, :handle_begin} = error ->
-        meter = {log, [stop: time()] ++ times}
-        {error, meter}
-      other ->
-        other
-    end
-  end
-
-  defp transaction(conn, idle, log, fun, opts) do
-    case idle do
+  defp begin(conn, log, times, fun, opts) do
+    case get_info(conn) do
       {:idle, conn_state} ->
-        transaction_begin(conn, conn_state, log, fun, opts)
+        begin(conn, conn_state, log, times, fun, opts)
       {:idle, conn_state, proxy_state} ->
-        transaction_begin(conn, conn_state, proxy_state, log, fun, opts)
+        begin(conn, conn_state, proxy_state, log, times, fun, opts)
     end
   end
 
-  defp transaction_begin(conn, conn_state, log, fun, opts) do
-    %DBConnection{conn_mod: conn_mod} = conn
-    try do
-      apply(conn_mod, :handle_begin, [opts, conn_state])
-    else
-      {:ok, conn_state} ->
-        put_info(conn, :transaction, conn_state)
-        transaction_run(conn, log, fun, opts)
-      {:error, err, conn_state} ->
-        put_info(conn, :idle, conn_state)
-        {:raise, err, :handle_begin}
-      {:disconnect, err, conn_state} ->
-        delete_disconnect(conn, conn_state, err, opts)
-        {:raise, err, :handle_begin}
-       other ->
-        delete_stop(conn, conn_state, {:bad_return_value, other}, opts)
-        raise DBConnection.Error, "bad return value: #{inspect other}"
-    catch
-      kind, reason ->
-        stack = System.stacktrace()
-        delete_stop(conn, conn_state, reason(kind, reason, stack), opts)
-        :erlang.raise(kind, reason, stack)
-    end
+  defp begin(conn, conn_state, log, times, fun, opts) do
+    handle =
+      fn ->
+        handle(conn, conn_state, :handle_begin, opts, :transaction)
+      end
+    begin_meter(conn, log, times, handle, fun, opts)
+  end
+  defp begin(conn, conn_state, proxy_state, log, times, fun, opts) do
+    handle =
+      fn ->
+        handle(conn, conn_state, proxy_state, :handle_begin, opts, :transaction)
+      end
+    begin_meter(conn, log, times, handle, fun, opts)
   end
 
-  defp transaction_begin(conn, conn_state, proxy_state, log, fun, opts) do
-    %DBConnection{conn_mod: conn_mod, proxy_mod: proxy_mod} = conn
-    try do
-      apply(proxy_mod, :handle_begin, [conn_mod, opts, conn_state, proxy_state])
-    else
-      {:ok, conn_state, proxy_state} ->
-        put_info(conn, :transaction, conn_state, proxy_state)
+  defp begin_meter(conn, nil, _, handle, fun, opts) do
+    case handle.() do
+      {:ok, _} ->
+        transaction_run(conn, nil, fun, opts)
+      {:raise, _} = err ->
+        {err, nil}
+    end
+  end
+  defp begin_meter(conn, log, times, handle, fun, opts) do
+    start = time()
+    result = handle.()
+    stop = time()
+    log_info = {log, [stop: stop, start: start] ++ times, :handle_begin, result}
+    case result do
+      {:ok, _} ->
+        fun = fn(conn2) ->
+          transaction_log(log_info)
+          fun.(conn2)
+        end
         transaction_run(conn, log, fun, opts)
-      {:error, err, conn_state, proxy_state} ->
-        put_info(conn, :idle, conn_state, proxy_state)
-        {:raise, err, :handle_begin}
-      {:disconnect, err, conn_state, proxy_state} ->
-        delete_disconnect(conn, conn_state, proxy_state, err, opts)
-        {:raise, err, :handle_begin}
-       other ->
-        reason = {:bad_return_value, other}
-        delete_stop(conn, conn_state, proxy_state, reason, opts)
-        raise DBConnection.Error, "bad return value: #{inspect other}"
-    catch
-      kind, reason ->
-        stack = System.stacktrace()
-        stop_reason = reason(kind, reason, stack)
-        delete_stop(conn, conn_state, proxy_state, stop_reason, opts)
-        :erlang.raise(kind, reason, stack)
+      {:raise, _} = error ->
+        {error, log_info}
     end
   end
 
@@ -1289,75 +1257,93 @@ defmodule DBConnection do
     else
       result ->
         result = {:ok, result}
-        transaction_end_meter(conn, log, :handle_commit, opts, result)
+        commit(conn, log, opts, result)
     catch
       :throw, {:rollback, ^conn_ref, reason} ->
         result = {:error, reason}
-        transaction_end_meter(conn, log, :handle_rollback, opts, result)
+        rollback(conn, log, opts, result)
       kind, reason ->
         result = {kind, reason, System.stacktrace()}
-        transaction_end_meter(conn, log, :handle_rollback, opts, result)
+        rollback(conn, log, opts, result)
     end
   end
 
-  defp transaction_end_meter(conn, nil, callback, opts, result) do
-    case transaction_end(conn, callback, opts, result) do
-      :closed -> result
-      result  -> result
-    end
-  end
-  defp transaction_end_meter(conn, log, callback, opts, result) do
-    start = time()
-    case transaction_end(conn, callback, opts, result) do
-      :closed ->
-        {result, nil}
-      result ->
-        meter = {log, [stop: time(), start: start]}
-        {result, meter}
-    end
-  end
-
-  defp transaction_end(conn, fun, opts, result) do
+  defp commit(conn, log, opts, result) do
     case get_info(conn) do
       {:transaction, conn_state} ->
-        transaction_end(conn, conn_state, fun, opts, result)
+        conclude(conn, conn_state, log, :handle_commit, opts, result)
       {:transaction, conn_state, proxy_state} ->
-        transaction_end(conn, conn_state, proxy_state, fun, opts, result)
+        callback = :handle_commit
+        conclude(conn, conn_state, proxy_state, log, callback, opts, result)
       {:failed, conn_state} ->
-        result = failed_result(result)
-        transaction_end(conn, conn_state, :handle_rollback, opts, result)
+        result = {:error, :rollback}
+        conclude(conn, conn_state, log, :handle_rollback, opts, result)
       {:failed, conn_state, proxy_state} ->
-        fun = :handle_rollback
-        result = failed_result(result)
-        transaction_end(conn, conn_state, proxy_state, fun, opts, result)
-      {:idle, conn_state} ->
-        delete_stop(conn, conn_state, :bad_transaction, opts)
-        raise "not in transaction"
-      {:idle, conn_state, proxy_state} ->
-        delete_stop(conn, conn_state, proxy_state, :bad_transaction, opts)
-        raise "not in transaction"
+        callback = :handle_rollback
+        result = {:error, :rollback}
+        conclude(conn, conn_state, proxy_state, log, callback, opts, result)
      :closed ->
-        :closed
+        {result, nil}
     end
   end
 
-  defp failed_result({:ok, _}), do: {:error, :rollback}
-  defp failed_result(other),    do: other
+  defp rollback(conn, log, opts, result) do
+    case get_info(conn) do
+      {trans, conn_state} when trans in [:transaction, :failed] ->
+        conclude(conn, conn_state, log, :handle_rollback, opts, result)
+      {trans, conn_state, proxy_state} when trans in [:transaction, :failed] ->
+        callback = :handle_rollback
+        conclude(conn, conn_state, proxy_state, log, callback, opts, result)
+     :closed ->
+        {result, nil}
+    end
+  end
 
-  defp transaction_end(conn, conn_state, fun, opts, result) do
+  defp conclude(conn, conn_state, log, callback, opts, result) do
+    handle = &handle(conn, conn_state, &1, opts, :idle)
+    conclude_meter(log, handle, callback, result)
+  end
+
+  defp conclude(conn, conn_state, proxy_state, log, callback, opts, result) do
+    handle = &handle(conn, conn_state, proxy_state, &1, opts, :idle)
+    conclude_meter(log, handle, callback, result)
+  end
+
+  defp conclude_meter(nil, handle, callback, result) do
+    case handle.(callback) do
+      {:ok, _} ->
+        {result, nil}
+      {:raise, _} = error ->
+        {error, nil}
+    end
+  end
+  defp conclude_meter(log, handle, callback, result) do
+    start = time()
+    cb_result = handle.(callback)
+    stop = time()
+    times = [stop: stop, start: start]
+    case cb_result do
+      {:ok, _} ->
+        {result, {log, times, callback, cb_result}}
+      {:raise, _} ->
+        {cb_result, {log, times, callback, cb_result}}
+    end
+  end
+
+  defp handle(conn, conn_state, callback, opts, status) do
     %DBConnection{conn_mod: conn_mod} = conn
     try do
-      apply(conn_mod, fun, [opts, conn_state])
+      apply(conn_mod, callback, [opts, conn_state])
     else
-      {:ok, conn_state} ->
-        put_info(conn, :idle, conn_state)
-        result
+      {:ok, result, conn_state} ->
+        put_info(conn, status, conn_state)
+        {:ok, result}
       {:error, err, conn_state} ->
         put_info(conn, :idle, conn_state)
-        {:raise, err, fun}
+        {:raise, err}
       {:disconnect, err, conn_state} ->
         delete_disconnect(conn, conn_state, err, opts)
-        {:raise, err, fun}
+        {:raise, err}
        other ->
         delete_stop(conn, conn_state, {:bad_return_value, other}, opts)
         raise DBConnection.Error, "bad return value: #{inspect other}"
@@ -1369,20 +1355,20 @@ defmodule DBConnection do
     end
   end
 
-  defp transaction_end(conn, conn_state, proxy_state, fun, opts, result) do
-    %DBConnection{proxy_mod: proxy_mod, conn_mod: conn_mod} = conn
+  defp handle(conn, conn_state, proxy_state, callback, opts, status) do
+    %DBConnection{conn_mod: conn_mod, proxy_mod: proxy_mod} = conn
     try do
-      apply(proxy_mod, fun, [conn_mod, opts, conn_state, proxy_state])
+      apply(proxy_mod, callback, [conn_mod, opts, conn_state, proxy_state])
     else
-      {:ok, conn_state, proxy_state} ->
-        put_info(conn, :idle, conn_state, proxy_state)
-        result
+      {:ok, result, conn_state, proxy_state} ->
+        put_info(conn, status, conn_state, proxy_state)
+        {:ok, result}
       {:error, err, conn_state, proxy_state} ->
         put_info(conn, :idle, conn_state, proxy_state)
-        {:raise, err, fun}
+        {:raise, err}
       {:disconnect, err, conn_state, proxy_state} ->
         delete_disconnect(conn, conn_state, proxy_state, err, opts)
-        {:raise, err, fun}
+        {:raise, err}
        other ->
         reason = {:bad_return_value, other}
         delete_stop(conn, conn_state, proxy_state, reason, opts)

@@ -7,10 +7,10 @@ defmodule TransactionTest do
   test "transaction returns result" do
     stack = [
       {:ok, :state},
-      {:ok, :new_state},
-      {:ok, :newer_state},
-      {:ok, :newest_state},
-      {:ok, :newest_state}
+      {:ok, :began, :new_state},
+      {:ok, :comitted, :newer_state},
+      {:ok, :began, :newest_state},
+      {:ok, :committed, :newest_state}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -38,10 +38,10 @@ defmodule TransactionTest do
   test "transaction logs begin/commit/rollback" do
     stack = [
       {:ok, :state},
-      {:ok, :new_state},
-      {:ok, :newer_state},
-      {:ok, :newest_state},
-      {:ok, :newest_state}
+      {:ok, :began, :new_state},
+      {:ok, :committed, :newer_state},
+      {:ok, :began, :newest_state},
+      {:ok, :rolledback, :newest_state}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -53,7 +53,7 @@ defmodule TransactionTest do
 
     assert P.transaction(pool, fn(_) ->
       assert_received %DBConnection.LogEntry{call: :transaction} = entry
-      assert %{query: :begin, params: nil, result: :ok} = entry
+      assert %{query: :begin, params: nil, result: {:ok, :began}} = entry
       assert is_integer(entry.pool_time)
       assert entry.pool_time >= 0
       assert is_integer(entry.connection_time)
@@ -64,7 +64,7 @@ defmodule TransactionTest do
     end, [log: log]) == {:ok, :result}
 
     assert_received %DBConnection.LogEntry{call: :transaction} = entry
-    assert %{query: :commit, params: nil, result: :ok} = entry
+    assert %{query: :commit, params: nil, result: {:ok, :committed}} = entry
     assert is_nil(entry.pool_time)
     assert is_integer(entry.connection_time)
     assert entry.connection_time >= 0
@@ -76,7 +76,7 @@ defmodule TransactionTest do
     end, [log: log]) == {:error, :result}
 
     assert_received %DBConnection.LogEntry{call: :transaction} = entry
-    assert %{query: :rollback, params: nil, result: :ok} = entry
+    assert %{query: :rollback, params: nil, result: {:ok, :rolledback}} = entry
     assert is_nil(entry.pool_time)
     assert is_integer(entry.connection_time)
     assert entry.connection_time >= 0
@@ -93,10 +93,10 @@ defmodule TransactionTest do
   test "transaction rollback returns error" do
     stack = [
       {:ok, :state},
-      {:ok, :new_state},
-      {:ok, :newer_state},
-      {:ok, :newest_state},
-      {:ok, :newest_state}
+      {:ok, :began, :new_state},
+      {:ok, :rolledback, :newer_state},
+      {:ok, :began, :newest_state},
+      {:ok, :rolledback, :newest_state}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -120,10 +120,10 @@ defmodule TransactionTest do
   test "inner transaction rollback returns error on outer transaction" do
     stack = [
       {:ok, :state},
-      {:ok, :new_state},
-      {:ok, :newer_state},
-      {:ok, :newest_state},
-      {:ok, :newest_state}
+      {:ok, :began, :new_state},
+      {:ok, :rolledback, :newer_state},
+      {:ok, :began, :newest_state},
+      {:ok, :comittted, :newest_state}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -152,10 +152,10 @@ defmodule TransactionTest do
   test "outer transaction rolls back after inner rollback" do
     stack = [
       {:ok, :state},
-      {:ok, :new_state},
-      {:ok, :newer_state},
-      {:ok, :newest_state},
-      {:ok, :newest_state}
+      {:ok, :began, :new_state},
+      {:ok, :rolledback, :newer_state},
+      {:ok, :began, :newest_state},
+      {:ok, :committed, :newest_state}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -183,10 +183,10 @@ defmodule TransactionTest do
   test "inner transaction raise returns error on outer transaction" do
     stack = [
       {:ok, :state},
-      {:ok, :new_state},
-      {:ok, :newer_state},
-      {:ok, :newest_state},
-      {:ok, :newest_state}
+      {:ok, :began, :new_state},
+      {:ok, :rolledback, :newer_state},
+      {:ok, :began, :newest_state},
+      {:ok, :committed, :newest_state}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -214,8 +214,8 @@ defmodule TransactionTest do
   test "transaction and transaction returns result" do
     stack = [
       {:ok, :state},
-      {:ok, :new_state},
-      {:ok, :newer_state}
+      {:ok, :began, :new_state},
+      {:ok, :committed, :newer_state}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -240,8 +240,8 @@ defmodule TransactionTest do
   test "transaction and run returns result" do
     stack = [
       {:ok, :state},
-      {:ok, :new_state},
-      {:ok, :newer_state}
+      {:ok, :began, :new_state},
+      {:ok, :committed, :newer_state}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -268,8 +268,8 @@ defmodule TransactionTest do
     stack = [
       {:ok, :state},
       {:error, err, :new_state},
-      {:ok, :newer_state},
-      {:ok, :newest_state}
+      {:ok, :began, :newer_state},
+      {:ok, :committed, :newest_state}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -355,9 +355,7 @@ defmodule TransactionTest do
         {:ok, :state}
       end,
       :oops,
-      fn(_) ->
-        {:ok, :state}
-      end
+      {:ok, :state}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -387,9 +385,7 @@ defmodule TransactionTest do
       fn(_, _) ->
         raise "oops"
       end,
-      fn(_) ->
-        {:ok, :state}
-      end
+      {:ok, :state}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -413,10 +409,10 @@ defmodule TransactionTest do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
-      {:ok, :new_state},
+      {:ok, :began, :new_state},
       {:error, err, :newer_state},
-      {:ok, :newest_state},
-      {:ok, :newest_state}
+      {:ok, :began, :newest_state},
+      {:ok, :committed, :newest_state}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -440,7 +436,7 @@ defmodule TransactionTest do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
-      {:ok, :new_state},
+      {:ok, :began, :new_state},
       {:error, err, :newer_state},
       ]
     {:ok, agent} = A.start_link(stack)
@@ -475,7 +471,7 @@ defmodule TransactionTest do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
-      {:ok, :new_state},
+      {:ok, :began, :new_state},
       {:disconnect, err, :newer_state},
       :ok,
       fn(opts) ->
@@ -508,11 +504,9 @@ defmodule TransactionTest do
         Process.link(opts[:parent])
         {:ok, :state}
       end,
-      {:ok, :new_state},
+      {:ok, :began, :new_state},
       :oops,
-      fn(_) ->
-        {:ok, :state}
-      end
+      {:ok, :state}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -540,13 +534,11 @@ defmodule TransactionTest do
         Process.link(opts[:parent])
         {:ok, :state}
       end,
-      {:ok, :new_state},
+      {:ok, :began, :new_state},
       fn(_, _) ->
         raise "oops"
       end,
-      fn(_) ->
-        {:ok, :state}
-      end
+      {:ok, :state}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -571,10 +563,10 @@ defmodule TransactionTest do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
-      {:ok, :new_state},
+      {:ok, :began, :new_state},
       {:error, err, :newer_state},
-      {:ok, :newest_state},
-      {:ok, :newest_state}
+      {:ok, :began, :newest_state},
+      {:ok, :rolledback, :newest_state}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -597,8 +589,8 @@ defmodule TransactionTest do
   test "transaction fun raise rolls back and re-raises" do
    stack = [
       {:ok, :state},
-      {:ok, :new_state},
-      {:ok, :newer_state},
+      {:ok, :began, :new_state},
+      {:ok, :rolledback, :newer_state},
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -617,8 +609,8 @@ defmodule TransactionTest do
   test "transaction logs on fun raise" do
    stack = [
       {:ok, :state},
-      {:ok, :new_state},
-      {:ok, :newer_state},
+      {:ok, :began, :new_state},
+      {:ok, :rolledback, :newer_state},
       ]
     {:ok, agent} = A.start_link(stack)
 

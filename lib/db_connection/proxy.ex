@@ -45,36 +45,36 @@ defmodule DBConnection.Proxy do
     {:error | :disconnect, Exception.t, new_conn :: any, new_state :: any}
 
   @doc """
-  Handle the beginning of a transaction. Return `{:ok, conn, state}` to
+  Handle the beginning of a transaction. Return `{:ok, result, conn, state}` to
   continue, `{:error, exception, conn, state}` to abort the transaction and
   continue or `{:disconnect, exception, conn, state}` to abort the transaction
   and disconnect the connection.
   """
   @callback handle_begin(module, opts :: Keyword.t, conn :: any,
   state :: any) ::
-    {:ok, new_conn :: any, new_state :: any} |
+    {:ok, DBConnection.result, new_conn :: any, new_state :: any} |
     {:error | :disconnect, Exception.t, new_conn :: any, new_state :: any}
 
   @doc """
-  Handle commiting a transaction. Return `{:ok, conn, state}` on success and
-  to continue, `{:error, exception, conn, state}` to abort the transaction and
-  continue or `{:disconnect, exception, conn, state}` to abort the transaction
-  and disconnect the connection.
+  Handle commiting a transaction. Return `{:ok, result, conn, state}` on success
+  and to continue, `{:error, exception, conn, state}` to abort the transaction
+  and continue or `{:disconnect, exception, conn, state}` to abort the
+  transaction and disconnect the connection.
   """
   @callback handle_commit(module, opts :: Keyword.t, conn :: any,
   state :: any) ::
-    {:ok, new_conn :: any, new_state :: any} |
+    {:ok, DBConnection.result, new_conn :: any, new_state :: any} |
     {:error | :disconnect, Exception.t, new_conn :: any, new_state :: any}
 
   @doc """
-  Handle rolling back a transaction. Return `{:ok, conn, state}` on success
-  and to continue, `{:error, exception, conn, state}` to abort the transaction
-  and continue or `{:disconnect, exception, conn, state}` to abort the
-  transaction and disconnect.
+  Handle rolling back a transaction. Return `{:ok, result, conn, state}` on
+  success and to continue, `{:error, exception, conn, state}` to abort the
+  transaction and continue or `{:disconnect, exception, conn, state}` to abort
+  the transaction and disconnect.
   """
   @callback handle_rollback(module, opts :: Keyword.t, conn :: any,
   state :: any) ::
-    {:ok, new_conn :: any, new_state :: any} |
+    {:ok, DBConnection.result, new_conn :: any, new_state :: any} |
     {:error | :disconnect, Exception.t, new_conn :: any, new_state :: any}
 
   @doc """
@@ -109,13 +109,13 @@ defmodule DBConnection.Proxy do
     {:error | :disconnect, Exception.t, new_conn :: any, new_state :: any}
 
   @doc """
-  Close a query. Return `{:ok, conn, state}` on success and to continue,
+  Close a query. Return `{:ok, result, conn, state}` on success and to continue,
   `{:error, exception, conn, state}` to return an error and continue, or
   `{:disconnect, exception, conn, state}` to return an error and disconnect.
   """
   @callback handle_close(module, DBConnection.query, opts :: Keyword.t,
   conn :: any, state :: any) ::
-    {:ok, new_conn :: any, new_state :: any} |
+    {:ok, DBConnection.result, new_conn :: any, new_state :: any} |
     {:error | :disconnect, Exception.t, new_conn :: any, new_state :: any}
 
   @doc """
@@ -145,7 +145,7 @@ defmodule DBConnection.Proxy do
 
       def handle_begin(mod, opts, conn, state) do
         case apply(mod, :handle_begin, [opts, conn]) do
-          {:ok, _} = ok ->
+          {:ok, _, _} = ok ->
             :erlang.append_element(ok, state)
           {tag, _, _} = error when tag in [:error, :disconnect] ->
             :erlang.append_element(error, state)
@@ -156,7 +156,7 @@ defmodule DBConnection.Proxy do
 
       def handle_commit(mod, opts, conn, state) do
         case apply(mod, :handle_commit, [opts, conn]) do
-          {:ok, _} = ok ->
+          {:ok, _, _} = ok ->
             :erlang.append_element(ok, state)
           {tag, _, _} = error when tag in [:error, :disconnect] ->
             :erlang.append_element(error, state)
@@ -167,7 +167,7 @@ defmodule DBConnection.Proxy do
 
       def handle_rollback(mod, opts, conn, state) do
         case apply(mod, :handle_rollback, [opts, conn]) do
-          {:ok, _} = ok ->
+          {:ok, _, _} = ok ->
             :erlang.append_element(ok, state)
           {tag, _, _} = error when tag in [:error, :disconnect] ->
             :erlang.append_element(error, state)
@@ -211,7 +211,7 @@ defmodule DBConnection.Proxy do
 
       def handle_close(mod, query, opts, conn, state) do
         case apply(mod, :handle_close, [query, opts, conn]) do
-          {:ok, _} = ok ->
+          {:ok, _, _} = ok ->
             :erlang.append_element(ok, state)
           {tag, _, _} = error when tag in [:error, :disconnect] ->
             :erlang.append_element(error, state)

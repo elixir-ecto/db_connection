@@ -9,10 +9,10 @@ defmodule TransactionExecuteTest do
   test "execute returns result" do
     stack = [
       {:ok, :state},
-      {:ok, :new_state},
+      {:ok, :began, :new_state},
       {:ok, %R{}, :newer_state},
       {:ok, %R{}, :newest_state},
-      {:ok, :newest_state}
+      {:ok, :committed, :newest_state}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -36,9 +36,9 @@ defmodule TransactionExecuteTest do
   test "execute logs result" do
     stack = [
       {:ok, :state},
-      {:ok, :new_state},
+      {:ok, :began, :new_state},
       {:ok, %R{}, :newer_state},
-      {:ok, :newest_state}
+      {:ok, :committed, :newest_state}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -74,9 +74,9 @@ defmodule TransactionExecuteTest do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
-      {:ok, :new_state},
+      {:ok, :began, :new_state},
       {:error, err, :newer_state},
-      {:ok, :newest_state}
+      {:ok, :committed, :newest_state}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -99,10 +99,10 @@ defmodule TransactionExecuteTest do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
-      {:ok, :new_state},
+      {:ok, :began, :new_state},
       {:error, err, :newer_state},
       {:ok,  %R{}, :newest_state},
-      {:ok, :newest_state}
+      {:ok, :committed, :newest_state}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -129,7 +129,7 @@ defmodule TransactionExecuteTest do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
-      {:ok, :new_state},
+      {:ok, :began, :new_state},
       {:disconnect, err, :newer_state},
       :ok,
       fn(opts) ->
@@ -168,7 +168,7 @@ defmodule TransactionExecuteTest do
         Process.link(opts[:parent])
         {:ok, :state}
       end,
-      {:ok, :new_state},
+      {:ok, :began, :new_state},
       :oops,
       {:ok, :state}
       ]
@@ -206,7 +206,7 @@ defmodule TransactionExecuteTest do
         Process.link(opts[:parent])
         {:ok, :state}
       end,
-      {:ok, :new_state},
+      {:ok, :began, :new_state},
       fn(_, _, _, _) ->
         raise "oops"
       end,
@@ -242,8 +242,8 @@ defmodule TransactionExecuteTest do
   test "execute raises after inner transaction rollback" do
     stack = [
       {:ok, :state},
-      {:ok, :new_state},
-      {:ok, :newer_state}
+      {:ok, :began, :new_state},
+      {:ok, :rolledback, :newer_state}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -268,7 +268,7 @@ defmodule TransactionExecuteTest do
   test "transaction does not log commit if closed" do
    stack = [
       {:ok, :state},
-      {:ok, :new_state},
+      {:ok, :began, :new_state},
       :oops,
       {:ok, :state2}
       ]
