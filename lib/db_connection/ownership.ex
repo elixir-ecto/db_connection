@@ -19,8 +19,8 @@ defmodule DBConnection.Ownership do
     use GenServer
     @timeout 15_000
 
-    def start(from, pool, pool_impl, pool_opts) do
-      GenServer.start(__MODULE__, {from, pool, pool_impl, pool_opts}, [])
+    def start(from, pool, pool_mod, pool_opts) do
+      GenServer.start(__MODULE__, {from, pool, pool_mod, pool_opts}, [])
     end
 
     def checkout(owner, opts) do
@@ -55,24 +55,24 @@ defmodule DBConnection.Ownership do
       {:ok, args}
     end
 
-    def handle_info(:init, {from, pool, pool_impl, pool_opts}) do
-      state = %{client_ref: nil, conn_state: nil, owner_ref: nil,
-                pool: pool, pool_module: nil, pool_impl: pool_impl,
+    def handle_info(:init, {from, pool, pool_mod, pool_opts}) do
+      state = %{client_ref: nil, conn_state: nil, conn_module: nil,
+                owner_ref: nil, pool: pool, pool_mod: pool_mod,
                 pool_opts: pool_opts, pool_ref: nil, queue: :queue.new}
 
       try do
-        pool_impl.checkout(pool, pool_opts)
+        pool_mod.checkout(pool, pool_opts)
       catch
         kind, reason ->
           GenServer.reply(from, {kind, reason, System.stacktrace})
           {:stop, {:shutdown, "no checkout"}, state}
       else
-        {:ok, pool_ref, pool_module, conn_state} ->
+        {:ok, pool_ref, conn_module, conn_state} ->
           GenServer.reply(from, {:ok, self()})
           {caller, _} = from
           ref = Process.monitor(caller)
-          {:noreply, %{state | conn_state: conn_state, owner_ref: ref,
-                               pool_module: pool_module, pool_ref: pool_ref}}
+          {:noreply, %{state | conn_state: conn_state, conn_module: conn_module,
+                               owner_ref: ref, pool_ref: pool_ref}}
         :error ->
           GenServer.reply(from, :error)
           {:stop, {:shutdown, "no checkout"}, state}
@@ -80,10 +80,10 @@ defmodule DBConnection.Ownership do
     end
 
     def handle_info({:DOWN, ref, _, _, _}, %{client_ref: ref} = state) do
-      %{pool_impl: pool_impl, pool_ref: pool_ref,
-        conn_state: conn_state, pool_opts: pool_opts} = state
+      %{conn_state: conn_state, pool_mod: pool_mod,
+        pool_opts: pool_opts, pool_ref: pool_ref} = state
       error = DBConnection.Error.exception("client down")
-      pool_impl.disconnect(pool_ref, error, conn_state, pool_opts)
+      pool_mod.disconnect(pool_ref, error, conn_state, pool_opts)
       {:stop, {:shutdown, "client down"}, state}
     end
 
@@ -110,14 +110,14 @@ defmodule DBConnection.Ownership do
     end
 
     def handle_call({:stop, reason, conn_state}, from, state) do
-      %{pool_impl: pool_impl, pool_ref: pool_ref, pool_opts: pool_opts} = state
-      GenServer.reply(from, pool_impl.stop(pool_ref, reason, conn_state, pool_opts))
+      %{pool_mod: pool_mod, pool_ref: pool_ref, pool_opts: pool_opts} = state
+      GenServer.reply(from, pool_mod.stop(pool_ref, reason, conn_state, pool_opts))
       {:stop, {:shutdown, "stop"}, state}
     end
 
     def handle_call({:disconnect, error, conn_state}, from, state) do
-      %{pool_impl: pool_impl, pool_ref: pool_ref, pool_opts: pool_opts} = state
-      GenServer.reply(from, pool_impl.disconnect(pool_ref, error, conn_state, pool_opts))
+      %{pool_mod: pool_mod, pool_ref: pool_ref, pool_opts: pool_opts} = state
+      GenServer.reply(from, pool_mod.disconnect(pool_ref, error, conn_state, pool_opts))
       {:stop, {:shutdown, "disconnect"}, state}
     end
 
@@ -129,8 +129,8 @@ defmodule DBConnection.Ownership do
       case :queue.peek(queue) do
         {:value, from} ->
           {caller, _} = from
-          %{pool_module: pool_module, conn_state: conn_state} = state
-          GenServer.reply(from, {:ok, self(), pool_module, conn_state})
+          %{conn_module: conn_module, conn_state: conn_state} = state
+          GenServer.reply(from, {:ok, self(), conn_module, conn_state})
           %{state | queue: queue, client_ref: Process.monitor(caller)}
         :empty ->
           %{state | queue: queue, client_ref: nil}
@@ -139,18 +139,18 @@ defmodule DBConnection.Ownership do
 
     # If it is down but it has no client, checkin
     defp down(reason, %{client_ref: nil} = state) do
-      %{pool_impl: pool_impl, pool_ref: pool_ref,
+      %{pool_mod: pool_mod, pool_ref: pool_ref,
         conn_state: conn_state, pool_opts: pool_opts} = state
-      pool_impl.checkin(pool_ref, conn_state, pool_opts)
+      pool_mod.checkin(pool_ref, conn_state, pool_opts)
       {:stop, {:shutdown, reason}, state}
     end
 
     # If it is down but it has a client, disconnect
     defp down(reason, state) do
-      %{pool_impl: pool_impl, pool_ref: pool_ref,
+      %{pool_mod: pool_mod, pool_ref: pool_ref,
         conn_state: conn_state, pool_opts: pool_opts} = state
       error = DBConnection.Error.exception(reason)
-      pool_impl.disconnect(pool_ref, error, conn_state, pool_opts)
+      pool_mod.disconnect(pool_ref, error, conn_state, pool_opts)
       {:stop, {:shutdown, reason}, state}
     end
   end
@@ -162,9 +162,9 @@ defmodule DBConnection.Ownership do
     @timeout 15_000
 
     def start_link(module, opts) do
-      pool_impl = Keyword.fetch!(opts, :ownership_pool)
+      pool_mod = Keyword.get(opts, :ownership_pool, DBConnection.Poolboy)
       {owner_opts, pool_opts} = Keyword.split(opts, [:name])
-      GenServer.start_link(__MODULE__, {module, pool_impl, pool_opts}, owner_opts)
+      GenServer.start_link(__MODULE__, {module, pool_mod, pool_opts}, owner_opts)
     end
 
     def checkout(manager, opts) do
@@ -179,9 +179,9 @@ defmodule DBConnection.Ownership do
 
     ## Callbacks
 
-    def init({module, pool_impl, pool_opts}) do
-      {:ok, pool} = pool_impl.start_link(module, pool_opts)
-      {:ok, %{pool: pool, pool_impl: pool_impl, checkouts: %{}, owners: %{}}}
+    def init({module, pool_mod, pool_opts}) do
+      {:ok, pool} = pool_mod.start_link(module, pool_opts)
+      {:ok, %{pool: pool, pool_mod: pool_mod, checkouts: %{}, owners: %{}}}
     end
 
     def handle_call(:lookup, {caller, _}, %{checkouts: checkouts} = state) do
@@ -199,7 +199,7 @@ defmodule DBConnection.Ownership do
     end
 
     def handle_call({:checkout, opts}, {caller, _} = from, state) do
-      %{pool_impl: pool_impl, pool: pool, checkouts: checkouts, owners: owners} = state
+      %{pool_mod: pool_mod, pool: pool, checkouts: checkouts, owners: owners} = state
 
       # TODO: Raise if the caller already has a checkout
       # TODO: Move this to a supervisor
@@ -208,7 +208,7 @@ defmodule DBConnection.Ownership do
         {:ok, owner} ->
           {:reply, {:ok, owner}, state}
         :error ->
-          {:ok, owner} = Owner.start(from, pool, pool_impl, opts)
+          {:ok, owner} = Owner.start(from, pool, pool_mod, opts)
           checkouts = Map.put(checkouts, caller, owner)
           owners = Map.put(owners, Process.monitor(owner), {owner, caller})
           {:noreply, %{state | checkouts: checkouts, owners: owners}}
