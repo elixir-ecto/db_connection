@@ -178,17 +178,3 @@ defmodule TestAgent do
     {next, {stack, [action | record]}}
   end
 end
-
-defmodule TestProxy do
-  use DBConnection.Proxy
-
-  def init(opts) do
-    TestAgent.eval(:init, [opts])
-  end
-  def checkout(mod, opts, conn, state) do
-    TestAgent.eval(:checkout, [mod, opts, conn, state])
-  end
-  def checkin(mod, opts, conn, state) do
-    TestAgent.eval(:checkin, [mod, opts, conn, state])
-  end
-end
