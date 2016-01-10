@@ -106,7 +106,7 @@ defmodule DBConnection.Ownership do
 
     def handle_call({:checkin, conn_state}, _from, %{queue: queue, client_ref: ref} = state) do
       Process.demonitor(ref, [:flush])
-      {:reply, :ok, next(queue, %{state | conn_state: conn_state})}
+      {:reply, :ok, next(:queue.drop(queue), %{state | conn_state: conn_state})}
     end
 
     def handle_call({:stop, reason, conn_state}, from, state) do
@@ -126,13 +126,13 @@ defmodule DBConnection.Ownership do
     end
 
     defp next(queue, state) do
-      case :queue.out(queue) do
-        {{:value, from}, queue} ->
+      case :queue.peek(queue) do
+        {:value, from} ->
           {caller, _} = from
           %{pool_module: pool_module, conn_state: conn_state} = state
           GenServer.reply(from, {:ok, self(), pool_module, conn_state})
           %{state | queue: queue, client_ref: Process.monitor(caller)}
-        {:empty, queue} ->
+        :empty ->
           %{state | queue: queue, client_ref: nil}
       end
     end
