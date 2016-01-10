@@ -25,7 +25,8 @@ defmodule DBConnection.Ownership do
 
     def checkout(owner, opts) do
       timeout = Keyword.get(opts, :owner_timeout, @timeout)
-      GenServer.call(owner, :checkout, timeout)
+      queue?  = Keyword.get(opts, :queue, true)
+      GenServer.call(owner, {:checkout, queue?}, timeout)
     end
 
     def checkin(owner, state, opts) do
@@ -94,9 +95,13 @@ defmodule DBConnection.Ownership do
       {:noreply, state}
     end
 
-    def handle_call(:checkout, from, %{queue: queue} = state) do
-      queue = :queue.in(from, queue)
-      {:noreply, next(queue, state)}
+    def handle_call({:checkout, queue?}, from, %{queue: queue} = state) do
+      if queue? or :queue.is_empty(queue) do
+        queue = :queue.in(from, queue)
+        {:noreply, next(queue, state)}
+      else
+        {:reply, :error, state}
+      end
     end
 
     def handle_call({:checkin, conn_state}, _from, %{queue: queue, client_ref: ref} = state) do
