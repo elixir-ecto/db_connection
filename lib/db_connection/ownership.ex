@@ -15,19 +15,12 @@ defmodule DBConnection.Ownership do
 
   defmodule Owner do
     @moduledoc false
-    @timeout 15_000
 
     use GenServer
+    @timeout 15_000
 
-    def start_link(module, opts) do
-      pool_mod = Keyword.fetch!(opts, :ownership_pool)
-      {owner_opts, pool_opts} = Keyword.split(opts, [:name])
-      GenServer.start_link(__MODULE__, {module, pool_mod, pool_opts}, owner_opts)
-    end
-
-    def checkout(owner, opts) do
-      timeout = Keyword.get(opts, :owner_timeout, @timeout)
-      GenServer.call(owner, {:checkout, opts}, timeout)
+    def start(from, pool, pool_mod, pool_opts) do
+      GenServer.start(__MODULE__, {from, pool, pool_mod, pool_opts}, [])
     end
 
     def checkin(owner, fun, args, opts) do
@@ -37,60 +30,93 @@ defmodule DBConnection.Ownership do
 
     # Callbacks
 
-    def init({module, pool_mod, pool_opts}) do
-      {:ok, pool} = pool_mod.start_link(module, pool_opts)
-      {:ok, %{pool: pool, pool_mod: pool_mod, checkout: nil}}
+    def init(args) do
+      send self(), :init
+      {:ok, args}
     end
 
-    def handle_call({:checkout, opts}, {caller, _ref}, state) do
-      %{pool_mod: pool_mod, pool: pool} = state
+    def handle_info(:init, {from, pool, pool_mod, pool_opts}) do
+      state = %{owner: nil, pool: pool, pool_mod: pool_mod,
+                pool_opts: pool_opts, pool_ref: nil, pool_state: nil}
 
       try do
-        pool_mod.checkout(pool, opts)
+        pool_mod.checkout(pool, pool_opts)
       catch
         kind, reason ->
-          {:reply, {kind, reason, System.stacktrace}, state}
+          GenServer.reply(from, {kind, reason, System.stacktrace})
+          {:stop, {:shutdown, :nocheckout}, state}
       else
         {:ok, pool_ref, pool_module, pool_state} ->
+          {caller, _} = from
           ref = Process.monitor(caller)
           reply = {:ok, {self(), pool_ref}, pool_module, pool_state}
-          checkout = {Process.monitor(caller), pool_ref, pool_state, opts}
-          {:reply, reply, %{state | checkout: checkout}}
+          GenServer.reply(from, reply)
+          {:noreply, %{state | owner: ref, pool_ref: pool_ref, pool_state: pool_state}}
         :error ->
-          {:reply, :error, state}
+          GenServer.reply(from, :error)
+          {:stop, {:shutdown, :nocheckout}, state}
       end
     end
 
-    def handle_call({:checkin, fun, args}, _from, state) do
-      %{pool_mod: pool_mod} = state
-      {:reply, apply(pool_mod, fun, args), state}
-    end
-
-    def handle_info({:DOWN, ref, _, _, _},
-                    %{checkout: {ref, pool_ref, pool_state, pool_opts}} = state) do
-      %{pool_mod: pool_mod} = state
-      # TODO: The pool_state is certainly not the one being hold by
-      # the client. Is this an issue? Is stop the best option here?
-      err = DBConnection.Error.exception("client down")
-      pool_mod.disconnect(pool_ref, err, pool_state, pool_opts)
-      {:noreply, %{state | checkout: nil}}
+    def handle_info({:DOWN, ref, _, _, _}, %{owner: ref} = state) do
+      %{pool_mod: pool_mod, pool_ref: pool_ref,
+        pool_state: pool_state, pool_opts: pool_opts} = state
+      error = DBConnection.Error.exception("client down")
+      pool_mod.disconnect(pool_ref, error, pool_state, pool_opts)
+      {:stop, {:shutdown, :client_down}, state}
     end
 
     def handle_info(_msg, state) do
       {:noreply, state}
     end
+
+    def handle_call({:checkin, fun, args}, from, %{pool_mod: pool_mod} = state) do
+      GenServer.reply(from, apply(pool_mod, fun, args))
+      {:stop, {:shutdown, :checkin}, state}
+    end
+  end
+
+  defmodule Manager do
+    @moduledoc false
+
+    use GenServer
+    @timeout 15_000
+
+    def start_link(module, opts) do
+      pool_mod = Keyword.fetch!(opts, :ownership_pool)
+      {owner_opts, pool_opts} = Keyword.split(opts, [:name])
+      GenServer.start_link(__MODULE__, {module, pool_mod, pool_opts}, owner_opts)
+    end
+
+    def init({module, pool_mod, pool_opts}) do
+      {:ok, pool} = pool_mod.start_link(module, pool_opts)
+      {:ok, %{pool: pool, pool_mod: pool_mod}}
+    end
+
+    def checkout(manager, opts) do
+      timeout = Keyword.get(opts, :owner_timeout, @timeout)
+      GenServer.call(manager, {:checkout, opts}, timeout)
+    end
+
+    def handle_call({:checkout, opts}, from, state) do
+      %{pool_mod: pool_mod, pool: pool} = state
+      # TODO: Move this to a supervisor
+      # TODO: Cache using ETS
+      Owner.start(from, pool, pool_mod, opts)
+      {:noreply, state}
+    end
   end
 
   def start_link(module, opts) do
-    Owner.start_link(module, opts)
+    Manager.start_link(module, opts)
   end
 
   def child_spec(module, opts, child_opts) do
-    Supervisor.Spec.worker(Owner, [module, opts], child_opts)
+    Supervisor.Spec.worker(Manager, [module, opts], child_opts)
   end
 
   def checkout(owner, opts) do
-    case Owner.checkout(owner, opts) do
+    case Manager.checkout(owner, opts) do
       {:ok, _, _, _} = ok -> ok
       :error -> :error
       {kind, reason, stack} -> :erlang.raise(kind, reason, stack)
