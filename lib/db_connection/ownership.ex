@@ -55,9 +55,9 @@ defmodule DBConnection.Ownership do
     end
 
     def handle_info(:init, {from, pool, pool_impl, pool_opts}) do
-      state = %{client_ref: nil, owner: nil, owner_ref: nil, queue: :queue.new,
+      state = %{client_ref: nil, conn_state: nil, owner_ref: nil,
                 pool: pool, pool_module: nil, pool_impl: pool_impl,
-                pool_opts: pool_opts, pool_ref: nil, pool_state: nil}
+                pool_opts: pool_opts, pool_ref: nil, queue: :queue.new}
 
       try do
         pool_impl.checkout(pool, pool_opts)
@@ -66,12 +66,12 @@ defmodule DBConnection.Ownership do
           GenServer.reply(from, {kind, reason, System.stacktrace})
           {:stop, {:shutdown, "no checkout"}, state}
       else
-        {:ok, pool_ref, pool_module, pool_state} ->
+        {:ok, pool_ref, pool_module, conn_state} ->
           GenServer.reply(from, {:ok, self()})
           {caller, _} = from
           ref = Process.monitor(caller)
-          {:noreply, %{state | owner: caller, owner_ref: ref, pool_module: pool_module,
-                               pool_ref: pool_ref, pool_state: pool_state}}
+          {:noreply, %{state | conn_state: conn_state, owner_ref: ref,
+                               pool_module: pool_module, pool_ref: pool_ref}}
         :error ->
           GenServer.reply(from, :error)
           {:stop, {:shutdown, "no checkout"}, state}
@@ -80,9 +80,9 @@ defmodule DBConnection.Ownership do
 
     def handle_info({:DOWN, ref, _, _, _}, %{client_ref: ref} = state) do
       %{pool_impl: pool_impl, pool_ref: pool_ref,
-        pool_state: pool_state, pool_opts: pool_opts} = state
+        conn_state: conn_state, pool_opts: pool_opts} = state
       error = DBConnection.Error.exception("client down")
-      pool_impl.disconnect(pool_ref, error, pool_state, pool_opts)
+      pool_impl.disconnect(pool_ref, error, conn_state, pool_opts)
       {:stop, {:shutdown, "client down"}, state}
     end
 
@@ -99,21 +99,20 @@ defmodule DBConnection.Ownership do
       {:noreply, next(queue, state)}
     end
 
-    def handle_call({:checkin, pool_state}, _from, %{queue: queue, client_ref: ref} = state) do
+    def handle_call({:checkin, conn_state}, _from, %{queue: queue, client_ref: ref} = state) do
       Process.demonitor(ref, [:flush])
-      # QUESTION: Should we update the pool_state with the latest checkin value as below?
-      {:reply, :ok, next(queue, %{state | pool_state: pool_state})}
+      {:reply, :ok, next(queue, %{state | conn_state: conn_state})}
     end
 
-    def handle_call({:stop, reason, pool_state}, from, state) do
+    def handle_call({:stop, reason, conn_state}, from, state) do
       %{pool_impl: pool_impl, pool_ref: pool_ref, pool_opts: pool_opts} = state
-      GenServer.reply(from, pool_impl.stop(pool_ref, reason, pool_state, pool_opts))
+      GenServer.reply(from, pool_impl.stop(pool_ref, reason, conn_state, pool_opts))
       {:stop, {:shutdown, "stop"}, state}
     end
 
-    def handle_call({:disconnect, error, pool_state}, from, state) do
+    def handle_call({:disconnect, error, conn_state}, from, state) do
       %{pool_impl: pool_impl, pool_ref: pool_ref, pool_opts: pool_opts} = state
-      GenServer.reply(from, pool_impl.disconnect(pool_ref, error, pool_state, pool_opts))
+      GenServer.reply(from, pool_impl.disconnect(pool_ref, error, conn_state, pool_opts))
       {:stop, {:shutdown, "disconnect"}, state}
     end
 
@@ -125,8 +124,8 @@ defmodule DBConnection.Ownership do
       case :queue.out(queue) do
         {{:value, from}, queue} ->
           {caller, _} = from
-          %{pool_module: pool_module, pool_state: pool_state} = state
-          GenServer.reply(from, {:ok, self(), pool_module, pool_state})
+          %{pool_module: pool_module, conn_state: conn_state} = state
+          GenServer.reply(from, {:ok, self(), pool_module, conn_state})
           %{state | queue: queue, client_ref: Process.monitor(caller)}
         {:empty, queue} ->
           %{state | queue: queue, client_ref: nil}
@@ -136,17 +135,17 @@ defmodule DBConnection.Ownership do
     # If it is down but it has no client, checkin
     defp down(reason, %{client_ref: nil} = state) do
       %{pool_impl: pool_impl, pool_ref: pool_ref,
-        pool_state: pool_state, pool_opts: pool_opts} = state
-      pool_impl.checkin(pool_ref, pool_state, pool_opts)
+        conn_state: conn_state, pool_opts: pool_opts} = state
+      pool_impl.checkin(pool_ref, conn_state, pool_opts)
       {:stop, {:shutdown, reason}, state}
     end
 
     # If it is down but it has a client, disconnect
     defp down(reason, state) do
       %{pool_impl: pool_impl, pool_ref: pool_ref,
-        pool_state: pool_state, pool_opts: pool_opts} = state
+        conn_state: conn_state, pool_opts: pool_opts} = state
       error = DBConnection.Error.exception(reason)
-      pool_impl.disconnect(pool_ref, error, pool_state, pool_opts)
+      pool_impl.disconnect(pool_ref, error, conn_state, pool_opts)
       {:stop, {:shutdown, reason}, state}
     end
   end
