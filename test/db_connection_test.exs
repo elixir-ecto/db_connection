@@ -38,9 +38,13 @@ defmodule DBConnectionTest do
       assert_raise RuntimeError, "handle_execute/4 not implemented",
         fn() -> Sample.handle_execute(:query, [], [], :state) end
 
-      # not a bug! handle_execute forwards to handle_query/3
+      # not a bug! handle_execute_close forwards to handle_execute/4
       assert_raise RuntimeError, "handle_execute/4 not implemented",
         fn() -> Sample.handle_execute_close(:query, [], [], :state) end
+
+      # not a bug! handle_execute_many forwards to handle_execute/4
+      assert_raise RuntimeError, "handle_execute/4 not implemented",
+        fn() -> Sample.handle_execute_many([{:query, [], []}], [], :state) end
 
       assert_raise RuntimeError, "handle_close/3 not implemented",
         fn() -> Sample.handle_close(:query, [], :state) end
@@ -97,6 +101,34 @@ defmodule DBConnectionTest do
     after
       :code.purge(SampleEC)
       :code.delete(SampleEC)
+    end
+  end
+
+  test "__using__ execute_many" do
+    defmodule SampleEM do
+      use DBConnection
+
+      def handle_execute(:ok, _, _, state) do
+        {:ok, :ok, [:execute | state]}
+      end
+      def handle_execute(error, _, _, state)
+      when error in [:error, :disconnect] do
+        {error, %ArgumentError{message: "execute"}, [:execute | state]}
+      end
+    end
+
+    try do
+      assert SampleEM.handle_execute_many([{:ok, [], []}, {:ok, [], []}], [], []) ==
+        {:ok, [:ok, :ok], [:execute, :execute]}
+
+      assert SampleEM.handle_execute_many([{:ok, [], []}, {:error, [], []}], [], []) ==
+        {:error, %ArgumentError{message: "execute"}, [:execute, :execute]}
+
+      assert SampleEM.handle_execute_many([{:ok, [], []}, {:disconnect, [], []}], [], []) ==
+        {:disconnect, %ArgumentError{message: "execute"}, [:execute, :execute]}
+    after
+      :code.purge(SampleEM)
+      :code.delete(SampleEM)
     end
   end
 
