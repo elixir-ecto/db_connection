@@ -6,7 +6,9 @@ defmodule DBConnection.Ownership do
   ### Options
 
     * `:ownership_pool` - The actual pool to use to power the ownership
-      mechanism
+      mechanism. The pool is started when the ownership pool is started,
+      although this option may also be given on `ownership_checkout/2`
+      allowing developers to customize the pool checkout/checkin
     * `:ownership_timeout` - The timeout for ownership operations
     * `:ownership_mode` - When mode is `:manual`, all connections must
       be explicitly checked out before by using `ownership_checkout/2`.
@@ -24,8 +26,8 @@ defmodule DBConnection.Ownership do
     use GenServer
     @timeout 15_000
 
-    def start(from, pool, pool_mod, pool_opts) do
-      GenServer.start(__MODULE__, {from, pool, pool_mod, pool_opts}, [])
+    def start(from, pool, pool_opts) do
+      GenServer.start(__MODULE__, {from, pool, pool_opts}, [])
     end
 
     def checkout(owner, opts) do
@@ -60,7 +62,9 @@ defmodule DBConnection.Ownership do
       {:ok, args}
     end
 
-    def handle_info(:init, {from, pool, pool_mod, pool_opts}) do
+    def handle_info(:init, {from, pool, pool_opts}) do
+      pool_mod = Keyword.get(pool_opts, :ownership_pool, DBConnection.Poolboy)
+
       state = %{client_ref: nil, conn_state: nil, conn_module: nil,
                 owner_ref: nil, pool: pool, pool_mod: pool_mod,
                 pool_opts: pool_opts, pool_ref: nil, queue: :queue.new}
@@ -190,7 +194,7 @@ defmodule DBConnection.Ownership do
     end
 
     @spec mode(GenServer.server, :auto | :manual, Keyword.t) :: :ok
-    def checkin(manager, mode, opts) when mode in [:auto, :manual] do
+    def mode(manager, mode, opts) when mode in [:auto, :manual] do
       timeout = Keyword.get(opts, :owner_timeout, @timeout)
       GenServer.call(manager, {:mode, mode}, timeout)
     end
@@ -215,7 +219,7 @@ defmodule DBConnection.Ownership do
     def init({module, pool_mod, pool_opts}) do
       {:ok, pool} = pool_mod.start_link(module, pool_opts)
       mode = Keyword.get(pool_opts, :ownership_mode, :auto)
-      {:ok, %{pool: pool, pool_mod: pool_mod, checkouts: %{}, owners: %{}, mode: mode}}
+      {:ok, %{pool: pool, checkouts: %{}, owners: %{}, mode: mode}}
     end
 
     def handle_call({:mode, mode}, _from, state) do
@@ -294,8 +298,8 @@ defmodule DBConnection.Ownership do
     # TODO: Move this to a supervisor
     # TODO: Cache using ETS
     defp checkout({caller, _} = from, opts, state) do
-      %{pool_mod: pool_mod, pool: pool, checkouts: checkouts, owners: owners} = state
-      {:ok, owner} = Owner.start(from, pool, pool_mod, opts)
+      %{pool: pool, checkouts: checkouts, owners: owners} = state
+      {:ok, owner} = Owner.start(from, pool, opts)
       ref = Process.monitor(owner)
       checkouts = Map.put(checkouts, caller, {:owner, ref, owner})
       owners = Map.put(owners, ref, {owner, caller, []})
