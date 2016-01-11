@@ -8,6 +8,11 @@ defmodule DBConnection.Ownership do
     * `:ownership_pool` - The actual pool to use to power the ownership
       mechanism
     * `:ownership_timeout` - The timeout for ownership operations
+    * `:ownership_mode` - When mode is `:manual`, all connections must
+      be explicitly checked out before by using `ownership_checkout/2`.
+      Otherwise, mode is `:auto` and connections are checked out
+      implicitly. In both cases, checkins are implicit via
+      `ownership_checkin/2`. Defaults to `:auto`.
   """
 
   @behaviour DBConnection.Pool
@@ -161,100 +166,211 @@ defmodule DBConnection.Ownership do
     use GenServer
     @timeout 15_000
 
+    @callback start_link(module, opts :: Keyword.t) ::
+      GenServer.on_start
     def start_link(module, opts) do
       pool_mod = Keyword.get(opts, :ownership_pool, DBConnection.Poolboy)
       {owner_opts, pool_opts} = Keyword.split(opts, [:name])
       GenServer.start_link(__MODULE__, {module, pool_mod, pool_opts}, owner_opts)
     end
 
+    @spec checkout(GenServer.server, Keyword.t) ::
+      {:ok, pid} | {:already, :owner | :allowed} | :error |
+      {kind :: atom, reason :: term, stack :: Exception.stacktrace}
     def checkout(manager, opts) do
       timeout = Keyword.get(opts, :owner_timeout, @timeout)
       GenServer.call(manager, {:checkout, opts}, timeout)
     end
 
+    @spec checkin(GenServer.server, Keyword.t) ::
+      :ok | :not_owner | :not_found
+    def checkin(manager, opts) do
+      timeout = Keyword.get(opts, :owner_timeout, @timeout)
+      GenServer.call(manager, :checkin, timeout)
+    end
+
+    @spec mode(GenServer.server, :auto | :manual, Keyword.t) :: :ok
+    def checkin(manager, mode, opts) when mode in [:auto, :manual] do
+      timeout = Keyword.get(opts, :owner_timeout, @timeout)
+      GenServer.call(manager, {:mode, mode}, timeout)
+    end
+
+    @spec allow(GenServer.server, parent :: pid, allow :: pid, Keyword.t) ::
+      :ok | {:already, :owner | :allowed} | :not_owner | :not_found
+    def allow(manager, parent, allow, opts) do
+      timeout = Keyword.get(opts, :owner_timeout, @timeout)
+      GenServer.call(manager, {:allow, parent, allow}, timeout)
+    end
+
+    @spec lookup(GenServer.server, Keyword.t) ::
+      {:ok, pid} | :not_found | :error |
+      {kind :: atom, reason :: term, stack :: Exception.stacktrace}
     def lookup(manager, opts) do
       timeout = Keyword.get(opts, :owner_timeout, @timeout)
-      GenServer.call(manager, :lookup, timeout)
+      GenServer.call(manager, {:lookup, opts}, timeout)
     end
 
     ## Callbacks
 
     def init({module, pool_mod, pool_opts}) do
       {:ok, pool} = pool_mod.start_link(module, pool_opts)
-      {:ok, %{pool: pool, pool_mod: pool_mod, checkouts: %{}, owners: %{}}}
+      mode = Keyword.get(pool_opts, :ownership_mode, :auto)
+      {:ok, %{pool: pool, pool_mod: pool_mod, checkouts: %{}, owners: %{}, mode: mode}}
     end
 
-    def handle_call(:lookup, {caller, _}, %{checkouts: checkouts} = state) do
-      {:reply, Map.fetch(checkouts, caller), state}
+    def handle_call({:mode, mode}, _from, state) do
+      {:reply, :ok, %{state | mode: mode}}
     end
 
-    def handle_call(:checkin, {caller, _}, state) do
-      case get_and_update_in(state.checkouts, &Map.pop(&1, caller)) do
-        {nil, state} ->
-          {:reply, :ok, state}
-        {owner, state} ->
-          Owner.stop(owner)
-          {:reply, :ok, state}
+    def handle_call({:lookup, opts}, {caller, _} = from,
+                    %{checkouts: checkouts, mode: mode} = state) do
+      case Map.get(checkouts, caller, :not_found) do
+        {:owner, _, owner} ->
+          {:reply, {:ok, owner}, state}
+        {:allowed, owner} ->
+          {:reply, {:ok, owner}, state}
+        :not_found when mode == :manual ->
+          {:reply, :not_found, state}
+        :not_found when mode == :auto ->
+          {:noreply, checkout(from, opts, state)}
       end
     end
 
-    def handle_call({:checkout, opts}, {caller, _} = from, state) do
-      %{pool_mod: pool_mod, pool: pool, checkouts: checkouts, owners: owners} = state
+    def handle_call(:checkin, {caller, _}, state) do
+      case get_and_update_in(state.checkouts, &Map.pop(&1, caller, :not_found)) do
+        {{:owner, ref, owner}, state} ->
+          Owner.stop(owner)
+          {:reply, :ok, owner_down(ref, state)}
+        {{:allowed, _}, state} ->
+          {:reply, :not_owner, state}
+        {:not_found, state} ->
+          {:reply, :not_found, state}
+      end
+    end
 
-      # TODO: Raise if the caller already has a checkout
-      # TODO: Move this to a supervisor
-      # TODO: Cache using ETS
-      case Map.fetch(checkouts, caller) do
-        {:ok, owner} ->
-          {:reply, {:ok, owner}, state}
-        :error ->
-          {:ok, owner} = Owner.start(from, pool, pool_mod, opts)
-          checkouts = Map.put(checkouts, caller, owner)
-          owners = Map.put(owners, Process.monitor(owner), {owner, caller})
-          {:noreply, %{state | checkouts: checkouts, owners: owners}}
+    def handle_call({:allow, caller, allow}, _from, %{checkouts: checkouts} = state) do
+      if kind = already_checked_out(checkouts, allow) do
+        {:reply, {:already, kind}, state}
+      else
+        case Map.get(checkouts, caller, :not_found) do
+          {:owner, ref, owner} ->
+            state = put_in(state.checkouts[allow], {:allowed, owner})
+            state = update_in(state.owners[ref], fn {owner, caller, allowed} ->
+              {owner, caller, [allow|List.delete(allowed, allow)]}
+            end)
+            {:reply, :ok, state}
+          {:allowed, _} ->
+            {:reply, :not_owner, state}
+          :not_found ->
+            {:reply, :not_found, state}
+        end
+      end
+    end
+
+    def handle_call({:checkout, opts}, {caller, _} = from, %{checkouts: checkouts} = state) do
+      if kind = already_checked_out(checkouts, caller) do
+        {:reply, {:already, kind}, state}
+      else
+        {:noreply, checkout(from, opts, state)}
       end
     end
 
     def handle_info({:DOWN, ref, _, _, _}, state) do
-      case get_and_update_in(state.owners, &Map.pop(&1, ref)) do
-        {{_owner, caller}, state} ->
-          state = update_in(state.checkouts, &Map.delete(&1, caller))
-          {:noreply, state}
-        {nil, state} ->
-          {:noreply, state}
-      end
+      {:noreply, owner_down(ref, state)}
     end
 
     def handle_info(_msg, state) do
       {:noreply, state}
     end
+
+    defp already_checked_out(checkouts, pid) do
+      case Map.get(checkouts, pid, :not_found) do
+        {:owner, _, _} -> :owner
+        {:allowed, _} -> :allowed
+        :not_found -> nil
+      end
+    end
+
+    # TODO: Move this to a supervisor
+    # TODO: Cache using ETS
+    defp checkout({caller, _} = from, opts, state) do
+      %{pool_mod: pool_mod, pool: pool, checkouts: checkouts, owners: owners} = state
+      {:ok, owner} = Owner.start(from, pool, pool_mod, opts)
+      ref = Process.monitor(owner)
+      checkouts = Map.put(checkouts, caller, {:owner, ref, owner})
+      owners = Map.put(owners, ref, {owner, caller, []})
+      %{state | checkouts: checkouts, owners: owners}
+    end
+
+    defp owner_down(ref, state) do
+      case get_and_update_in(state.owners, &Map.pop(&1, ref)) do
+        {{_owner, caller, allowed}, state} ->
+          Process.demonitor(ref, [:flush])
+          update_in(state.checkouts, &Map.drop(&1, [caller|allowed]))
+        {nil, state} ->
+          state
+      end
+    end
   end
 
-  def start_link(module, opts) do
-    Manager.start_link(module, opts)
-  end
+  ## Ownership API
 
-  def child_spec(module, opts, child_opts) do
-    Supervisor.Spec.worker(Manager, [module, opts], child_opts)
-  end
-
-  def checkout(manager, opts) do
-    # TODO: Expose Manager.checkout and Manager.checkin as explicit functions
-    case Manager.checkout(manager, opts) do
-      {:ok, owner} -> Owner.checkout(owner, opts)
+  @spec ownership_checkout(GenServer.server, Keyword.t) ::
+    {:ok, owner :: pid} | {:already, :owner | :allowed} | :error | no_return
+  def ownership_checkout(manager, opts) do
+     case Manager.checkout(manager, opts) do
+      {:ok, _} = ok -> ok
+      {:already, _} = already -> already
       :error -> :error
       {kind, reason, stack} -> :erlang.raise(kind, reason, stack)
     end
   end
 
+  defdelegate ownership_mode(manager, mode, opts), to: Manager, as: :mode
+
+  defdelegate ownership_checkin(manager, opts), to: Manager, as: :checkin
+
+  defdelegate ownership_allow(manager, parent, allow, opts), to: Manager, as: :allow
+
+  ## Pool callbacks
+
+  @doc false
+  def start_link(module, opts) do
+    Manager.start_link(module, opts)
+  end
+
+  @doc false
+  def child_spec(module, opts, child_opts) do
+    Supervisor.Spec.worker(Manager, [module, opts], child_opts)
+  end
+
+  @doc false
+  def checkout(manager, opts) do
+    case Manager.lookup(manager, opts) do
+      {:ok, owner} ->
+        Owner.checkout(owner, opts)
+      :not_found ->
+        raise "cannot find ownership process for #{inspect self()}. " <>
+              "This may happen if you have not explicitly checked out or " <>
+              "the checked out process crashed"
+      :error ->
+        :error
+      {kind, reason, stack} ->
+        :erlang.raise(kind, reason, stack)
+    end
+  end
+
+  @doc false
   def checkin(owner, state, opts) do
     Owner.checkin(owner, state, opts)
   end
 
+  @doc false
   def disconnect(owner, exception, state, opts) do
     Owner.disconnect(owner, exception, state, opts)
   end
 
+  @doc false
   def stop(owner, reason, state, opts) do
     Owner.stop(owner, reason, state, opts)
   end

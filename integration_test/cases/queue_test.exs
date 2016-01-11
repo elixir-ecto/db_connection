@@ -11,7 +11,6 @@ defmodule QueueTest do
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
 
-
     P.run(pool, fn(_) ->
       {queue_time, _} = :timer.tc(fn() ->
         opts = [queue: false]
@@ -29,7 +28,10 @@ defmodule QueueTest do
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
 
-    run = fn() -> P.run(pool, fn(_) -> :timer.sleep(20) end) end
+    run = fn() ->
+      P.run(pool, fn(_) -> :timer.sleep(20) end)
+    end
+
     for task <- Enum.map(1..10, fn(_) -> Task.async(run) end) do
       assert :ok = Task.await(task)
     end
