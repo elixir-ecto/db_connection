@@ -320,10 +320,10 @@ defmodule DBConnection.Ownership do
   ## Ownership API
 
   @spec ownership_checkout(GenServer.server, Keyword.t) ::
-    {:ok, owner :: pid} | {:already, :owner | :allowed} | :error | no_return
+    :ok | {:already, :owner | :allowed} | :error | no_return
   def ownership_checkout(manager, opts) do
      case Manager.checkout(manager, opts) do
-      {:ok, _} = ok -> ok
+      {:ok, _} -> :ok
       {:already, _} = already -> already
       :error -> :error
       {kind, reason, stack} -> :erlang.raise(kind, reason, stack)
