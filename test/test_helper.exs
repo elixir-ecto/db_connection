@@ -52,6 +52,14 @@ defmodule TestConnection do
         DBConnection.execute!(pool, query, params, opts2 ++ unquote(opts))
       end
 
+      def execute_many(pool, requests, opts2 \\ []) do
+        DBConnection.execute_many(pool, requests, opts2 ++ unquote(opts))
+      end
+
+      def execute_many!(pool, requests, opts2 \\ []) do
+        DBConnection.execute_many!(pool, requests, opts2 ++ unquote(opts))
+      end
+
       def close(pool, query, opts2 \\ []) do
         DBConnection.close(pool, query, opts2 ++ unquote(opts))
       end
@@ -110,6 +118,10 @@ defmodule TestConnection do
 
   def handle_execute_close(query, params, opts, state) do
     TestAgent.eval(:handle_execute_close, [query, params, opts, state])
+  end
+
+  def handle_execute_many(requests, opts, state) do
+    TestAgent.eval(:handle_execute_many, [requests, opts, state])
   end
 
   def handle_close(query, opts, state) do

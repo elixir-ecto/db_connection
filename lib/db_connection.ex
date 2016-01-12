@@ -173,7 +173,7 @@ defmodule DBConnection do
   Execute a query prepared by `handle_prepare/3`. Return
   `{:ok, result, state}` to return the result `result` and continue,
   `{:error, exception, state}` to return an error and continue or
-  `{:disconnect, exception, state{}` to return an error and disconnect.
+  `{:disconnect, exception, state}` to return an error and disconnect.
 
   This callback is called in the client process.
   """
@@ -185,7 +185,7 @@ defmodule DBConnection do
   Execute a query prepared by `handle_prepare/3` and close it. Return
   `{:ok, result, state}` to return the result `result` and continue,
   `{:error, exception, state}` to return an error and continue or
-  `{:disconnect, exception, state{}` to return an error and disconnect.
+  `{:disconnect, exception, state}` to return an error and disconnect.
 
   This callback should be equivalent to calling `handle_execute/4` and
   `handle_close/3`.
@@ -195,6 +195,23 @@ defmodule DBConnection do
   @callback handle_execute_close(query, params, opts :: Keyword.t,
   state :: any) ::
     {:ok, result, new_state :: any} |
+    {:error | :disconnect, Exception.t, new_state :: any}
+
+  @doc """
+  Execute queries prepared by `handle_prepare/3`. Return
+  `{:ok, [result], state}` to return the results and continue,
+  `{:error, exception, state}` to return an error and continue or
+  `{:disconnect, exception, state}` to return an error and disconnect.
+
+  This callback should be equivalent to calling `handle_execute/4` on each
+  query. If an error (or disconnect) occurs no further queries should be
+  executed and the error returned.
+
+  This callback is called in the client process.
+  """
+  @callback handle_execute_many([{query, params, Keyword.t}], opts :: Keyword.t,
+  state :: any) ::
+    {:ok, [result], new_state :: any} |
     {:error | :disconnect, Exception.t, new_state :: any}
 
   @doc """
@@ -333,6 +350,24 @@ defmodule DBConnection do
         end
       end
 
+      def handle_execute_many(queries, opts, state) do
+        execute =
+          fn({query, params, opts2}, {:ok, results, state}) ->
+            case handle_execute(query, params, opts2 ++ opts, state) do
+              {:ok, result, state} ->
+                {:cont, {:ok, [result | results], state}}
+              other ->
+                {:halt, other}
+            end
+          end
+        case Enum.reduce_while(queries, {:ok, [], state}, execute) do
+          {:ok, results, state} ->
+            {:ok, Enum.reverse(results), state}
+          other ->
+            other
+        end
+      end
+
       def handle_close(_, _, _) do
         message = "handle_close/3 not implemented"
         case :erlang.phash2(1, 1) do
@@ -346,7 +381,16 @@ defmodule DBConnection do
       defoverridable [connect: 1, disconnect: 2, checkout: 1, checkin: 1,
                       ping: 1, handle_begin: 2, handle_commit: 2,
                       handle_rollback: 2, handle_prepare: 3, handle_execute: 4,
-                      handle_execute_close: 4, handle_close: 3, handle_info: 2]
+                      handle_execute_close: 4, handle_execute_many: 3,
+                      handle_close: 3, handle_info: 2]
+    end
+  end
+
+  defmacrop time() do
+    if function_exported?(:erlang, :monotonic_time, 0) do
+      quote do: :erlang.monotonic_time()
+    else
+      quote do: :os.timestamp()
     end
   end
 
@@ -561,9 +605,6 @@ defmodule DBConnection do
   `{:ok, result}` on success or `{:error, exception}` if there was an
   error.
 
-  If the query is not prepared on the connection an attempt may be made to
-  prepare it and then execute again.
-
   ### Options
 
     * `:pool_timeout` - The maximum time to wait for a reply when making a
@@ -627,6 +668,63 @@ defmodule DBConnection do
   def execute_close!(conn, query, params, opts \\ []) do
     case execute_close(conn, query, params, opts) do
       {:ok, result} -> result
+      {:error, err} -> raise err
+    end
+  end
+
+  @doc """
+  Execute prepared queries and return `{:ok, results}` or `{:error, exception}`
+  if there was an error.
+
+  If an error occurs no further queries in the list are executed and the
+  transaction is rolled back if  `:transaction` is `true`.
+
+  ### Options
+
+    * `:transaction` - Whether to wrap the call in a transaction (default:
+    `true`)
+    * `:pool_timeout` - The maximum time to wait for a reply when making a
+    synchronous call to the pool (default: `5_000`)
+    * `:queue` - Whether to block waiting in an internal queue for the
+    connection's state (boolean, default: `true`)
+    * `:timeout` - The maximum time that the caller is allowed the
+    to hold the connection's state (ignored when using a run/transaction
+    connection, default: `15_000`)
+    * `:log` - A function to log information about a call, either
+    a 1-arity fun, `{module, function, args}` with `DBConnection.LogEntry.t`
+    prepended to `args` or `nil`. See `DBConnection.LogEntry` (default: `nil`)
+
+
+  See `execute/4`.
+  """
+  @spec execute_many(conn, nonempty_list({query, params, Keyword.t}),
+  opts :: Keyword.t) :: {:ok, nonempty_list(result)} | {:error, Exception.t}
+  def execute_many(conn, [_|_] = requests, opts \\ []) do
+    encoded = encode_many(requests, opts)
+    case run_execute_many(conn, encoded, opts) do
+      {{:ok, results}, meter} ->
+        ok = {:ok, decode_many(requests, results, opts)}
+        decode_log(:execute_many, :batch, requests, meter, ok)
+      {{:error, _} = error, meter} ->
+        log(:execute_many, :batch, requests, meter, error)
+      {{:raise, err} = error, meter} ->
+        _ = log(:execute_many, :batch, requests, meter, error)
+        raise err
+    end
+  end
+
+  @doc """
+  Execute prepared queries and return results. Raises an exception on error.
+
+  If an error occurs no further queries are executed.
+
+  See `execute_many/3`.
+  """
+  @spec execute_many!(conn, nonempty_list({query, params}),
+  opts :: Keyword.t) :: nonempty_list(result)
+  def execute_many!(conn, requests, opts \\ []) do
+    case execute_many(conn, requests, opts) do
+      {:ok, results} -> results
       {:error, err} -> raise err
     end
   end
@@ -765,7 +863,7 @@ defmodule DBConnection do
     {:ok, result} | {:error, reason :: any} when result: var
   def transaction(conn, fun, opts) do
     {result, log_info} = transaction_meter(conn, fun, opts)
-    transaction_log(log_info)
+    _ = transaction_log(log_info)
     case result do
       {:raise, err} ->
         raise err
@@ -931,17 +1029,122 @@ defmodule DBConnection do
     end, opts)
   end
 
+  defp encode_many(requests, opts) do
+    for request <- requests do
+      {query, params, opts2} = request
+      {query, DBConnection.Query.encode(query, params, opts2 ++ opts), opts2}
+    end
+  end
+
+  defp decode_many(requests, results, opts) do
+    for {{query, _, opts2}, result} <- Stream.zip(requests, results) do
+      DBConnection.Query.decode(query, result, opts2 ++ opts)
+    end
+  end
+
+  defp run_execute_many(conn, requests, opts) do
+    case Keyword.get(opts, :transaction, true) do
+      true ->
+        log = Keyword.get(opts, :log)
+        many_meter(conn, log, requests, opts)
+      false ->
+        fun = &handle(&1, :handle_execute_many, [requests], opts)
+        run_meter(conn, fun, opts)
+    end
+  end
+
+  defp many_meter(conn, nil, requests, opts) do
+    fun = &many_handle(&1, requests, opts)
+    {transaction(conn, fun, opts), nil}
+  end
+  defp many_meter(%DBConnection{} = conn, log, requests, opts) do
+    case fetch_info(conn) do
+      {:transaction, _} ->
+        many_nested(conn, log, requests, opts)
+      {:idle, conn_state} ->
+        many_begin_meter(conn, conn_state, log, [], requests, opts)
+    end
+  end
+  defp many_meter(pool, log, requests, opts) do
+    times = [checkout: time()]
+    run(pool, &many_begin(&1, log, times, requests, opts), opts)
+  end
+
+  defp many_handle(conn, requests, opts) do
+    case handle(conn, :handle_execute_many, [requests], opts) do
+      {:ok, results} ->
+        results
+      {:error, err} ->
+        %DBConnection{conn_ref: conn_ref} = conn
+        throw({:rollback, conn_ref, err})
+    end
+  end
+
+  defp many_nested(conn, log, requests, opts) do
+    start = time()
+    fun = &many_handle(&1, requests, opts)
+    result = transaction_nested(conn, fun)
+    meter = {log, [stop: time(), start: start]}
+    {result, meter}
+  end
+
+  defp many_begin(conn, log, times, requests, opts) do
+    {:idle, conn_state} = get_info(conn)
+    many_begin_meter(conn, conn_state, log, times, requests, opts)
+  end
+
+  defp many_begin_meter(conn, conn_state, log, times, requests, opts) do
+    times = [start: time()] ++ times
+    result = handle(conn, conn_state, :handle_begin, opts, :transaction)
+    mark = time()
+    meters = [{log, [stop: mark] ++ times, :handle_begin, result}]
+    times = [start: mark]
+    case result do
+      {:ok, _} ->
+        many_handle(conn, log, times, meters, requests, opts)
+      {:raise, _} ->
+        {result, meters}
+    end
+  end
+
+  defp many_handle(conn, log, times, meters, requests, opts) do
+    res = handle(conn, :handle_execute_many, [requests], opts)
+    mark = time()
+    meters = [{log, [stop: mark] ++ times, res} | meters]
+    times = [start: mark]
+    case res do
+      {:ok, _} ->
+        many_conclude(conn, {log, times, meters}, :handle_commit, opts, res)
+      {:error, _} ->
+        many_conclude(conn, {log, times, meters}, :handle_rollback, opts, res)
+    end
+  end
+
+  defp many_conclude(conn, {_, _, meters} = log_info, callback, opts, res) do
+    case get_info(conn) do
+      {:transaction, conn_state} ->
+        many_conclude_meter(conn, conn_state, log_info, callback, opts, res)
+      :closed ->
+        {res, Enum.reverse(meters)}
+    end
+  end
+
+  defp many_conclude_meter(conn, conn_state, log_info, callback, opts, res) do
+    conclude = handle(conn, conn_state, callback, opts, :idle)
+    {log, times, meters} = log_info
+    times = [stop: time()] ++ times
+    meters = Enum.reverse(meters, [{log, times, callback, conclude}])
+    case conclude do
+      {:ok, _} ->
+        {res, meters}
+      {:raise, _} ->
+        {conclude, meters}
+    end
+  end
+
   defp run_close(conn, query, opts) do
     fun = &handle(&1, :handle_close, [query], opts)
     run_meter(conn, fun, opts)
-  end
-
-  defmacrop time() do
-    if function_exported?(:erlang, :monotonic_time, 0) do
-      quote do: :erlang.monotonic_time()
-    else
-      quote do: :os.timestamp()
-    end
   end
 
   defp run_meter(%DBConnection{} = conn, fun, opts) do
@@ -974,14 +1177,19 @@ defmodule DBConnection do
 
   defp decode_log(_, _, _, nil, result), do: result
   defp decode_log(call, query, params, {log, times}, result) do
-   log(call, query, params, log, [decode: time()] ++ times, result)
+   do_log(call, query, params, log, [decode: time()] ++ times, result)
+  end
+  defp decode_log(call, query, params, [begin, meter, commit], result) do
+    {log, times, res} = meter
+    meters = [begin, {log, [decode: time()] ++ times, res}, commit]
+    log(call, query, params, meters, result)
   end
 
   defp transaction_log(nil), do: :ok
   defp transaction_log({log, times, callback, result}) do
     call = transaction_call(callback)
     result = transaction_result(result)
-    log(:transaction, call, nil, log, times, result)
+    do_log(:transaction, call, nil, log, times, result)
   end
 
   defp transaction_call(:handle_begin), do: :begin
@@ -993,17 +1201,28 @@ defmodule DBConnection do
 
   defp log(_, _, _, nil, result), do: result
   defp log(call, query, params, {log, times}, result) do
-    log(call, query, params, log, times, result)
+    do_log(call, query, params, log, times, result)
   end
-
-  defp log(call, query, params, log, times, result) do
-    entry = DBConnection.LogEntry.new(call, query, params, times, result)
-    log(log, entry)
+  defp log(call, queries, params, [{log, times, res} | meters], result) do
+    do_log(call, queries, params, log, times, res)
+    log(call, queries, params, meters, result)
+  end
+  defp log(call, queries, params, [transaction | meters], result) do
+    transaction_log(transaction)
+    log(call, queries, params, meters, result)
+  end
+  defp log(_, _, _, [], result) do
     result
   end
 
-  defp log({mod, fun, args}, entry), do: apply(mod, fun, [entry | args])
-  defp log(fun, entry), do: fun.(entry)
+  defp do_log(call, query, params, log, times, result) do
+    entry = DBConnection.LogEntry.new(call, query, params, times, result)
+    do_log(log, entry)
+    result
+  end
+
+  defp do_log({mod, fun, args}, entry), do: apply(mod, fun, [entry | args])
+  defp do_log(fun, entry), do: fun.(entry)
 
   defp run_begin(conn, fun, opts) do
     try do
