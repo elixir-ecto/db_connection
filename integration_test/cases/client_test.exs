@@ -44,16 +44,21 @@ defmodule ClientTest do
       end]
     {:ok, agent} = A.start_link(stack)
 
-    opts = [agent: agent, parent: self()]
+    parent = self()
+    opts = [agent: agent, parent: parent]
     {:ok, pool} = P.start_link(opts)
 
-    {_, ref} = spawn_monitor(fn() ->
-      P.run(pool, fn(_) -> :timer.sleep(50) end, [timeout: 0])
+    pid = spawn_link(fn() ->
+      assert_receive {:go, ^parent}
+      assert P.run(pool, fn(_) -> :result end) == :result
+      send(parent, {:done, self()})
     end)
 
-    assert_receive :reconnected
-    assert P.run(pool, fn(_) -> :result end) == :result
-    assert_receive {:DOWN, ^ref, _, _, _}
+    P.run(pool, fn(_) ->
+      assert_receive :reconnected
+      send(pid, {:go, parent})
+      assert_receive {:done, ^pid}
+    end, [timeout: 0])
 
     assert [
       {:connect, _},
