@@ -6,8 +6,9 @@ defmodule DBConnection.App do
   def start(_, _) do
     children = [
       supervisor(DBConnection.Task, []),
-      supervisor(DBConnection.Sojourn.Supervisor, [])
-      ]
+      supervisor(DBConnection.Sojourn.Supervisor, []),
+      supervisor(DBConnection.Ownership.Supervisor, [])
+    ]
     Supervisor.start_link(children, [strategy: :one_for_one, name: __MODULE__])
   end
 end
