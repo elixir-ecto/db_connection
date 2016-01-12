@@ -102,9 +102,9 @@ defmodule DBConnection.Ownership.Manager do
       {{:owner, ref, owner}, state} ->
         Owner.stop(owner)
         {:reply, :ok, owner_down(ref, state)}
-      {{:allowed, _}, state} ->
+      {{:allowed, _}, _} ->
         {:reply, :not_owner, state}
-      {:not_found, state} ->
+      {:not_found, _} ->
         {:reply, :not_found, state}
     end
   end
