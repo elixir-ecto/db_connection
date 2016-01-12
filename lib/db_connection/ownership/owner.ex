@@ -2,30 +2,30 @@ defmodule DBConnection.Ownership.Owner do
   @moduledoc false
 
   use GenServer
-  @timeout 15_000
+  @timeout 5_000
 
   def start_link(from, pool, pool_opts) do
     GenServer.start_link(__MODULE__, {from, pool, pool_opts}, [])
   end
 
   def checkout(owner, opts) do
-    timeout = Keyword.get(opts, :owner_timeout, @timeout)
+    timeout = Keyword.get(opts, :pool_timeout, @timeout)
     queue?  = Keyword.get(opts, :queue, true)
     GenServer.call(owner, {:checkout, queue?}, timeout)
   end
 
   def checkin(owner, state, opts) do
-    timeout = Keyword.get(opts, :owner_timeout, @timeout)
+    timeout = Keyword.get(opts, :pool_timeout, @timeout)
     GenServer.call(owner, {:checkin, state}, timeout)
   end
 
   def disconnect(owner, exception, state, opts) do
-    timeout = Keyword.get(opts, :owner_timeout, @timeout)
+    timeout = Keyword.get(opts, :pool_timeout, @timeout)
     GenServer.call(owner, {:disconnect, exception, state}, timeout)
   end
 
   def stop(owner, reason, state, opts) do
-    timeout = Keyword.get(opts, :owner_timeout, @timeout)
+    timeout = Keyword.get(opts, :pool_timeout, @timeout)
     GenServer.call(owner, {:stop, reason, state}, timeout)
   end
 

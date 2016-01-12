@@ -9,7 +9,6 @@ defmodule DBConnection.Ownership do
       mechanism. The pool is started when the ownership pool is started,
       although this option may also be given on `ownership_checkout/2`
       allowing developers to customize the pool checkout/checkin
-    * `:ownership_timeout` - The timeout for ownership operations
     * `:ownership_mode` - When mode is `:manual`, all connections must
       be explicitly checked out before by using `ownership_checkout/2`.
       Otherwise, mode is `:auto` and connections are checked out

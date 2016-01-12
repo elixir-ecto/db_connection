@@ -5,7 +5,7 @@ defmodule DBConnection.Ownership.Manager do
   alias DBConnection.Ownership.Supervisor
   alias DBConnection.Ownership.Owner
 
-  @timeout 15_000
+  @timeout 5_000
 
   @callback start_link(module, opts :: Keyword.t) ::
     GenServer.on_start
@@ -19,27 +19,27 @@ defmodule DBConnection.Ownership.Manager do
     {:ok, pid} | {:already, :owner | :allowed} | :error |
     {kind :: atom, reason :: term, stack :: Exception.stacktrace}
   def checkout(manager, opts) do
-    timeout = Keyword.get(opts, :owner_timeout, @timeout)
+    timeout = Keyword.get(opts, :pool_timeout, @timeout)
     GenServer.call(manager, {:checkout, opts}, timeout)
   end
 
   @spec checkin(GenServer.server, Keyword.t) ::
     :ok | :not_owner | :not_found
   def checkin(manager, opts) do
-    timeout = Keyword.get(opts, :owner_timeout, @timeout)
+    timeout = Keyword.get(opts, :pool_timeout, @timeout)
     GenServer.call(manager, :checkin, timeout)
   end
 
   @spec mode(GenServer.server, :auto | :manual, Keyword.t) :: :ok
   def mode(manager, mode, opts) when mode in [:auto, :manual] do
-    timeout = Keyword.get(opts, :owner_timeout, @timeout)
+    timeout = Keyword.get(opts, :pool_timeout, @timeout)
     GenServer.call(manager, {:mode, mode}, timeout)
   end
 
   @spec allow(GenServer.server, parent :: pid, allow :: pid, Keyword.t) ::
     :ok | {:already, :owner | :allowed} | :not_owner | :not_found
   def allow(manager, parent, allow, opts) do
-    timeout = Keyword.get(opts, :owner_timeout, @timeout)
+    timeout = Keyword.get(opts, :pool_timeout, @timeout)
     GenServer.call(manager, {:allow, parent, allow}, timeout)
   end
 
@@ -59,7 +59,7 @@ defmodule DBConnection.Ownership.Manager do
   end
 
   defp server_lookup(manager, opts) do
-    timeout = Keyword.get(opts, :owner_timeout, @timeout)
+    timeout = Keyword.get(opts, :pool_timeout, @timeout)
     GenServer.call(manager, {:lookup, opts}, timeout)
   end
 
