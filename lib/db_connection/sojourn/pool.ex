@@ -5,7 +5,7 @@ defmodule DBConnection.Sojourn.Pool do
 
   def start_link(owner, mod, opts) do
     children   = [watcher(owner), conn_sup(mod, opts), starter(owner, opts)]
-    opts       = [strategy: :rest_for_one]
+    opts       = [strategy: :rest_for_one, max_restarts: 0]
     Supervisor.start_link(children, opts)
   end
 
