@@ -91,8 +91,9 @@ defmodule DBConnection.Connection do
 
   @doc false
   def init({mod, opts, mode, info}) do
-    queue  = if mode == :sojourn, do: :broker, else: :queue.new()
-    broker = if mode == :sojourn, do: info
+    queue         = if mode == :sojourn, do: :broker, else: :queue.new()
+    broker        = if mode == :sojourn, do: info
+    after_timeout = if mode == :poolboy, do: :stop, else: :backoff
 
     owner_ref =
       if (owner = Keyword.get(opts, :owner)) && mode == :connection do
@@ -104,7 +105,8 @@ defmodule DBConnection.Connection do
           after_connect: Keyword.get(opts, :after_connect),
           after_connect_timeout: Keyword.get(opts, :after_connect_timeout,
                                              @timeout),
-          idle_timeout: Keyword.get(opts, :idle_timeout, @idle_timeout)}
+          idle_timeout: Keyword.get(opts, :idle_timeout, @idle_timeout),
+          after_timeout: after_timeout}
     if mode == :connection and Keyword.get(opts, :sync_connect, false) do
       connect(:init, s)
     else
@@ -143,9 +145,6 @@ defmodule DBConnection.Connection do
   end
 
   @doc false
-  def disconnect(err, %{backoff: nil}) do
-    raise err
-  end
   def disconnect(err, %{mod: mod} = s) do
     Logger.error(fn() ->
       [inspect(mod), ?\s, ?(, inspect(self()),
@@ -159,6 +158,8 @@ defmodule DBConnection.Connection do
     :ok = apply(mod, :disconnect, [err, state])
     s = %{s | state: nil, client: :closed, timer: nil, queue: queue}
     case client do
+      _ when backoff == :nil ->
+        {:stop, {:shutdown, :disconnect}, s}
       {_, :after_connect} ->
         timeout = :backoff.get(backoff)
         {_, backoff} = :backoff.fail(backoff)
@@ -304,7 +305,17 @@ defmodule DBConnection.Connection do
   def handle_info({:timeout, timer, __MODULE__}, %{timer: timer} = s)
   when is_reference(timer) do
     exception = DBConnection.Error.exception("client timeout")
-    {:disconnect, exception, %{s | timer: nil}}
+    case s do
+      # Client timed out and using poolboy. Disable backoff to cause an exit so
+      # that poolboy starts a new process immediately. Otherwise this worker
+      # doesn't get used until the client checks in. This is equivalent to the
+      # other pools because because poolboy does unlimited restarts and no
+      # backoff required as connection is active.
+      %{after_timeout: :stop, client: {_, mon}} when is_reference(mon) ->
+        {:disconnect, exception, %{s | timer: nil, backoff: nil}}
+      _ ->
+        {:disconnect, exception, %{s | timer: nil}}
+    end
   end
 
   def handle_info(:timeout, %{client: nil, broker: nil} = s) do

@@ -89,6 +89,7 @@ defmodule BackoffTest do
         {:ok, :state}
       end,
       {:disconnect, err, :discon},
+      :ok,
       {:ok, :state}]
     {:ok, agent} = A.start_link(stack)
 
@@ -96,7 +97,7 @@ defmodule BackoffTest do
     Process.flag(:trap_exit, true)
     {:ok, _} = P.start_link(opts)
     assert_receive {:hi, conn}
-    assert_receive {:EXIT, ^conn, {^err, _}}
+    assert_receive {:EXIT, ^conn, {:shutdown, :disconnect}}
 
     assert [
       {:connect, [[_, _ | ^opts]]},
