@@ -65,7 +65,7 @@ defmodule DBConnectionTest do
       end
 
       def handle_close({_, :ok}, _, state) do
-       {:ok, [:close | state]}
+       {:ok, :closed, [:close | state]}
       end
       def handle_close({_, error}, _, state)
       when error in [:error, :disconnect] do

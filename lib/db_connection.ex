@@ -320,13 +320,13 @@ defmodule DBConnection do
         case handle_execute(query, params, opts, state) do
           {:ok, result, state} ->
             case handle_close(query, opts, state) do
-              {:ok, state} -> {:ok, result, state}
-              other        -> other
+              {:ok, _, state} -> {:ok, result, state}
+              other           -> other
             end
           {:error, err, state} ->
             case handle_close(query, opts, state) do
-              {:ok, state} -> {:error, err, state}
-              other        -> other
+              {:ok, _, state} -> {:error, err, state}
+              other           -> other
             end
           other ->
             other
