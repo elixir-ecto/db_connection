@@ -74,9 +74,10 @@ defmodule DBConnection.Ownership.Manager do
       end
 
     pool_opts = Keyword.put(pool_opts, :pool, pool_mod)
-    {:ok, pool} = PoolSupervisor.start_pool(module, pool_opts)
+    {:ok, pool, owner_sup} = PoolSupervisor.start_pool(module, pool_opts)
     mode = Keyword.get(pool_opts, :ownership_mode, :auto)
-    {:ok, %{pool: pool, checkouts: %{}, owners: %{}, mode: mode, ets: ets}}
+    {:ok, %{pool: pool, owner_sup: owner_sup, checkouts: %{}, owners: %{},
+            mode: mode, ets: ets}}
   end
 
   def handle_call({:mode, mode}, _from, state) do
@@ -155,7 +156,7 @@ defmodule DBConnection.Ownership.Manager do
     end
   end
 
-defp checkout(caller, opts, state) do
+  defp checkout(caller, opts, state) do
     %{pool: pool, owner_sup: owner_sup, checkouts: checkouts, owners: owners,
       ets: ets} = state
     {:ok, owner} = OwnerSupervisor.start_owner(owner_sup, caller, pool, opts)
