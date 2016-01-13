@@ -4,8 +4,8 @@ defmodule DBConnection.Ownership.Owner do
   use GenServer
   @timeout 5_000
 
-  def start_link(from, pool, pool_opts) do
-    GenServer.start_link(__MODULE__, {from, pool, pool_opts}, [])
+  def start_link(manager, from, pool, pool_opts) do
+    GenServer.start_link(__MODULE__, {manager, from, pool, pool_opts}, [])
   end
 
   def checkout(owner, opts) do
@@ -14,7 +14,7 @@ defmodule DBConnection.Ownership.Owner do
     GenServer.call(owner, {:checkout, queue?}, timeout)
   end
 
-  def checkin(owner, state, opts) do
+  def checkin(owner, state, _opts) do
     GenServer.cast(owner, {:checkin, state})
   end
 
@@ -34,12 +34,13 @@ defmodule DBConnection.Ownership.Owner do
 
   # Callbacks
 
-  def init(args) do
+  def init({manager, _, _, _} = args) do
+    Process.link(manager)
     send self(), :init
     {:ok, args}
   end
 
-  def handle_info(:init, {from, pool, pool_opts}) do
+  def handle_info(:init, {manager, from, pool, pool_opts}) do
     pool_mod = Keyword.get(pool_opts, :ownership_pool, DBConnection.Poolboy)
 
     state = %{client_ref: nil, conn_state: nil, conn_module: nil,
@@ -62,6 +63,8 @@ defmodule DBConnection.Ownership.Owner do
       :error ->
         GenServer.reply(from, :error)
         {:stop, {:shutdown, "no checkout"}, state}
+    after
+      Process.unlink(manager)
     end
   end
 

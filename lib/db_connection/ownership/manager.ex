@@ -155,7 +155,7 @@ defmodule DBConnection.Ownership.Manager do
 
   defp checkout({caller, _} = from, opts, state) do
     %{pool: pool, checkouts: checkouts, owners: owners, ets: ets} = state
-    {:ok, owner} = Supervisor.start_owner(from, pool, opts)
+    {:ok, owner} = Supervisor.start_owner(self(), from, pool, opts)
     ref = Process.monitor(owner)
     checkouts = Map.put(checkouts, caller, {:owner, ref, owner})
     owners = Map.put(owners, ref, {owner, caller, []})

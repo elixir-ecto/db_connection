@@ -7,7 +7,7 @@ defmodule DBConnection.Ownership.Supervisor do
     Supervisor.start_link(children, opts)
   end
 
-  def start_owner(from, pool, opts) do
-    Supervisor.start_child(__MODULE__, [from, pool, opts])
+  def start_owner(manager, from, pool, opts) do
+    Supervisor.start_child(__MODULE__, [manager, from, pool, opts])
   end
 end
