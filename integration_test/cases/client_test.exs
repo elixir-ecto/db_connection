@@ -134,7 +134,7 @@ defmodule ClientTest do
 
     try do
       P.run(pool, fn(conn) ->
-        :timer.sleep(50)
+        :timer.sleep(20)
         P.execute(conn, %Q{}, [:param])
       end, [timeout: 0])
     catch
