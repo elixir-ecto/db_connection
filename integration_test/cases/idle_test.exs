@@ -4,6 +4,7 @@ defmodule TestIdle do
   alias TestPool, as: P
   alias TestAgent, as: A
 
+  @tag :idle_timeout
   test "ping after idle timeout" do
     parent = self()
     stack = [
