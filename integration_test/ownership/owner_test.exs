@@ -47,11 +47,11 @@ defmodule OwnerTest do
 
     assert_receive :allowed
 
-    assert {:noproc, {GenServer, :call, [_, {:checkin, _}, _]}} =
-           catch_exit(P.run(pool, fn(_) ->
-             Process.exit(owner, :shutdown)
-             assert_receive :reconnected
-           end))
+    assert P.run(pool, fn(_) ->
+      Process.exit(owner, :shutdown)
+      assert_receive :reconnected
+      :ok
+    end) == :ok
 
     assert [
       {:connect, _},

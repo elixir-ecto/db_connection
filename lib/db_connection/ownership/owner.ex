@@ -15,8 +15,7 @@ defmodule DBConnection.Ownership.Owner do
   end
 
   def checkin(owner, state, opts) do
-    timeout = Keyword.get(opts, :pool_timeout, @timeout)
-    GenServer.call(owner, {:checkin, state}, timeout)
+    GenServer.cast(owner, {:checkin, state})
   end
 
   def disconnect(owner, exception, state, opts) do
@@ -91,11 +90,6 @@ defmodule DBConnection.Ownership.Owner do
     end
   end
 
-  def handle_call({:checkin, conn_state}, _from, %{queue: queue, client_ref: ref} = state) do
-    Process.demonitor(ref, [:flush])
-    {:reply, :ok, next(:queue.drop(queue), %{state | conn_state: conn_state})}
-  end
-
   def handle_call({:stop, reason, conn_state}, from, state) do
     %{pool_mod: pool_mod, pool_ref: pool_ref, pool_opts: pool_opts} = state
     GenServer.reply(from, pool_mod.stop(pool_ref, reason, conn_state, pool_opts))
@@ -106,6 +100,11 @@ defmodule DBConnection.Ownership.Owner do
     %{pool_mod: pool_mod, pool_ref: pool_ref, pool_opts: pool_opts} = state
     GenServer.reply(from, pool_mod.disconnect(pool_ref, error, conn_state, pool_opts))
     {:stop, {:shutdown, "disconnect"}, state}
+  end
+
+  def handle_cast({:checkin, conn_state}, %{queue: queue, client_ref: ref} = state) do
+    Process.demonitor(ref, [:flush])
+    {:noreply, next(:queue.drop(queue), %{state | conn_state: conn_state})}
   end
 
   def handle_cast(:stop, state) do
