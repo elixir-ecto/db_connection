@@ -137,6 +137,10 @@ defmodule TCPConnection do
     end
   end
 
+  def handle_close(_, _, s) do
+    {:ok, nil, s}
+  end
+
   def handle_info({:tcp, sock, data}, {sock, buffer}) do
     # If active while checked in data may accumlate in a buffer, at some
     # point may need to crash if the buffer gets too big.

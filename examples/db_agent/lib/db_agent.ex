@@ -67,6 +67,10 @@ defmodule DBAgent do
     {:ok, res, %{s | state: state}}
   end
 
+  def handle_close(_, _, s) do
+    {:ok, nil, s}
+  end
+
   def handle_begin(_, %{status: :idle, state: state} = s) do
     {:ok, :began, %{s | status: :transaction, rollback: state}}
   end
