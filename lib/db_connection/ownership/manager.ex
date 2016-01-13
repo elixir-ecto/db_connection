@@ -2,7 +2,8 @@ defmodule DBConnection.Ownership.Manager do
   @moduledoc false
   use GenServer
 
-  alias DBConnection.Ownership.Supervisor
+  alias DBConnection.Ownership.PoolSupervisor
+  alias DBConnection.Ownership.OwnerSupervisor
   alias DBConnection.Ownership.Owner
 
   @timeout 5_000
@@ -74,7 +75,8 @@ defmodule DBConnection.Ownership.Manager do
           nil
       end
 
-    {:ok, pool} = pool_mod.start_link(module, pool_opts)
+    pool_opts = Keyword.put(pool_opts, :pool, pool_mod)
+    {:ok, pool} = PoolSupervisor.start_pool(module, pool_opts)
     mode = Keyword.get(pool_opts, :ownership_mode, :auto)
     {:ok, %{pool: pool, checkouts: %{}, owners: %{}, mode: mode, ets: ets}}
   end
@@ -155,7 +157,7 @@ defmodule DBConnection.Ownership.Manager do
 
   defp checkout({caller, _} = from, opts, state) do
     %{pool: pool, checkouts: checkouts, owners: owners, ets: ets} = state
-    {:ok, owner} = Supervisor.start_owner(self(), from, pool, opts)
+    {:ok, owner} = OwnerSupervisor.start_owner(self(), from, pool, opts)
     ref = Process.monitor(owner)
     checkouts = Map.put(checkouts, caller, {:owner, ref, owner})
     owners = Map.put(owners, ref, {owner, caller, []})
