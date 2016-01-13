@@ -1,4 +1,6 @@
-Code.require_file "../../test/test_helper.exs", __DIR__
+ExUnit.start([capture_log: true, exclude: [:idle_timeout]])
+
+Code.require_file "../../test/test_support.exs", __DIR__
 
 defmodule TestPool do
   use TestConnection, [pool: DBConnection.Ownership, pool_size: 1]
