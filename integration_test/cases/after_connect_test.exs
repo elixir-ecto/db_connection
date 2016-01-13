@@ -147,8 +147,10 @@ defmodule AfterConnectTest do
         {:ok, :state}
       end,
       :oops,
-      {:ok, :state}
-      ]
+      fn(_) ->
+        :timer.sleep(:infinity)
+      end
+     ]
     {:ok, agent} = A.start_link(stack)
 
     after_connect = fn(conn) ->
@@ -181,7 +183,9 @@ defmodule AfterConnectTest do
       fn(_, _, _, _) ->
         raise "oops"
       end,
-      {:ok, :state}
+      fn(_) ->
+        :timer.sleep(:infinity)
+      end
       ]
     {:ok, agent} = A.start_link(stack)
 
