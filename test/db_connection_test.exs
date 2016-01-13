@@ -129,20 +129,7 @@ defmodule DBConnectionTest do
     assert A.record(agent) == [{:connect, [opts]}]
   end
 
-  test "start_link with :owner" do
-    Process.flag(:trap_exit, true)
-    {:ok, pid} = Task.start_link fn -> :timer.sleep(:infinity) end
-
-    stack = [{:ok, :state}]
-    {:ok, agent} = A.start_link(stack)
-    C.start_link(owner: pid, name: :owner_test, agent: agent)
-
-    ref = Process.monitor(:owner_test)
-    Process.exit(pid, :kill)
-    assert_receive {:DOWN, ^ref, _, _, {:shutdown, :owner}}
-  end
-
-  test "start_link with :sync_connect and raise returns error" do
+ test "start_link with :sync_connect and raise returns error" do
     stack = [fn(_) -> raise "oops" end]
     {:ok, agent} = A.start_link(stack)
 

@@ -33,8 +33,8 @@ defmodule DBConnection.Connection do
   @doc false
   def checkout(pool, opts) do
     pool_timeout = opts[:pool_timeout] || @pool_timeout
-    queue?       = Keyword.get(opts, :queue, true)
-    timeout      = opts[:timeout] || @timeout
+    queue?        = Keyword.get(opts, :queue, true)
+    timeout       = opts[:timeout] || @timeout
 
     ref = make_ref()
     try do
@@ -95,13 +95,8 @@ defmodule DBConnection.Connection do
     broker        = if mode == :sojourn, do: info
     after_timeout = if mode == :poolboy, do: :stop, else: :backoff
 
-    owner_ref =
-      if (owner = Keyword.get(opts, :owner)) && mode == :connection do
-        Process.monitor(owner)
-      end
-
     s = %{mod: mod, opts: opts, state: nil, client: :closed, broker: broker,
-          queue: queue, timer: nil, backoff: backoff_init(opts), owner_ref: owner_ref,
+          queue: queue, timer: nil, backoff: backoff_init(opts),
           after_connect: Keyword.get(opts, :after_connect),
           after_connect_timeout: Keyword.get(opts, :after_connect_timeout,
                                              @timeout),
@@ -278,9 +273,6 @@ defmodule DBConnection.Connection do
   end
 
   @doc false
-  def handle_info({:DOWN, owner_ref, _, _, _}, %{owner_ref: owner_ref} = s) do
-    {:stop, {:shutdown, :owner}, s}
-  end
   def handle_info({:DOWN, ref, _, _, _}, %{client: {ref, :after_connect}} = s) do
     exception = DBConnection.Error.exception("client down")
     {:disconnect, exception, %{s | client: {nil, :after_connect}}}
