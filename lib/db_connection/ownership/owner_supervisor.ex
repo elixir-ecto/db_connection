@@ -1,4 +1,4 @@
-defmodule DBConnection.Ownership.Supervisor do
+defmodule DBConnection.Ownership.OwnerSupervisor do
   import Supervisor.Spec
 
   def start_link do
