@@ -12,7 +12,7 @@ defmodule DBConnection.Sojourn.Pool do
   ## Helpers
 
   defp watcher(owner) do
-    worker(DBConnection.Sojourn.Watcher, [owner])
+    worker(DBConnection.Watcher, [owner])
   end
 
   defp conn_sup(mod, opts) do

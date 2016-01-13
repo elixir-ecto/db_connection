@@ -1,4 +1,4 @@
-defmodule DBConnection.Sojourn.Watcher do
+defmodule DBConnection.Watcher do
   @moduledoc false
 
   use GenServer
