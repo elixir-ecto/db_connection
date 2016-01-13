@@ -734,8 +734,8 @@ defmodule DBConnection do
   rolled back or a nested transaction `fun` raises the transaction is marked as
   failed. Any calls inside a failed transaction (except `rollback/2`) will raise
   until the outer transaction call returns. All running `transaction/3` calls
-  will return `{:error, :rollback}` if the transaction failed and `rollback/2`
-  is not called for that `transaction/3`.
+  will return `{:error, :rollback}` if the transaction failed or connection
+  closed and `rollback/2` is not called for that `transaction/3`.
 
   ### Options
 
@@ -1100,7 +1100,7 @@ defmodule DBConnection do
         result = {:error, :rollback}
         conclude_meter(conn, conn_state, log, :handle_rollback, opts, result)
      :closed ->
-        {result, nil}
+        {{:error, :rollback}, nil}
     end
   end
 

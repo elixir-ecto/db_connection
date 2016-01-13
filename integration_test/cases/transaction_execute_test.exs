@@ -148,8 +148,8 @@ defmodule TransactionExecuteTest do
       assert_raise DBConnection.Error, "connection is closed",
         fn() -> P.execute(conn, %Q{}, [:param]) end
 
-      :hi
-    end) == {:ok, :hi}
+      :closed
+    end) == {:error, :rollback}
 
     assert_receive :reconnected
 
@@ -187,8 +187,8 @@ defmodule TransactionExecuteTest do
       assert_raise DBConnection.Error, "connection is closed",
         fn() -> P.execute(conn, %Q{}, [:param]) end
 
-      :hi
-    end) == {:ok, :hi}
+      :closed
+    end) == {:error, :rollback}
 
     assert_receive {:EXIT, ^conn,
       {%DBConnection.Error{message: "client stopped: " <> _}, [_|_]}}
@@ -227,8 +227,8 @@ defmodule TransactionExecuteTest do
       assert_raise DBConnection.Error, "connection is closed",
         fn() -> P.execute(conn, %Q{}, [:param]) end
 
-      :hi
-    end) == {:ok, :hi}
+      :closed
+    end) == {:error, :rollback}
 
     assert_receive {:EXIT, ^conn,
       {%DBConnection.Error{message: "client stopped: " <> _}, [_|_]}}
