@@ -3,30 +3,31 @@ defmodule ManagerTest do
 
   alias TestPool, as: P
   alias TestAgent, as: A
+  alias DBConnection.Ownership
 
   test "requires explicit checkout on manual mode" do
     {:ok, pool} = start_pool()
     refute_checked_out pool
-    assert DBConnection.Ownership.ownership_checkout(pool, []) == :ok
+    assert Ownership.ownership_checkout(pool, []) == :ok
     assert_checked_out pool
-    assert DBConnection.Ownership.ownership_checkin(pool, []) == :ok
+    assert Ownership.ownership_checkin(pool, []) == :ok
     refute_checked_out pool
-    assert DBConnection.Ownership.ownership_checkin(pool, []) == :not_found
+    assert Ownership.ownership_checkin(pool, []) == :not_found
   end
 
   test "does not require explicit checkout on automatic mode" do
     {:ok, pool} = start_pool()
     refute_checked_out pool
-    assert DBConnection.Ownership.ownership_mode(pool, :auto, []) == :ok
+    assert Ownership.ownership_mode(pool, :auto, []) == :ok
     assert_checked_out pool
   end
 
   test "returns {:already, status} when already checked out" do
     {:ok, pool} = start_pool()
 
-    assert DBConnection.Ownership.ownership_checkout(pool, []) ==
+    assert Ownership.ownership_checkout(pool, []) ==
            :ok
-    assert DBConnection.Ownership.ownership_checkout(pool, []) ==
+    assert Ownership.ownership_checkout(pool, []) ==
            {:already, :owner}
   end
 
@@ -35,24 +36,24 @@ defmodule ManagerTest do
     parent = self()
 
     Task.await Task.async fn ->
-      assert DBConnection.Ownership.ownership_allow(pool, parent, self(), []) == :not_found
+      assert Ownership.ownership_allow(pool, parent, self(), []) == :not_found
     end
 
-    :ok = DBConnection.Ownership.ownership_checkout(pool, [])
-    assert DBConnection.Ownership.ownership_allow(pool, self(), self(), []) ==
+    :ok = Ownership.ownership_checkout(pool, [])
+    assert Ownership.ownership_allow(pool, self(), self(), []) ==
            {:already, :owner}
 
     Task.await Task.async fn ->
-      assert DBConnection.Ownership.ownership_allow(pool, parent, self(), []) ==
+      assert Ownership.ownership_allow(pool, parent, self(), []) ==
              :ok
-      assert DBConnection.Ownership.ownership_allow(pool, parent, self(), []) ==
+      assert Ownership.ownership_allow(pool, parent, self(), []) ==
              {:already, :allowed}
 
-      assert DBConnection.Ownership.ownership_checkin(pool, []) == :not_owner
+      assert Ownership.ownership_checkin(pool, []) == :not_owner
 
       parent = self()
       Task.await Task.async fn ->
-        assert DBConnection.Ownership.ownership_allow(pool, parent, self(), []) ==
+        assert Ownership.ownership_allow(pool, parent, self(), []) ==
                :not_owner
       end
     end
@@ -63,8 +64,8 @@ defmodule ManagerTest do
     parent = self()
 
     {:ok, owner} = Task.start fn ->
-      :ok = DBConnection.Ownership.ownership_checkout(pool, [])
-      :ok = DBConnection.Ownership.ownership_allow(pool, self(), parent, [])
+      :ok = Ownership.ownership_checkout(pool, [])
+      :ok = Ownership.ownership_allow(pool, self(), parent, [])
       send parent, :checked_out
     end
 
@@ -73,7 +74,7 @@ defmodule ManagerTest do
     assert_receive {:DOWN, ^ref, _, _, _}
 
     # Ensure DOWN has been processed
-    DBConnection.Ownership.ownership_mode(pool, :manual, [])
+    Ownership.ownership_mode(pool, :manual, [])
     refute_checked_out pool
   end
 
@@ -82,9 +83,9 @@ defmodule ManagerTest do
     parent = self()
 
     Task.start_link fn ->
-      :ok = DBConnection.Ownership.ownership_checkout(pool, [])
-      :ok = DBConnection.Ownership.ownership_allow(pool, self(), parent, [])
-      :ok = DBConnection.Ownership.ownership_checkin(pool, [])
+      :ok = Ownership.ownership_checkout(pool, [])
+      :ok = Ownership.ownership_allow(pool, self(), parent, [])
+      :ok = Ownership.ownership_checkin(pool, [])
       send parent, :checkin
       :timer.sleep(:infinity)
     end
@@ -97,11 +98,11 @@ defmodule ManagerTest do
     {:ok, pool} = start_pool(name: :ownership_pid_access)
     parent = self()
 
-    :ok = DBConnection.Ownership.ownership_checkout(pool, [])
+    :ok = Ownership.ownership_checkout(pool, [])
     assert_checked_out pool
 
     task = Task.async fn ->
-      :ok = DBConnection.Ownership.ownership_allow(pool, parent, self(), [])
+      :ok = Ownership.ownership_allow(pool, parent, self(), [])
       assert_checked_out pool
       send parent, :allowed
       assert_receive :checked_in
@@ -109,7 +110,7 @@ defmodule ManagerTest do
     end
 
     assert_receive :allowed
-    :ok = DBConnection.Ownership.ownership_checkin(pool, [])
+    :ok = Ownership.ownership_checkin(pool, [])
     send task.pid, :checked_in
     Task.await(task)
   end
@@ -119,11 +120,11 @@ defmodule ManagerTest do
     pool = :ownership_name_access
     parent = self()
 
-    :ok = DBConnection.Ownership.ownership_checkout(pool, [])
+    :ok = Ownership.ownership_checkout(pool, [])
     assert_checked_out pool
 
     task = Task.async fn ->
-      :ok = DBConnection.Ownership.ownership_allow(pool, parent, self(), [])
+      :ok = Ownership.ownership_allow(pool, parent, self(), [])
       assert_checked_out pool
       send parent, :allowed
       assert_receive :checked_in
@@ -131,7 +132,7 @@ defmodule ManagerTest do
     end
 
     assert_receive :allowed
-    :ok = DBConnection.Ownership.ownership_checkin(pool, [])
+    :ok = Ownership.ownership_checkin(pool, [])
     refute_checked_out pool
 
     send task.pid, :checked_in
