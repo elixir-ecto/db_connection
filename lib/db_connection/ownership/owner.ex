@@ -5,8 +5,16 @@ defmodule DBConnection.Ownership.Owner do
   @pool_timeout 5_000
   @timeout      15_000
 
-  def start_link(manager, from, pool, pool_opts) do
-    GenServer.start_link(__MODULE__, {manager, from, pool, pool_opts}, [])
+  def start_link(manager, caller, pool, pool_opts) do
+    GenServer.start_link(__MODULE__, {manager, caller, pool, pool_opts}, [])
+  end
+
+  def init(owner, _opts) do
+    case GenServer.call(owner, :init, :infinity) do
+      :ok -> :ok
+      :error -> :error
+      {kind, reason, stack} -> :erlang.raise(kind, reason, stack)
+    end
   end
 
   def checkout(pool, opts) do
@@ -42,38 +50,15 @@ defmodule DBConnection.Ownership.Owner do
 
   # Callbacks
 
-  def init({manager, _, _, _} = args) do
-    Process.link(manager)
-    send self(), :init
-    {:ok, args}
-  end
-
-  def handle_info(:init, {manager, from, pool, pool_opts}) do
-    pool_mod = Keyword.get(pool_opts, :ownership_pool, DBConnection.Poolboy)
+  def init({_manager, caller, pool, pool_opts}) do
+    pool_mod  = Keyword.get(pool_opts, :ownership_pool, DBConnection.Poolboy)
+    owner_ref = Process.monitor(caller)
 
     state = %{client: nil, timer: nil, conn_state: nil, conn_module: nil,
-              owner_ref: nil, pool: pool, pool_mod: pool_mod,
+              owner_ref: owner_ref, pool: pool, pool_mod: pool_mod,
               pool_opts: pool_opts, pool_ref: nil, queue: :queue.new}
 
-    try do
-      pool_mod.checkout(pool, pool_opts)
-    catch
-      kind, reason ->
-        GenServer.reply(from, {kind, reason, System.stacktrace})
-        {:stop, {:shutdown, "no checkout"}, state}
-    else
-      {:ok, pool_ref, conn_module, conn_state} ->
-        GenServer.reply(from, {:ok, self()})
-        {caller, _} = from
-        ref = Process.monitor(caller)
-        {:noreply, %{state | conn_state: conn_state, conn_module: conn_module,
-                             owner_ref: ref, pool_ref: pool_ref}}
-      :error ->
-        GenServer.reply(from, :error)
-        {:stop, {:shutdown, "no checkout"}, state}
-    after
-      Process.unlink(manager)
-    end
+    {:ok, state}
   end
 
   def handle_info({:DOWN, mon, _, _, _}, %{client: {_, mon}} = state) do
@@ -90,6 +75,24 @@ defmodule DBConnection.Ownership.Owner do
 
   def handle_info(_msg, state) do
     {:noreply, state}
+  end
+
+  def handle_call(:init, _from, state) do
+    %{pool: pool, pool_mod: pool_mod, pool_opts: pool_opts} = state
+
+    try do
+      pool_mod.checkout(pool, pool_opts)
+    catch
+      kind, reason ->
+        {:stop, {:shutdown, "no checkout"}, {kind, reason, System.stacktrace}, state}
+    else
+      {:ok, pool_ref, conn_module, conn_state} ->
+        state =  %{state | conn_state: conn_state, conn_module: conn_module,
+                           pool_ref: pool_ref}
+        {:reply, :ok, state}
+      :error ->
+        {:stop, {:shutdown, "no checkout"}, :error, state}
+    end
   end
 
   def handle_call({:checkout, ref, queue?, timeout}, from, %{queue: queue} = state) do
@@ -129,6 +132,7 @@ defmodule DBConnection.Ownership.Owner do
     Process.demonitor(mon, [:flush])
     {:noreply, next(:queue.drop(queue), state)}
   end
+
   def handle_cast({:cancel, ref}, %{queue: queue} = state) do
     cancel =
       fn({{ref2, mon}, _}) ->
@@ -178,6 +182,11 @@ defmodule DBConnection.Ownership.Owner do
       0 ->
         raise ArgumentError, "timer #{inspect(timer)} does not exist"
     end
+  end
+
+  # It is down but never checked out from pool
+  defp down(reason, %{conn_module: nil} = state) do
+    {:stop, {:shutdown, reason}, state}
   end
 
   # If it is down but it has no client, checkin

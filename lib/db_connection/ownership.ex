@@ -39,10 +39,8 @@ defmodule DBConnection.Ownership do
     :ok | {:already, :owner | :allowed} | :error | no_return
   def ownership_checkout(manager, opts) do
      case Manager.checkout(manager, opts) do
-      {:ok, _} -> :ok
+      {:init, owner} -> Owner.init(owner, opts)
       {:already, _} = already -> already
-      :error -> :error
-      {kind, reason, stack} -> :erlang.raise(kind, reason, stack)
     end
   end
 
@@ -92,16 +90,17 @@ defmodule DBConnection.Ownership do
   @doc false
   def checkout(manager, opts) do
     case Manager.lookup(manager, opts) do
+      {:init, owner} ->
+        case Owner.init(owner, opts) do
+          :ok -> Owner.checkout(owner, opts)
+          :error -> :error
+        end
       {:ok, owner} ->
         Owner.checkout(owner, opts)
       :not_found ->
         raise "cannot find ownership process for #{inspect self()}. " <>
               "This may happen if you have not explicitly checked out or " <>
               "the checked out process crashed"
-      :error ->
-        :error
-      {kind, reason, stack} ->
-        :erlang.raise(kind, reason, stack)
     end
   end
 

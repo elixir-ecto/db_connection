@@ -16,8 +16,7 @@ defmodule DBConnection.Ownership.Manager do
   end
 
   @spec checkout(GenServer.server, Keyword.t) ::
-    {:ok, pid} | {:already, :owner | :allowed} | :error |
-    {kind :: atom, reason :: term, stack :: Exception.stacktrace}
+    {:init, pid} | {:already, :owner | :allowed}
   def checkout(manager, opts) do
     timeout = Keyword.get(opts, :pool_timeout, @timeout)
     GenServer.call(manager, {:checkout, opts}, timeout)
@@ -44,8 +43,7 @@ defmodule DBConnection.Ownership.Manager do
   end
 
   @spec lookup(GenServer.server, Keyword.t) ::
-    {:ok, pid} | :not_found | :error |
-    {kind :: atom, reason :: term, stack :: Exception.stacktrace}
+    {:ok, pid} | {:init, pid} | :not_found
   def lookup(manager, opts) when is_atom(manager) do
     client = self()
     case :ets.lookup(manager, client) do
@@ -83,7 +81,7 @@ defmodule DBConnection.Ownership.Manager do
     {:reply, :ok, %{state | mode: mode}}
   end
 
-  def handle_call({:lookup, opts}, {caller, _} = from,
+  def handle_call({:lookup, opts}, {caller, _},
                   %{checkouts: checkouts, mode: mode} = state) do
     case Map.get(checkouts, caller, :not_found) do
       {:owner, _, owner} ->
@@ -93,7 +91,8 @@ defmodule DBConnection.Ownership.Manager do
       :not_found when mode == :manual ->
         {:reply, :not_found, state}
       :not_found when mode == :auto ->
-        {:noreply, checkout(from, opts, state)}
+        {owner, state} = checkout(caller, opts, state)
+        {:reply, {:init, owner}, state}
     end
   end
 
@@ -129,11 +128,12 @@ defmodule DBConnection.Ownership.Manager do
     end
   end
 
-  def handle_call({:checkout, opts}, {caller, _} = from, %{checkouts: checkouts} = state) do
+  def handle_call({:checkout, opts}, {caller, _}, %{checkouts: checkouts} = state) do
     if kind = already_checked_out(checkouts, caller) do
       {:reply, {:already, kind}, state}
     else
-      {:noreply, checkout(from, opts, state)}
+      {owner, state} = checkout(caller, opts, state)
+      {:reply, {:init, owner}, state}
     end
   end
 
@@ -153,14 +153,14 @@ defmodule DBConnection.Ownership.Manager do
     end
   end
 
-  defp checkout({caller, _} = from, opts, state) do
+  defp checkout(caller, opts, state) do
     %{pool: pool, checkouts: checkouts, owners: owners, ets: ets} = state
-    {:ok, owner} = Supervisor.start_owner(self(), from, pool, opts)
+    {:ok, owner} = Supervisor.start_owner(self(), caller, pool, opts)
     ref = Process.monitor(owner)
     checkouts = Map.put(checkouts, caller, {:owner, ref, owner})
     owners = Map.put(owners, ref, {owner, caller, []})
     ets && :ets.insert(ets, {caller, owner})
-    %{state | checkouts: checkouts, owners: owners}
+    {owner, %{state | checkouts: checkouts, owners: owners}}
   end
 
   defp owner_down(ref, %{ets: ets} = state) do
