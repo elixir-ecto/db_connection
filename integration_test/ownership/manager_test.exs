@@ -63,9 +63,15 @@ defmodule ManagerTest do
     {:ok, pool} = start_pool()
     parent = self()
 
+    pid = spawn_link(fn() ->
+      assert_receive :refute_checkout
+      refute_checked_out pool
+      send(parent, :no_checkout)
+    end)
+
     {:ok, owner} = Task.start fn ->
       :ok = Ownership.ownership_checkout(pool, [])
-      :ok = Ownership.ownership_allow(pool, self(), parent, [])
+      :ok = Ownership.ownership_allow(pool, self(), pid, [])
       send parent, :checked_out
     end
 
@@ -73,9 +79,10 @@ defmodule ManagerTest do
     ref = Process.monitor(owner)
     assert_receive {:DOWN, ^ref, _, _, _}
 
-    # Ensure DOWN has been processed
-    Ownership.ownership_mode(pool, :manual, [])
-    refute_checked_out pool
+    :ok = Ownership.ownership_checkout(pool, [])
+
+    send(pid, :refute_checkout)
+    assert_receive :no_checkout
   end
 
   test "owner's checkin automatically revokes allowed access" do
