@@ -13,7 +13,7 @@ defmodule TestIdle do
       end,
       fn(_) ->
         send(parent, {:pong, self()})
-        :timer.sleep(50)
+        :timer.sleep(10)
         {:ok, :state}
       end,
       fn(_) ->
