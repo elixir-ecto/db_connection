@@ -1,4 +1,5 @@
-ExUnit.start([capture_log: true, exclude: [:idle_timeout]])
+ExUnit.start([capture_log: true, assert_receive_timeout: 500,
+              exclude: [:idle_timeout]])
 
 Code.require_file "../../test/test_support.exs", __DIR__
 
