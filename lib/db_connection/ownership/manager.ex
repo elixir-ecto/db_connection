@@ -76,9 +76,10 @@ defmodule DBConnection.Ownership.Manager do
       end
 
     pool_opts = Keyword.put(pool_opts, :pool, pool_mod)
-    {:ok, pool} = PoolSupervisor.start_pool(module, pool_opts)
+    {:ok, pool, owner_sup} = PoolSupervisor.start_pool(module, pool_opts)
     mode = Keyword.get(pool_opts, :ownership_mode, :auto)
-    {:ok, %{pool: pool, checkouts: %{}, owners: %{}, mode: mode, ets: ets}}
+    {:ok, %{pool: pool, owner_sup: owner_sup, checkouts: %{}, owners: %{},
+            mode: mode, ets: ets}}
   end
 
   def handle_call({:mode, mode}, _from, state) do
@@ -156,8 +157,9 @@ defmodule DBConnection.Ownership.Manager do
   end
 
   defp checkout({caller, _} = from, opts, state) do
-    %{pool: pool, checkouts: checkouts, owners: owners, ets: ets} = state
-    {:ok, owner} = OwnerSupervisor.start_owner(self(), from, pool, opts)
+    %{pool: pool, owner_sup: owner_sup, checkouts: checkouts, owners: owners,
+      ets: ets} = state
+    {:ok, owner} = OwnerSupervisor.start_owner(owner_sup, from, pool, opts)
     ref = Process.monitor(owner)
     checkouts = Map.put(checkouts, caller, {:owner, ref, owner})
     owners = Map.put(owners, ref, {owner, caller, []})
