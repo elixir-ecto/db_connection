@@ -7,21 +7,21 @@ defmodule OwnerTest do
 
   defmodule BadPool do
     def checkout(_, _) do
-      :error
+      {:error, DBConnection.Error.exception("connection not available")}
     end
   end
 
   test "allows a custom pool than the started one on checkout" do
     {:ok, pool} = start_pool()
 
-    assert_raise UndefinedFunctionError, ~r"UnknownPool.checkout/2", fn ->
-      Ownership.ownership_checkout(pool, [ownership_pool: UnknownPool])
-    end
+    assert Ownership.ownership_checkout(pool, [ownership_pool: UnknownPool]) ==
+      {:error, %DBConnection.Error{message: "failed to checkout using UnknownPool"}}
   end
 
   test "returns error on checkout" do
     {:ok, pool} = start_pool()
-    assert Ownership.ownership_checkout(pool, [ownership_pool: BadPool]) == :error
+    assert {:error, %DBConnection.Error{}} =
+      Ownership.ownership_checkout(pool, [ownership_pool: BadPool])
   end
 
   test "reconnects when owner exits during a client checkout" do

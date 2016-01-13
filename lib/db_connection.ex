@@ -814,8 +814,8 @@ defmodule DBConnection do
         conn = %DBConnection{pool_mod: pool_mod, pool_ref: pool_ref,
           conn_mod: conn_mod, conn_ref: make_ref()}
         {conn, conn_state}
-      :error ->
-        raise DBConnection.Error, "connection not available"
+      {:error, err} ->
+        raise err
     end
   end
 

@@ -38,8 +38,10 @@ defmodule DBConnection.Sojourn do
   @doc false
   def checkout(broker, opts) do
     case ask(broker, opts) do
-      {:go, ref, {pid, mod, state}, _, _}    -> {:ok, {pid, ref}, mod, state}
-      {drop, _} when drop in [:drop, :retry] -> :error
+      {:go, ref, {pid, mod, state}, _, _} ->
+        {:ok, {pid, ref}, mod, state}
+      {drop, _} when drop in [:drop, :retry] ->
+        {:error, DBConnection.Error.exception("connection not available")}
     end
   end
 

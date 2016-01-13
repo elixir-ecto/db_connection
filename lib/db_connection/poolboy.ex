@@ -34,8 +34,11 @@ defmodule DBConnection.Poolboy do
     queue?       = Keyword.get(opts, :queue, true)
 
     case :poolboy.checkout(pool, queue?, pool_timeout) do
-      :full  -> :error
-      worker -> checkout(pool, worker, opts)
+      :full ->
+        err = DBConnection.Error.exception("connection not available")
+        {:error, err}
+      worker ->
+        checkout(pool, worker, opts)
     end
   end
 

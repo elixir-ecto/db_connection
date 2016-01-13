@@ -11,10 +11,9 @@ defmodule DBConnection.Ownership.Owner do
 
   def init(owner, _opts) do
     case GenServer.call(owner, :init, :infinity) do
-      :ok -> :ok
-      :error -> :error
-      {kind, reason, stack} -> :erlang.raise(kind, reason, stack)
-    end
+      :ok                 -> :ok
+      {:error, _} = error -> error
+   end
   end
 
   def checkout(pool, opts) do
@@ -77,21 +76,24 @@ defmodule DBConnection.Ownership.Owner do
     {:noreply, state}
   end
 
-  def handle_call(:init, _from, state) do
+  def handle_call(:init, from, state) do
     %{pool: pool, pool_mod: pool_mod, pool_opts: pool_opts} = state
 
     try do
       pool_mod.checkout(pool, pool_opts)
     catch
       kind, reason ->
-        {:stop, {:shutdown, "no checkout"}, {kind, reason, System.stacktrace}, state}
+        stack = System.stacktrace()
+        msg = "failed to checkout using " <> inspect(pool_mod)
+        GenServer.reply(from, {:error, DBConnection.Error.exception(msg)})
+        :erlang.raise(kind, reason, stack)
     else
       {:ok, pool_ref, conn_module, conn_state} ->
         state =  %{state | conn_state: conn_state, conn_module: conn_module,
                            pool_ref: pool_ref}
         {:reply, :ok, state}
-      :error ->
-        {:stop, {:shutdown, "no checkout"}, :error, state}
+      {:error, _} = error ->
+        {:stop, {:shutdown, "no checkout"}, error, state}
     end
   end
 
@@ -102,7 +104,8 @@ defmodule DBConnection.Ownership.Owner do
       queue = :queue.in({client, timeout, from}, queue)
       {:noreply, next(queue, state)}
     else
-      {:reply, :error, state}
+      err = DBConnection.Error.exception("connection not available")
+      {:reply, {:error, err}, state}
     end
   end
 

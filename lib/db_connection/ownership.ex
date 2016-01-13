@@ -92,15 +92,16 @@ defmodule DBConnection.Ownership do
     case Manager.lookup(manager, opts) do
       {:init, owner} ->
         case Owner.init(owner, opts) do
-          :ok -> Owner.checkout(owner, opts)
-          :error -> :error
+          :ok                 -> Owner.checkout(owner, opts)
+          {:error, _} = error -> error
         end
       {:ok, owner} ->
         Owner.checkout(owner, opts)
       :not_found ->
-        raise "cannot find ownership process for #{inspect self()}. " <>
+        msg = "cannot find ownership process for #{inspect self()}. " <>
               "This may happen if you have not explicitly checked out or " <>
               "the checked out process crashed"
+        {:error, RuntimeError.exception(msg)}
     end
   end
 

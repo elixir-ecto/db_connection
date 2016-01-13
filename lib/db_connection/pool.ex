@@ -26,7 +26,7 @@ defmodule DBConnection.Pool do
   `module` and `state` are the module and state of the connection.
   """
   @callback checkout(pool :: GenServer.server, opts :: Keyword.t) ::
-    {:ok, pool_ref :: any, module, state :: any} | :error
+    {:ok, pool_ref :: any, module, state :: any} | {:error, Exception.t}
 
   @doc """
   Checkin a connection's state to the pool.

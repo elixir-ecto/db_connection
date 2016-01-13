@@ -178,13 +178,15 @@ defmodule DBConnection.Connection do
         mon = Process.monitor(pid)
         handle_checkout({ref, mon}, timeout, from, state, s)
       %{client: :closed} ->
-        {:reply, :error, s}
+        err = DBConnection.Error.exception("connection not available")
+        {:reply, {:error, err}, s}
       %{queue: queue} when queue? == true ->
         client = {ref, Process.monitor(pid)}
         queue = :queue.in({client, timeout, from}, queue)
         {:noreply, %{s | queue: queue}}
       _ when queue? == false ->
-        {:reply, :error, s}
+        err = DBConnection.Error.exception("connection not available")
+        {:reply, {:error, err}, s}
     end
   end
 
@@ -535,7 +537,8 @@ defmodule DBConnection.Connection do
     clear =
       fn({{_, mon}, _, from}) ->
           Process.demonitor(mon, [:flush])
-          Connection.reply(from, :error)
+          err = DBConnection.Error.exception("connection not available")
+          Connection.reply(from, {:error, err})
           false
       end
     :queue.filter(clear, queue)
