@@ -97,9 +97,9 @@ defmodule DBConnection.Poolboy do
     else
       {:ok, worker_ref, mod, state} ->
         {:ok, {pool, worker, worker_ref}, mod, state}
-      :error ->
+      {:error, _} = error ->
         :poolboy.checkin(pool, worker)
-        :error
+        error
     catch
       :exit, reason ->
         :poolboy.checkin(pool, worker)
