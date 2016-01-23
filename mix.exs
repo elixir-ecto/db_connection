@@ -21,13 +21,12 @@ defmodule DBConnection.Mixfile do
   end
 
   def application do
-    [applications: [:logger, :connection, :backoff],
+    [applications: [:logger, :connection],
      mod: {DBConnection.App, []}]
   end
 
   defp deps do
     [{:connection, "~> 1.0.2"},
-     {:backoff, "1.1.1"}, # ~> 1.1.2 requires rebar3/elixir 1.2
      {:poolboy, "~> 1.5", [optional: true]},
      {:sbroker, "~> 0.7", [optional: true]},
      {:earmark, "~> 0.1", only: :dev},

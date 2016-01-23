@@ -10,13 +10,11 @@ defmodule DBConnection.Connection do
   @behaviour DBConnection.Pool
   use Connection
   require Logger
+  alias DBConnection.Backoff
 
   @pool_timeout  5_000
   @timeout       15_000
   @idle_timeout  15_000
-  @backoff_start 200
-  @backoff_max   15_000
-  @backoff_type  :jitter
 
   ## DBConnection.Pool API
 
@@ -96,7 +94,7 @@ defmodule DBConnection.Connection do
     after_timeout = if mode == :poolboy, do: :stop, else: :backoff
 
     s = %{mod: mod, opts: opts, state: nil, client: :closed, broker: broker,
-          queue: queue, timer: nil, backoff: backoff_init(opts),
+          queue: queue, timer: nil, backoff: Backoff.new(opts),
           after_connect: Keyword.get(opts, :after_connect),
           after_connect_timeout: Keyword.get(opts, :after_connect_timeout,
                                              @timeout),
@@ -119,12 +117,12 @@ defmodule DBConnection.Connection do
         Connection.cast(self(), {:after_connect, ref})
         {:ok, %{s | state: state, client: {ref, :connect}}}
       {:ok, state} when queue == :broker ->
-        backoff = backoff_succeed(backoff)
+        backoff = backoff && Backoff.reset(backoff)
         ref = make_ref()
         Connection.cast(self(), {:connected, ref})
         {:ok, %{s | state: state, client: {ref, :connect}, backoff: backoff}}
       {:ok, state} ->
-        backoff = backoff_succeed(backoff)
+        backoff = backoff && Backoff.reset(backoff)
         {:ok, %{s | state: state, client: nil, backoff: backoff}, idle_timeout}
       {:error, err} when is_nil(backoff) ->
         raise err
@@ -133,8 +131,7 @@ defmodule DBConnection.Connection do
           [inspect(mod), ?\s, ?(, inspect(self()), ") failed to connect: " |
             Exception.format_banner(:error, err, [])]
         end)
-        timeout = :backoff.get(backoff)
-        {_, backoff} = :backoff.fail(backoff)
+        {timeout, backoff} = Backoff.backoff(backoff)
         {:backoff, timeout, %{s | backoff: backoff}}
     end
   end
@@ -156,8 +153,7 @@ defmodule DBConnection.Connection do
       _ when backoff == :nil ->
         {:stop, {:shutdown, :disconnect}, s}
       {_, :after_connect} ->
-        timeout = :backoff.get(backoff)
-        {_, backoff} = :backoff.fail(backoff)
+        {timeout, backoff} = Backoff.backoff(backoff)
         {:backoff, timeout, %{s | backoff: backoff}}
       _ ->
         {:connect, :disconnect, s}
@@ -384,32 +380,6 @@ defmodule DBConnection.Connection do
     end
   end
 
-  defp backoff_init(opts) do
-    case Keyword.get(opts, :backoff_type, @backoff_type) do
-      :stop ->
-        nil
-      type ->
-        {start, max} = backoff_args(opts)
-        backoff = :backoff.init(start, max)
-        :backoff.type(backoff, type)
-    end
-  end
-
-  defp backoff_args(opts) do
-    case {opts[:backoff_start], opts[:backoff]} do
-      {nil, nil}   -> {@backoff_start, @backoff_max}
-      {nil, max}   -> {min(@backoff_start, max), max}
-      {start, nil} -> {start, max(start, @backoff_max)}
-      {start, max} -> {start, max}
-    end
-  end
-
-  defp backoff_succeed(nil), do: nil
-  defp backoff_succeed(backoff) do
-    {_, backoff} = :backoff.succeed(backoff)
-    backoff
-  end
-
   defp handle_checkout({ref, _} = client, timeout, from, state, s) do
     %{mod: mod} = s
     case apply(mod, :checkout, [state]) do
@@ -424,7 +394,7 @@ defmodule DBConnection.Connection do
 
   defp handle_next(state, %{client: {_, :after_connect} = client} = s) do
     %{backoff: backoff} = s
-    backoff = backoff_succeed(backoff)
+    backoff = backoff && Backoff.reset(backoff)
     demonitor(client)
     handle_next(state, %{s | client: nil, backoff: backoff})
   end
