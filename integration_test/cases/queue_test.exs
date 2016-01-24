@@ -105,4 +105,19 @@ defmodule QueueTest do
     send(runner, {:done, self()})
     assert P.run(pool, fn(_) -> :result end) == :result
   end
+
+  test "queue raises when disconnected" do
+    stack = [{:error, RuntimeError.exception("oops")}]
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self(), backoff_start: 30_000]
+    {:ok, pool} = P.start_link(opts)
+
+    {queue_time, _} = :timer.tc(fn() ->
+      opts = [queue: false]
+      assert_raise DBConnection.Error, "connection not available",
+        fn() -> P.run(pool, fn(_) -> flunk("got connection") end, opts) end
+    end)
+    assert queue_time <= 1_000_000, "request was queued"
+  end
 end
