@@ -359,10 +359,11 @@ defmodule DBConnection do
     `DBConnection.Connection`)
     * `:idle_timeout` - The idle timeout to ping the database (default:
     `15_000`)
-    * `:backoff_start` - The first backoff interval (default: `200`)
+    * `:backoff_min` - The minimum backoff interval (default: `200`)
     * `:backoff_max` - The maximum backoff interval (default: `15_000`)
     * `:backoff_type` - The backoff strategy, `:stop` for no backoff and
-    to stop (see `:backoff`, default: `:jitter`)
+    to stop, `:exp` for exponential, `:rand` for random and `:rand_exp` for
+    random exponential (default: `:rand_exp`)
     * `:after_connect` - A function to run on connect using `run/3`, either
     a 1-arity fun, `{module, function, args}` with `DBConnection.t` prepended
     to `args` or `nil` (default: `nil`)

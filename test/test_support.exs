@@ -3,7 +3,8 @@ defmodule TestConnection do
   defmacro __using__(opts) do
     quote do
       def start_link(opts2) do
-        TestConnection.start_link(unquote(opts) ++ opts2)
+        defaults = [backoff_type: :exp]
+        TestConnection.start_link(opts2 ++ unquote(opts) ++ defaults)
       end
 
       def query(pool, query, params, opts2 \\ []) do

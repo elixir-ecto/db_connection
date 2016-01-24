@@ -17,8 +17,7 @@ defmodule BackoffTest do
       end]
     {:ok, agent} = A.start_link(stack)
 
-    opts = [agent: agent, parent: self(), backoff_start: 10,
-            backoff_type: :normal]
+    opts = [agent: agent, parent: self(), backoff_min: 10]
     {:ok, _} = P.start_link(opts)
     assert_receive {:error, conn}
     assert_receive {:hi, ^conn}
@@ -45,8 +44,7 @@ defmodule BackoffTest do
       end]
     {:ok, agent} = A.start_link(stack)
 
-    opts = [agent: agent, parent: self(), backoff_start: 10,
-            backoff_type: :jitter]
+    opts = [agent: agent, parent: self(), backoff_min: 10]
     {:ok, _} = P.start_link(opts)
     assert_receive {:hi1, conn}
     assert_receive {:hi2, ^conn}
@@ -118,8 +116,7 @@ defmodule BackoffTest do
       send(parent, :after_connect)
       Process.exit(self(), :shutdown)
     end
-    opts = [after_connect: after_connect, agent: agent, parent: self(),
-            backoff_type: :normal]
+    opts = [after_connect: after_connect, agent: agent, parent: self()]
     {:ok, _} = P.start_link(opts)
 
     assert_receive :after_connect
