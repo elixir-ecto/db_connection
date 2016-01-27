@@ -15,9 +15,15 @@ defmodule DBConnection.Ownership do
       implicitly. In both cases, checkins are implicit via
       `ownership_checkin/2`. Defaults to `:auto`.
 
-  Furthermore, if the `:ownership_pool` has an atom name given in
-  the `:name` option, an ETS table will be created and automatically
-  used for lookups whenever the name is used on checkout.
+  If the `:ownership_pool` has an atom name given in the `:name` option,
+  an ETS table will be created and automatically used for lookups whenever
+  the name is used on checkout.
+
+  Finally, if the `:caller` option is given on checkout with a pid and no
+  pool is assigned to the current process, a connection will be allowed
+  from the given pid and used on checkout with `:pool_timeout` of `:infinity`.
+  This is useful when multiple tasks need to collaborate on the same
+  connection (hence the `:infinity` timeout).
   """
 
   @behaviour DBConnection.Pool
@@ -98,10 +104,16 @@ defmodule DBConnection.Ownership do
       {:ok, owner} ->
         Owner.checkout(owner, opts)
       :not_found ->
-        msg = "cannot find ownership process for #{inspect self()}. " <>
-              "This may happen if you have not explicitly checked out or " <>
-              "the checked out process crashed"
-        {:error, RuntimeError.exception(msg)}
+        case Keyword.pop(opts, :caller) do
+          {nil, _} ->
+            msg = "cannot find ownership process for #{inspect self()}. " <>
+                  "This may happen if you have not explicitly checked out or " <>
+                  "the checked out process crashed"
+            {:error, RuntimeError.exception(msg)}
+          {owner, opts} ->
+            ownership_allow(manager, owner, self(), opts)
+            checkout(manager, [pool_timeout: :infinity] ++ opts)
+        end
     end
   end
 

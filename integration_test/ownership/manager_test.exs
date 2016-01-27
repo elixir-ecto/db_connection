@@ -101,6 +101,20 @@ defmodule ManagerTest do
     refute_checked_out pool
   end
 
+  test "owner's checkout automatically with caller option" do
+    {:ok, pool} = start_pool()
+    :ok = Ownership.ownership_checkout(pool, [])
+    parent = self()
+
+    Task.start_link fn ->
+      assert_checked_out pool, [caller: parent]
+      send parent, :checkin
+    end
+
+    assert_receive :checkin
+    assert_checked_out pool, [caller: parent]
+  end
+
   test "uses ETS when the pool is named (with pid access)" do
     {:ok, pool} = start_pool(name: :ownership_pid_access)
     parent = self()
@@ -154,8 +168,8 @@ defmodule ManagerTest do
     P.start_link(opts)
   end
 
-  defp assert_checked_out(pool) do
-     assert P.run(pool, fn _ -> :ok end)
+  defp assert_checked_out(pool, opts \\ []) do
+     assert P.run(pool, fn _ -> :ok end, opts)
    end
 
   defp refute_checked_out(pool) do
