@@ -30,8 +30,11 @@ defmodule DBConnection.Ownership.Manager do
     GenServer.call(manager, :checkin, timeout)
   end
 
-  @spec mode(GenServer.server, :auto | :manual, Keyword.t) :: :ok
-  def mode(manager, mode, opts) when mode in [:auto, :manual] do
+  @spec mode(GenServer.server, :auto | :manual | {:shared, pid}, Keyword.t) ::
+    :ok | :already_shared | :not_owner | :not_found
+  def mode(manager, mode, opts)
+      when mode in [:auto, :manual]
+      when elem(mode, 0) == :shared and is_pid(elem(mode, 1)) do
     timeout = Keyword.get(opts, :pool_timeout, @timeout)
     GenServer.call(manager, {:mode, mode}, timeout)
   end
@@ -77,11 +80,25 @@ defmodule DBConnection.Ownership.Manager do
     {:ok, pool, owner_sup} = PoolSupervisor.start_pool(module, pool_opts)
     mode = Keyword.get(pool_opts, :ownership_mode, :auto)
     {:ok, %{pool: pool, owner_sup: owner_sup, checkouts: %{}, owners: %{},
-            mode: mode, ets: ets}}
+            mode: mode, mode_ref: nil, ets: ets}}
   end
 
-  def handle_call({:mode, mode}, _from, state) do
-    {:reply, :ok, %{state | mode: mode}}
+  def handle_call({:mode, {:shared, pid}}, _from, %{mode: {:shared, current}} = state) do
+    cond do
+      pid == current ->
+        {:reply, :ok, state}
+      Process.alive?(current) ->
+        {:reply, :already_shared, state}
+      true ->
+        share_and_reply(state, pid)
+    end
+  end
+  def handle_call({:mode, {:shared, pid}}, _from, state) do
+    share_and_reply(state, pid)
+  end
+  def handle_call({:mode, mode}, _from, %{mode_ref: ref} = state) do
+    ref && Process.demonitor(ref, [:flush])
+    {:reply, :ok, %{state | mode: mode, mode_ref: nil}}
   end
 
   def handle_call({:lookup, opts}, {caller, _},
@@ -94,8 +111,12 @@ defmodule DBConnection.Ownership.Manager do
       :not_found when mode == :manual ->
         {:reply, :not_found, state}
       :not_found when mode == :auto ->
-        {owner, state} = checkout(caller, opts, state)
+        {owner, state} = checkout(state, caller, opts)
         {:reply, {:init, owner}, state}
+      :not_found ->
+        {:shared, shared} = mode
+        %{^shared => {:owner, ref, owner}} = checkouts
+        {:reply, {:ok, owner}, owner_allow(state, caller, ref, owner)}
     end
   end
 
@@ -103,7 +124,7 @@ defmodule DBConnection.Ownership.Manager do
     case get_and_update_in(state.checkouts, &Map.pop(&1, caller, :not_found)) do
       {{:owner, ref, owner}, state} ->
         Owner.stop(owner)
-        {:reply, :ok, owner_down(ref, state)}
+        {:reply, :ok, owner_down(state, ref)}
       {{:allowed, _}, _} ->
         {:reply, :not_owner, state}
       {:not_found, _} ->
@@ -111,18 +132,13 @@ defmodule DBConnection.Ownership.Manager do
     end
   end
 
-  def handle_call({:allow, caller, allow}, _from, %{checkouts: checkouts, ets: ets} = state) do
+  def handle_call({:allow, caller, allow}, _from, %{checkouts: checkouts} = state) do
     if kind = already_checked_out(checkouts, allow) do
       {:reply, {:already, kind}, state}
     else
       case Map.get(checkouts, caller, :not_found) do
         {:owner, ref, owner} ->
-          state = put_in(state.checkouts[allow], {:allowed, owner})
-          state = update_in(state.owners[ref], fn {owner, caller, allowed} ->
-            {owner, caller, [allow|List.delete(allowed, allow)]}
-          end)
-          ets && :ets.insert(ets, {allow, owner})
-          {:reply, :ok, state}
+          {:reply, :ok, owner_allow(state, allow, ref, owner)}
         {:allowed, _} ->
           {:reply, :not_owner, state}
         :not_found ->
@@ -135,13 +151,13 @@ defmodule DBConnection.Ownership.Manager do
     if kind = already_checked_out(checkouts, caller) do
       {:reply, {:already, kind}, state}
     else
-      {owner, state} = checkout(caller, opts, state)
+      {owner, state} = checkout(state, caller, opts)
       {:reply, {:init, owner}, state}
     end
   end
 
   def handle_info({:DOWN, ref, _, _, _}, state) do
-    {:noreply, owner_down(ref, state)}
+    {:noreply, state |> owner_down(ref) |> unshare(ref)}
   end
 
   def handle_info(_msg, state) do
@@ -156,7 +172,7 @@ defmodule DBConnection.Ownership.Manager do
     end
   end
 
-  defp checkout(caller, opts, state) do
+  defp checkout(state, caller, opts) do
     %{pool: pool, owner_sup: owner_sup, checkouts: checkouts, owners: owners,
       ets: ets} = state
     {:ok, owner} = OwnerSupervisor.start_owner(owner_sup, caller, pool, opts)
@@ -167,7 +183,16 @@ defmodule DBConnection.Ownership.Manager do
     {owner, %{state | checkouts: checkouts, owners: owners}}
   end
 
-  defp owner_down(ref, %{ets: ets} = state) do
+  defp owner_allow(%{ets: ets} = state, allow, ref, owner) do
+    state = put_in(state.checkouts[allow], {:allowed, owner})
+    state = update_in(state.owners[ref], fn {owner, caller, allowed} ->
+      {owner, caller, [allow|List.delete(allowed, allow)]}
+    end)
+    ets && :ets.insert(ets, {allow, owner})
+    state
+  end
+
+  defp owner_down(%{ets: ets} = state, ref) do
     case get_and_update_in(state.owners, &Map.pop(&1, ref)) do
       {{_owner, caller, allowed}, state} ->
         Process.demonitor(ref, [:flush])
@@ -177,5 +202,23 @@ defmodule DBConnection.Ownership.Manager do
       {nil, state} ->
         state
     end
+  end
+
+  defp share_and_reply(%{checkouts: checkouts} = state, pid) do
+    case Map.get(checkouts, pid, :not_found) do
+      {:owner, ref, _} ->
+        {:reply, :ok, %{state | mode: {:shared, pid}, mode_ref: ref}}
+      {:allowed, _} ->
+        {:reply, :not_owner, state}
+      :not_found ->
+        {:reply, :not_found, state}
+    end
+  end
+
+  defp unshare(%{mode_ref: ref} = state, ref) do
+    %{state | mode: :manual, mode_ref: nil}
+  end
+  defp unshare(state, _ref) do
+    state
   end
 end

@@ -12,8 +12,9 @@ defmodule DBConnection.Ownership do
     * `:ownership_mode` - When mode is `:manual`, all connections must
       be explicitly checked out before by using `ownership_checkout/2`.
       Otherwise, mode is `:auto` and connections are checked out
-      implicitly. In both cases, checkins are implicit via
-      `ownership_checkin/2`. Defaults to `:auto`.
+      implicitly. `{:shared, owner}` mode is also supported so
+      processes are allowed on demand. On all cases, checkins are
+      explicit via `ownership_checkin/2`. Defaults to `:auto`.
 
   If the `:ownership_pool` has an atom name given in the `:name` option,
   an ETS table will be created and automatically used for lookups whenever
@@ -53,10 +54,17 @@ defmodule DBConnection.Ownership do
   @doc """
   Changes the ownwership mode.
 
-  `mode` may be `:auto` or `:manual`. Returns `:ok`.
+  `mode` may be `:auto`, `:manual` or `{:shared, owner}`.
+
+  The operation will always succeed when setting the mode to
+  `:auto` or `:manual`. It may fail with reason `:not_owner`
+  or `:not_found` when setting `{:shared, pid}` and the
+  given pid does not own any connection. May return
+  `:already_shared` if another process set the ownership
+  mode to `{:shared, _}` and is still alive.
   """
-  @spec ownership_mode(GenServer.server, :auto | :manual, Keyword.t) ::
-    :ok
+  @spec ownership_mode(GenServer.server, :auto | :manual | {:shared, pid}, Keyword.t) ::
+    :ok | :already_shared | :not_owner | :not_found
   defdelegate ownership_mode(manager, mode, opts), to: Manager, as: :mode
 
   @doc """
