@@ -160,6 +160,75 @@ defmodule ManagerTest do
     Task.await(task)
   end
 
+  test "does not require explicit checkout on shared mode" do
+    {:ok, pool} = start_pool()
+    parent = self()
+
+    # Cannot share if not owner
+    assert Ownership.ownership_mode(pool, {:shared, self()}, []) == :not_found
+
+    # Checkout but still do not share
+    assert Ownership.ownership_checkout(pool, []) == :ok
+    Task.async(fn -> refute_checked_out pool end) |> Task.await
+
+    # Cannot change mode from allowed process as well
+    Task.async(fn ->
+      Ownership.ownership_allow(pool, parent, self(), [])
+      assert Ownership.ownership_mode(pool, {:shared, self()}, []) == :not_owner
+    end) |> Task.await
+
+    # Finally enable shared mode
+    assert Ownership.ownership_mode(pool, {:shared, self()}, []) == :ok
+    Task.async(fn -> assert_checked_out pool end) |> Task.await
+  end
+
+  test "shared mode can be set back to manual" do
+    {:ok, pool} = start_pool()
+    parent = self()
+
+    {:ok, pid} = Task.start fn ->
+      assert Ownership.ownership_checkout(pool, []) == :ok
+      assert Ownership.ownership_mode(pool, {:shared, self()}, []) == :ok
+      send parent, :shared
+      :timer.sleep(:infinity)
+    end
+
+    assert_receive :shared
+    assert_checked_out pool
+    assert Ownership.ownership_mode(pool, :manual, []) == :ok
+    assert_checked_out pool
+
+    :erlang.trace(pool, true, [:receive])
+    Process.exit(pid, :shutdown)
+    assert_receive {:trace, ^pool, :receive, {:DOWN, _, _, _, _}}
+
+    refute_checked_out pool
+    assert Ownership.ownership_checkout(pool, []) == :ok
+  end
+
+  test "shared mode automatically rolls back to manual on owner crash" do
+    {:ok, pool} = start_pool()
+    parent = self()
+
+    {:ok, pid} = Task.start fn ->
+      assert Ownership.ownership_checkout(pool, []) == :ok
+      assert Ownership.ownership_mode(pool, {:shared, self()}, []) == :ok
+      send parent, :shared
+      :timer.sleep(:infinity)
+    end
+
+    assert_receive :shared
+    assert Ownership.ownership_mode(pool, {:shared, self()}, []) == :already_shared
+
+    :erlang.trace(pool, true, [:receive])
+    Process.exit(pid, :shutdown)
+    assert_receive {:trace, ^pool, :receive, {:DOWN, _, _, _, _}}
+
+    refute_checked_out pool
+    assert Ownership.ownership_checkout(pool, []) == :ok
+    assert Ownership.ownership_mode(pool, {:shared, self()}, []) == :ok
+  end
+
   defp start_pool(opts \\ []) do
     stack = [{:ok, :state}]
     {:ok, agent} = A.start_link(stack)
