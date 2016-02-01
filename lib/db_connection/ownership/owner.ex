@@ -2,15 +2,17 @@ defmodule DBConnection.Ownership.Owner do
   @moduledoc false
 
   use GenServer
-  @pool_timeout 5_000
-  @timeout      15_000
+  @pool_timeout      5_000
+  @ownership_timeout 15_000
+  @timeout           15_000
 
   def start_link(manager, caller, pool, pool_opts) do
     GenServer.start_link(__MODULE__, {manager, caller, pool, pool_opts}, [])
   end
 
-  def init(owner, _opts) do
-    case GenServer.call(owner, :init, :infinity) do
+  def init(owner, opts) do
+    ownership_timeout = opts[:ownership_timeout] || @ownership_timeout
+    case GenServer.call(owner, {:init, ownership_timeout}, :infinity) do
       :ok                 -> :ok
       {:error, _} = error -> error
    end
@@ -50,12 +52,15 @@ defmodule DBConnection.Ownership.Owner do
   # Callbacks
 
   def init({_manager, caller, pool, pool_opts}) do
-    pool_mod  = Keyword.get(pool_opts, :ownership_pool, DBConnection.Poolboy)
+    pool_mod = Keyword.get(pool_opts, :ownership_pool, DBConnection.Poolboy)
+    pool_opts = Keyword.put(pool_opts, :timeout, :infinity)
+
     owner_ref = Process.monitor(caller)
 
     state = %{client: nil, timer: nil, conn_state: nil, conn_module: nil,
               owner_ref: owner_ref, pool: pool, pool_mod: pool_mod,
-              pool_opts: pool_opts, pool_ref: nil, queue: :queue.new}
+              pool_opts: pool_opts, pool_ref: nil, queue: :queue.new,
+              ownership_timer: nil}
 
     {:ok, state}
   end
@@ -72,11 +77,15 @@ defmodule DBConnection.Ownership.Owner do
     disconnect("client timeout", state)
   end
 
+  def handle_info({:timeout, timer, __MODULE__}, %{ownership_timer: timer} = state) do
+    disconnect("ownership timeout", state)
+  end
+
   def handle_info(_msg, state) do
     {:noreply, state}
   end
 
-  def handle_call(:init, from, state) do
+  def handle_call({:init, ownership_timeout}, from, state) do
     %{pool: pool, pool_mod: pool_mod, pool_opts: pool_opts} = state
 
     try do
@@ -90,6 +99,7 @@ defmodule DBConnection.Ownership.Owner do
     else
       {:ok, pool_ref, conn_module, conn_state} ->
         state =  %{state | conn_state: conn_state, conn_module: conn_module,
+                           ownership_timer: start_timer(ownership_timeout),
                            pool_ref: pool_ref}
         {:reply, :ok, state}
       {:error, _} = error ->
@@ -157,7 +167,6 @@ defmodule DBConnection.Ownership.Owner do
     cancel_timer(timer)
     case :queue.peek(queue) do
       {:value, {{ref, _} = client, timeout, from}} ->
-        {caller, _} = from
         %{conn_module: conn_module, conn_state: conn_state} = state
         GenServer.reply(from, {:ok, {self(), ref}, conn_module, conn_state})
         %{state | queue: queue, client: client, timer: start_timer(timeout)}

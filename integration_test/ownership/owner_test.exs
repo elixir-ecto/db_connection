@@ -66,4 +66,36 @@ defmodule OwnerTest do
     opts = [agent: agent, parent: self()]
     P.start_link(opts)
   end
+
+  test "reconnect when ownership times out" do
+    stack = [
+      {:ok, :state},
+      :ok,
+      fn(opts) ->
+        send(opts[:parent], :reconnected)
+        {:ok, :state}
+      end]
+    {:ok, agent} = A.start_link(stack)
+
+    parent = self()
+    opts = [agent: agent, parent: parent]
+    {:ok, pool} = P.start_link(opts)
+
+    pid = spawn_link(fn() ->
+      assert_receive {:go, ^parent}
+      assert P.run(pool, fn(_) -> :result end) == :result
+      send(parent, {:done, self()})
+    end)
+
+    P.run(pool, fn(_) ->
+      assert_receive :reconnected
+      send(pid, {:go, parent})
+      assert_receive {:done, ^pid}
+    end, [ownership_timeout: 0])
+
+    assert [
+      {:connect, _},
+      {:disconnect, _},
+      {:connect, _}] = A.record(agent)
+  end
 end
