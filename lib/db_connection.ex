@@ -49,7 +49,7 @@ defmodule DBConnection do
                          pool_ref: any,
                          conn_mod: any,
                          conn_ref: reference}
-  @type conn :: GenSever.server | t
+  @type conn :: GenServer.server | t
   @type query :: any
   @type params :: any
   @type result :: any
