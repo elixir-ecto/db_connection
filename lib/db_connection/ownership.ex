@@ -117,9 +117,22 @@ defmodule DBConnection.Ownership do
       :not_found ->
         case Keyword.pop(opts, :caller) do
           {nil, _} ->
-            msg = "cannot find ownership process for #{inspect self()}. " <>
-                  "This may happen if you have not explicitly checked out or " <>
-                  "the checked out process crashed"
+            msg = """
+            cannot find ownership process for #{inspect self()}.
+
+            When using ownership, you must manage connections in one
+            of the three ways:
+
+              * By explicitly checking out a connection
+              * By explicitly allowing a spawned process
+              * By running the pool in shared mode
+
+            The first two options require every new process to explicitly
+            check a connection out or be allowed.
+
+            If you are reading this error, it means you have not done one
+            of the steps above or that the owner process has crashed.
+            """
             {:error, RuntimeError.exception(msg)}
           {owner, opts} ->
             ownership_allow(manager, owner, self(), opts)
