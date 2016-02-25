@@ -36,7 +36,8 @@ defmodule ManagerTest do
     parent = self()
 
     Task.await Task.async fn ->
-      assert Ownership.ownership_allow(pool, parent, self(), []) == :not_found
+      assert Ownership.ownership_allow(pool, parent, self(), []) ==
+             :not_found
     end
 
     :ok = Ownership.ownership_checkout(pool, [])
@@ -54,7 +55,7 @@ defmodule ManagerTest do
       parent = self()
       Task.await Task.async fn ->
         assert Ownership.ownership_allow(pool, parent, self(), []) ==
-               :not_owner
+               :ok
       end
     end
   end

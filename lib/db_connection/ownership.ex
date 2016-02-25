@@ -79,16 +79,17 @@ defmodule DBConnection.Ownership do
   defdelegate ownership_checkin(manager, opts), to: Manager, as: :checkin
 
   @doc """
-  Allows the process given by `allow` to use the connection checked out by `owner`.
+  Allows the process given by `allow` to use the connection checked out
+  by `owner_or_allowed`.
 
   It may return `:ok` if the connection is checked out.
   `{:already, :owner | :allowed}` if the `allow` process already
-  has a connection, `:not_owner` if the owner process is not an
-  owner or `:not_found` if the owner process does not have any
-  connection checked out.
+  has a connection. `owner_or_allowed` may either be the owner or any
+  other allowed process.. Returns `:not_found` if the given process
+  does not have any connection checked out.
   """
-  @spec ownership_allow(GenServer.server, owner :: pid, allow :: pid, Keyword.t) ::
-    :ok | {:already, :owner | :allowed} | :not_owner | :not_found
+  @spec ownership_allow(GenServer.server, owner_or_allowed :: pid, allow :: pid, Keyword.t) ::
+    :ok | {:already, :owner | :allowed} | :not_found
   defdelegate ownership_allow(manager, owner, allow, opts), to: Manager, as: :allow
 
   ## Pool callbacks

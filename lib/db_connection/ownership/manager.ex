@@ -40,7 +40,7 @@ defmodule DBConnection.Ownership.Manager do
   end
 
   @spec allow(GenServer.server, parent :: pid, allow :: pid, Keyword.t) ::
-    :ok | {:already, :owner | :allowed} | :not_owner | :not_found
+    :ok | {:already, :owner | :allowed} | :not_found
   def allow(manager, parent, allow, opts) do
     timeout = Keyword.get(opts, :pool_timeout, @timeout)
     GenServer.call(manager, {:allow, parent, allow}, timeout)
@@ -105,7 +105,7 @@ defmodule DBConnection.Ownership.Manager do
     case Map.get(checkouts, caller, :not_found) do
       {:owner, _, owner} ->
         {:reply, {:ok, owner}, state}
-      {:allowed, owner} ->
+      {:allowed, _, owner} ->
         {:reply, {:ok, owner}, state}
       :not_found when mode == :manual ->
         {:reply, :not_found, state}
@@ -124,7 +124,7 @@ defmodule DBConnection.Ownership.Manager do
       {{:owner, ref, owner}, state} ->
         Owner.stop(owner)
         {:reply, :ok, owner_down(state, ref)}
-      {{:allowed, _}, _} ->
+      {{:allowed, _, _}, _} ->
         {:reply, :not_owner, state}
       {:not_found, _} ->
         {:reply, :not_found, state}
@@ -138,8 +138,8 @@ defmodule DBConnection.Ownership.Manager do
       case Map.get(checkouts, caller, :not_found) do
         {:owner, ref, owner} ->
           {:reply, :ok, owner_allow(state, allow, ref, owner)}
-        {:allowed, _} ->
-          {:reply, :not_owner, state}
+        {:allowed, ref, owner} ->
+          {:reply, :ok, owner_allow(state, allow, ref, owner)}
         :not_found ->
           {:reply, :not_found, state}
       end
@@ -166,7 +166,7 @@ defmodule DBConnection.Ownership.Manager do
   defp already_checked_out(checkouts, pid) do
     case Map.get(checkouts, pid, :not_found) do
       {:owner, _, _} -> :owner
-      {:allowed, _} -> :allowed
+      {:allowed, _, _} -> :allowed
       :not_found -> nil
     end
   end
@@ -183,7 +183,7 @@ defmodule DBConnection.Ownership.Manager do
   end
 
   defp owner_allow(%{ets: ets} = state, allow, ref, owner) do
-    state = put_in(state.checkouts[allow], {:allowed, owner})
+    state = put_in(state.checkouts[allow], {:allowed, ref, owner})
     state = update_in(state.owners[ref], fn {owner, caller, allowed} ->
       {owner, caller, [allow|List.delete(allowed, allow)]}
     end)
@@ -207,7 +207,7 @@ defmodule DBConnection.Ownership.Manager do
     case Map.get(checkouts, pid, :not_found) do
       {:owner, ref, _} ->
         {:reply, :ok, %{state | mode: {:shared, pid}, mode_ref: ref}}
-      {:allowed, _} ->
+      {:allowed, _, _} ->
         {:reply, :not_owner, state}
       :not_found ->
         {:reply, :not_found, state}
