@@ -128,7 +128,12 @@ defmodule DBConnection.Ownership do
               * By running the pool in shared mode
 
             The first two options require every new process to explicitly
-            check a connection out or be allowed.
+            check a connection out or be allowed by calling checkout or
+            allow respectively.
+            
+            The third option requires a {:shared, pid} mode to be set.
+            If using shared mode in tests, make sure your tests are not
+            async.
 
             If you are reading this error, it means you have not done one
             of the steps above or that the owner process has crashed.
