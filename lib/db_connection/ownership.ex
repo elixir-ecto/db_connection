@@ -85,7 +85,7 @@ defmodule DBConnection.Ownership do
   It may return `:ok` if the connection is checked out.
   `{:already, :owner | :allowed}` if the `allow` process already
   has a connection. `owner_or_allowed` may either be the owner or any
-  other allowed process.. Returns `:not_found` if the given process
+  other allowed process. Returns `:not_found` if the given process
   does not have any connection checked out.
   """
   @spec ownership_allow(GenServer.server, owner_or_allowed :: pid, allow :: pid, Keyword.t) ::
