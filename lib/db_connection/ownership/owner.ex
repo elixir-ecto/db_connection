@@ -74,11 +74,30 @@ defmodule DBConnection.Ownership.Owner do
   end
 
   def handle_info({:timeout, timer, __MODULE__}, %{timer: timer} = state) do
-    disconnect("client timeout", state)
+    disconnect("""
+    client timeout
+
+    The database connection is automatically disconnected when
+    the client holds to the connection for a period of time
+    longer than its specified timeout value. You may increase
+    the timeout value by passing a value in miliseconds:
+
+        timeout: 10_000
+    """, state)
   end
 
   def handle_info({:timeout, timer, __MODULE__}, %{ownership_timer: timer} = state) do
-    disconnect("ownership timeout", state)
+    disconnect("""
+    ownership timeout
+
+    When using the ownership pool, there is a maximum period
+    of time where a process is allowed to own the connection
+    and it has timed out. You can increase this timeout by
+    setting the :ownership_timeout to a value in miliseconds,
+    for example:
+
+        ownership_timeout: 30_000
+    """, state)
   end
 
   def handle_info(_msg, state) do
