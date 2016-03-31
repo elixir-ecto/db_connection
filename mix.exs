@@ -2,7 +2,7 @@ defmodule DBConnection.Mixfile do
   use Mix.Project
 
   @pools [:connection, :poolboy, :sojourn, :ownership]
-  @version "0.2.4"
+  @version "0.2.5"
 
   def project do
     [app: :db_connection,
