@@ -464,7 +464,7 @@ defmodule DBConnection do
   The pool and connection module may support other options. All options
   are passed to `handle_prepare/3`.
 
-  ## Example
+  ### Example
 
       {ok, query}   = DBConnection.prepare(pid, "SELECT id FROM table")
       {:ok, result} = DBConnection.execute(pid, query, [])
@@ -521,7 +521,7 @@ defmodule DBConnection do
     a 1-arity fun, `{module, function, args}` with `DBConnection.LogEntry.t`
     prepended to `args` or `nil`. See `DBConnection.LogEntry` (default: `nil`)
 
-   ## Example
+  ### Example
 
       {ok, query, result} = DBConnection.prepare_execute(pid, "SELECT id FROM table WHERE id=$1", [1])
       {:ok, result2}      = DBConnection.execute(pid, query, [2])
