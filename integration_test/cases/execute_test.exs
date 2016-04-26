@@ -187,8 +187,12 @@ defmodule ExecuteTest do
     assert_raise DBConnection.Error, "bad return value: :oops",
       fn() -> P.execute(pool, %Q{}, [:param]) end
 
+    prefix = "client #{inspect self()} stopped: " <>
+      "** (DBConnection.Error) bad return value: :oops"
+    len = byte_size(prefix)
     assert_receive {:EXIT, ^conn,
-      {%DBConnection.Error{message: "client stopped: " <> _}, [_|_]}}
+      {%DBConnection.Error{message: <<^prefix::binary-size(len), _::binary>>},
+        [_|_]}}
 
     assert [
       {:connect, _},
@@ -217,8 +221,11 @@ defmodule ExecuteTest do
     assert_raise RuntimeError, "oops",
       fn() -> P.execute(pool, %Q{}, [:param]) end
 
+    prefix = "client #{inspect self()} stopped: ** (RuntimeError) oops"
+    len = byte_size(prefix)
     assert_receive {:EXIT, ^conn,
-      {%DBConnection.Error{message: "client stopped: " <> _}, [_|_]}}
+      {%DBConnection.Error{message: <<^prefix::binary-size(len), _::binary>>},
+       [_|_]}}
 
     assert [
       {:connect, _},

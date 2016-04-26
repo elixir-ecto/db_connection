@@ -1,8 +1,18 @@
 defmodule DBConnection.Task do
   @moduledoc false
+  @behaviour DBConnection.Pool
 
   def start_link() do
     Task.Supervisor.start_link([name: __MODULE__])
+  end
+
+  def start_link(_, _) do
+    raise ArgumentError, "can not start the DBConnection.Task pool"
+  end
+
+  def child_spec(_, _, _) do
+    raise ArgumentError,
+      "can not create a child spec for the DBConnection.Task pool"
   end
 
   def run_child(mod, fun, state, opts) do
@@ -11,11 +21,16 @@ defmodule DBConnection.Task do
     {:ok, pid} = Task.Supervisor.start_child(__MODULE__, __MODULE__, :init, arg)
     mon = Process.monitor(pid)
     send(pid, {:go, ref, mon})
-    mon
+    {pid, mon}
   end
 
   def init(mod, fun, ref, conn, state, opts) do
-    Process.link(conn)
+    try do
+      Process.link(conn)
+    catch
+      :error, :noproc ->
+        exit({:shutdown, :noproc})
+    end
     receive do
       {:go, ^ref, mon} ->
         Process.unlink(conn)
@@ -31,7 +46,7 @@ defmodule DBConnection.Task do
 
   defdelegate checkin(info, state, opts), to: DBConnection.Connection
   defdelegate disconnect(info, err, state, opts), to: DBConnection.Connection
-  defdelegate stop(info, reason, state, opts), to: DBConnection.Connection
+  defdelegate stop(info, err, state, opts), to: DBConnection.Connection
 
   defp make(fun) when is_function(fun, 1) do
     fun

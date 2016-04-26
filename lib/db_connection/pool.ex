@@ -53,10 +53,8 @@ defmodule DBConnection.Pool do
 
   The `pool_ref` is from the return of `checkout/2`.
 
-  `reason` is any term.
-
   `state` is the lastest state of the connection.
   """
-  @callback stop(pool_ref :: any, reason :: any, state :: any, opts :: Keyword.t) ::
+  @callback stop(pool_ref :: any, err :: Exception.t, state :: any, opts :: Keyword.t) ::
     :ok
 end

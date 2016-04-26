@@ -95,7 +95,7 @@ defmodule BackoffTest do
     Process.flag(:trap_exit, true)
     {:ok, _} = P.start_link(opts)
     assert_receive {:hi, conn}
-    assert_receive {:EXIT, ^conn, {:shutdown, :disconnect}}
+    assert_receive {:EXIT, ^conn, {:shutdown, ^err}}
 
     assert [
       {:connect, [_]},

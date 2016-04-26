@@ -153,20 +153,27 @@ defmodule AfterConnectTest do
      ]
     {:ok, agent} = A.start_link(stack)
 
+    parent = self()
     after_connect = fn(conn) ->
+      send(parent, {:after_connect, self()})
       _ = Process.put(:agent, agent)
       assert_raise DBConnection.Error, "bad return value: :oops",
         fn() -> P.execute(conn, %Q{}, [:after_connect]) end
       :ok
     end
-    opts = [after_connect: after_connect, agent: agent, parent: self()]
+    opts = [after_connect: after_connect, agent: agent, parent: parent]
     Process.flag(:trap_exit, true)
     {:ok, _} = P.start_link(opts)
 
     assert_receive {:hi, conn}
 
+    assert_receive {:after_connect, after_pid}
+    prefix = "client #{inspect after_pid} stopped: " <>
+      "** (DBConnection.Error) bad return value: :oops"
+    len = byte_size(prefix)
     assert_receive {:EXIT, ^conn,
-      {%DBConnection.Error{message: "client stopped: " <> _}, [_|_]}}
+      {%DBConnection.Error{message: <<^prefix::binary-size(len), _::binary>>},
+        [_|_]}}
 
     assert [
       {:connect, _},
@@ -189,20 +196,26 @@ defmodule AfterConnectTest do
       ]
     {:ok, agent} = A.start_link(stack)
 
+    parent = self()
     after_connect = fn(conn) ->
+      send(parent, {:after_connect, self()})
       _ = Process.put(:agent, agent)
       assert_raise RuntimeError, "oops",
         fn() -> P.execute(conn, %Q{}, [:after_connect]) end
       :ok
     end
-    opts = [after_connect: after_connect, agent: agent, parent: self()]
+    opts = [after_connect: after_connect, agent: agent, parent: parent]
     Process.flag(:trap_exit, true)
     {:ok, _} = P.start_link(opts)
 
     assert_receive {:hi, conn}
 
+    assert_receive {:after_connect, after_pid}
+    prefix = "client #{inspect after_pid} stopped: ** (RuntimeError) oops"
+    len = byte_size(prefix)
     assert_receive {:EXIT, ^conn,
-      {%DBConnection.Error{message: "client stopped: " <> _}, [_|_]}}
+      {%DBConnection.Error{message: <<^prefix::binary-size(len), _::binary>>},
+       [_|_]}}
 
     assert [
       {:connect, _},

@@ -40,8 +40,12 @@ defmodule DBConnection.Sojourn do
     case ask(broker, opts) do
       {:go, ref, {pid, mod, state}, _, _} ->
         {:ok, {pid, ref}, mod, state}
-      {drop, _} when drop in [:drop, :retry] ->
-        {:error, DBConnection.Error.exception("connection not available")}
+      {:retry, _} ->
+        message = "connection not immediately available"
+        {:error, DBConnection.Error.exception(message)}
+      {:drop, _} ->
+        message = "connection not available because dropped from queue"
+        {:error, DBConnection.Error.exception(message)}
     end
   end
 
@@ -52,7 +56,7 @@ defmodule DBConnection.Sojourn do
   defdelegate disconnect(ref, err, state, opts), to: DBConnection.Connection
 
   @doc false
-  defdelegate stop(ref, reason, state, opts), to: DBConnection.Connection
+  defdelegate stop(ref, err, state, opts), to: DBConnection.Connection
 
   ## Helpers
 

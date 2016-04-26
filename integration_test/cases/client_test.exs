@@ -120,21 +120,23 @@ defmodule ClientTest do
       {:ok, %R{}, :newer_state}]
     {:ok, agent} = A.start_link(stack)
 
+    parent = self()
 
     runner = spawn_link(fn() ->
       assert_receive {:pool, pool}
       assert_receive :reconnected
       assert P.run(pool, fn(_) -> :result end) == :result
+      send(parent, :continue)
     end)
 
-    opts = [agent: agent, parent: self(), runner: runner]
+    opts = [agent: agent, parent: parent, runner: runner]
     {:ok, pool} = P.start_link(opts)
 
     send(runner, {:pool, pool})
 
     try do
       P.run(pool, fn(conn) ->
-        :timer.sleep(20)
+        assert_receive :continue
         P.execute(conn, %Q{}, [:param])
       end, [timeout: 0])
     catch

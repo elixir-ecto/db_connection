@@ -832,14 +832,13 @@ defmodule DBConnection do
     :ok
   end
 
-  defp reason(:exit, reason, _), do: reason
-  defp reason(:error, err, stack), do: {err, stack}
-  defp reason(:throw, value, stack), do: {{:nocatch, value}, stack}
-
-  defp delete_stop(conn, conn_state, reason, opts) do
+  defp delete_stop(conn, conn_state, kind, reason, stack, opts) do
     _ = delete_info(conn)
+    msg = "client #{inspect self()} stopped: " <>
+      Exception.format(kind, reason, stack)
+    exception = DBConnection.Error.exception(msg)
     %DBConnection{pool_mod: pool_mod, pool_ref: pool_ref} = conn
-    args = [pool_ref, reason, conn_state, opts]
+    args = [pool_ref, exception, conn_state, opts]
     _ = apply(pool_mod, :stop, args)
     :ok
   end
@@ -859,12 +858,18 @@ defmodule DBConnection do
         delete_disconnect(conn, conn_state, err, opts)
         {:error, err}
       other ->
-        delete_stop(conn, conn_state, {:bad_return_value, other}, opts)
-        raise DBConnection.Error, "bad return value: #{inspect other}"
+        try do
+          raise DBConnection.Error, "bad return value: #{inspect other}"
+        catch
+          :error, reason ->
+            stack = System.stacktrace()
+            delete_stop(conn, conn_state, :error, reason, stack, opts)
+            :erlang.raise(:error, reason, stack)
+        end
     catch
       kind, reason ->
         stack = System.stacktrace()
-        delete_stop(conn, conn_state, reason(kind, reason, stack), opts)
+        delete_stop(conn, conn_state, kind, reason, stack, opts)
         :erlang.raise(kind, reason, stack)
     end
   end
@@ -1016,10 +1021,16 @@ defmodule DBConnection do
     case delete_info(conn) do
       {:idle, conn_state} ->
         checkin(conn, conn_state, opts)
-     {status, conn_state} when status in [:transaction, :failed] ->
-        delete_stop(conn, conn_state, :bad_run, opts)
-        raise "connection run ended in transaction"
-     :closed ->
+      {status, conn_state} when status in [:transaction, :failed] ->
+        try do
+          raise "connection run ended in transaction"
+        catch
+          :error, reason ->
+            stack = System.stacktrace()
+            delete_stop(conn, conn_state, :error, reason, stack, opts)
+            :erlang.raise(:error, reason, stack)
+        end
+    :closed ->
         :ok
     end
   end
@@ -1147,13 +1158,19 @@ defmodule DBConnection do
       {:disconnect, err, conn_state} ->
         delete_disconnect(conn, conn_state, err, opts)
         {:raise, err}
-       other ->
-        delete_stop(conn, conn_state, {:bad_return_value, other}, opts)
-        raise DBConnection.Error, "bad return value: #{inspect other}"
+      other ->
+        try do
+          raise DBConnection.Error, "bad return value: #{inspect other}"
+        catch
+          :error, reason ->
+            stack = System.stacktrace()
+            delete_stop(conn, conn_state, :error, reason, stack, opts)
+            :erlang.raise(:error, reason, stack)
+        end
     catch
       kind, reason ->
         stack = System.stacktrace()
-        delete_stop(conn, conn_state, reason(kind, reason, stack), opts)
+        delete_stop(conn, conn_state, kind, reason, stack, opts)
         :erlang.raise(kind, reason, stack)
     end
   end

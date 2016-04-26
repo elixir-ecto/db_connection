@@ -157,7 +157,7 @@ defmodule DBConnection.Ownership do
   end
 
   @doc false
-  def stop(owner, reason, state, opts) do
-    Owner.stop(owner, reason, state, opts)
+  def stop(owner, err, state, opts) do
+    Owner.stop(owner, err, state, opts)
   end
 end
