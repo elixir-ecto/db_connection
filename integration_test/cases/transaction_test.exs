@@ -367,8 +367,9 @@ defmodule TransactionTest do
     assert_raise DBConnection.Error, "bad return value: :oops",
       fn() -> P.transaction(pool, fn(_) -> flunk("transaction ran") end) end
 
+    message = "client #{inspect self()} stopped: bad return value: :oops"
     assert_receive {:EXIT, ^conn,
-      {%DBConnection.Error{message: "client stopped: " <> _}, [_|_]}}
+      {%DBConnection.Error{message: ^message}, [_|_]}}
 
     assert [
       {:connect, _},
@@ -397,8 +398,11 @@ defmodule TransactionTest do
     assert_raise RuntimeError, "oops",
       fn() -> P.transaction(pool, fn(_) -> flunk("transaction ran") end) end
 
+    prefix = "client #{inspect self()} stopped: an exception was raised"
+    len = byte_size(prefix)
     assert_receive {:EXIT, ^conn,
-      {%DBConnection.Error{message: "client stopped: " <> _}, [_|_]}}
+      {%DBConnection.Error{message: <<^prefix::binary-size(len), _::binary>>},
+       [_|_]}}
 
     assert [
       {:connect, _},
@@ -518,8 +522,9 @@ defmodule TransactionTest do
     assert_raise DBConnection.Error, "bad return value: :oops",
       fn() -> P.transaction(pool, fn(_) -> :result end) end
 
+    message = "client #{inspect self()} stopped: bad return value: :oops"
     assert_receive {:EXIT, ^conn,
-      {%DBConnection.Error{message: "client stopped: " <> _}, [_|_]}}
+      {%DBConnection.Error{message: ^message}, [_|_]}}
 
     assert [
       {:connect, _},
@@ -550,8 +555,11 @@ defmodule TransactionTest do
     assert_raise RuntimeError, "oops",
       fn() -> P.transaction(pool, fn(_) -> :result end) end
 
+    prefix = "client #{inspect self()} stopped: an exception was raised"
+    len = byte_size(prefix)
     assert_receive {:EXIT, ^conn,
-      {%DBConnection.Error{message: "client stopped: " <> _}, [_|_]}}
+      {%DBConnection.Error{message: <<^prefix::binary-size(len), _::binary>>},
+       [_|_]}}
 
     assert [
       {:connect, _},

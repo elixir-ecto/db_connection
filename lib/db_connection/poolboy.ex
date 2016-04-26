@@ -35,7 +35,8 @@ defmodule DBConnection.Poolboy do
 
     case :poolboy.checkout(pool, queue?, pool_timeout) do
       :full ->
-        err = DBConnection.Error.exception("connection not available")
+        message = "connection not available because of queue"
+        err = DBConnection.Error.exception(message)
         {:error, err}
       worker ->
         checkout(pool, worker, opts)
@@ -55,12 +56,12 @@ defmodule DBConnection.Poolboy do
   end
 
   @doc false
-  def stop({pool, worker, worker_ref}, reason, state, opts) do
+  def stop({pool, worker, worker_ref}, client, reason, state, opts) do
     # Synchronous stop is required to prevent checking in a worker thats
     # about to exit as it can cause a client to get a worker thats about
     # to exit.
     try do
-      DBConnection.Connection.sync_stop(worker_ref, reason, state, opts)
+      DBConnection.Connection.sync_stop(worker_ref, client, reason, state, opts)
     after
       :poolboy.checkin(pool, worker)
     end

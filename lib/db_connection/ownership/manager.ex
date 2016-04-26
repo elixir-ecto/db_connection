@@ -122,7 +122,7 @@ defmodule DBConnection.Ownership.Manager do
   def handle_call(:checkin, {caller, _}, state) do
     case get_and_update_in(state.checkouts, &Map.pop(&1, caller, :not_found)) do
       {{:owner, ref, owner}, state} ->
-        Owner.stop(owner)
+        Owner.stop(owner, caller)
         {:reply, :ok, owner_down(state, ref)}
       {{:allowed, _, _}, _} ->
         {:reply, :not_owner, state}

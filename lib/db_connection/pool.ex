@@ -53,10 +53,13 @@ defmodule DBConnection.Pool do
 
   The `pool_ref` is from the return of `checkout/2`.
 
+  `client` is the client process where the connection is stopping.
+
   `reason` is any term.
 
   `state` is the lastest state of the connection.
   """
-  @callback stop(pool_ref :: any, reason :: any, state :: any, opts :: Keyword.t) ::
+  @callback stop(pool_ref :: any, client :: pid, reason :: any, state :: any,
+  opts :: Keyword.t) ::
     :ok
 end

@@ -839,7 +839,7 @@ defmodule DBConnection do
   defp delete_stop(conn, conn_state, reason, opts) do
     _ = delete_info(conn)
     %DBConnection{pool_mod: pool_mod, pool_ref: pool_ref} = conn
-    args = [pool_ref, reason, conn_state, opts]
+    args = [pool_ref, self(), reason, conn_state, opts]
     _ = apply(pool_mod, :stop, args)
     :ok
   end
