@@ -41,12 +41,12 @@ defmodule DBConnection.Ownership.Owner do
     GenServer.cast(owner, {:disconnect, ref, exception, state})
   end
 
-  def stop({owner, ref}, reason, state, _opts) do
-    GenServer.cast(owner, {:stop, ref, reason, state})
+  def stop({owner, ref}, client, reason, state, _opts) do
+    GenServer.cast(owner, {:stop, ref, client, reason, state})
   end
 
-  def stop(owner) do
-    GenServer.cast(owner, :stop)
+  def stop(owner, client) do
+    GenServer.cast(owner, {:stop, client})
   end
 
   # Callbacks
@@ -65,46 +65,35 @@ defmodule DBConnection.Ownership.Owner do
     {:ok, state}
   end
 
-  def handle_info({:DOWN, mon, _, _, _}, %{client: {_, mon}} = state) do
-    disconnect("client down", state)
+  def handle_info({:DOWN, mon, _, pid, reason}, %{client: {_, mon}} = state) do
+    message = "client #{inspect pid} exited: " <> Exception.format_exit(reason)
+    disconnect(message, state)
   end
 
-  def handle_info({:DOWN, ref, _, _, _}, %{owner_ref: ref} = state) do
-    down("owner down", state)
+  def handle_info({:DOWN, ref, _, pid, reason}, %{owner_ref: ref} = state) do
+    message = "owner #{inspect pid} exited: " <> Exception.format_exit(reason)
+    down(message, state)
   end
 
-  def handle_info({:timeout, timer, __MODULE__}, %{timer: timer} = state) do
-    disconnect("""
-    client timeout
-
-    The database connection is automatically disconnected when
-    the client holds to the connection for a period of time
-    longer than its specified timeout value. You may increase
-    the timeout value by passing a value in miliseconds:
-
-        timeout: 10_000
-    """, state)
+  def handle_info({:timeout, timer, {__MODULE__, pid, timeout}},
+  %{timer: timer} = state) do
+    message = "client #{inspect pid} timed out because " <>
+    "it checked out the connection for longer than #{timeout}ms"
+    disconnect(message, state)
   end
 
-  def handle_info({:timeout, timer, __MODULE__}, %{ownership_timer: timer} = state) do
-    disconnect("""
-    ownership timeout
-
-    When using the ownership pool, there is a maximum period
-    of time where a process is allowed to own the connection
-    and it has timed out. You can increase this timeout by
-    setting the :ownership_timeout to a value in miliseconds,
-    for example:
-
-        ownership_timeout: 30_000
-    """, state)
+  def handle_info({:timeout, timer, {__MODULE__, pid, timeout}},
+  %{ownership_timer: timer} = state) do
+    message = "owner #{inspect pid} timed out because " <>
+    "it owned the connection for longer than #{timeout}ms"
+    disconnect(message, state)
   end
 
   def handle_info(_msg, state) do
     {:noreply, state}
   end
 
-  def handle_call({:init, ownership_timeout}, from, state) do
+  def handle_call({:init, ownership_timeout}, {pid, _} = from, state) do
     %{pool: pool, pool_mod: pool_mod, pool_opts: pool_opts} = state
 
     try do
@@ -118,11 +107,11 @@ defmodule DBConnection.Ownership.Owner do
     else
       {:ok, pool_ref, conn_module, conn_state} ->
         state =  %{state | conn_state: conn_state, conn_module: conn_module,
-                           ownership_timer: start_timer(ownership_timeout),
+                           ownership_timer: start_timer(pid, ownership_timeout),
                            pool_ref: pool_ref}
         {:reply, :ok, state}
-      {:error, _} = error ->
-        {:stop, {:shutdown, "no checkout"}, error, state}
+      {:error, exception} = error ->
+        {:stop, {:shutdown, exception}, error, state}
     end
   end
 
@@ -133,7 +122,8 @@ defmodule DBConnection.Ownership.Owner do
       queue = :queue.in({client, timeout, from}, queue)
       {:noreply, next(queue, state)}
     else
-      err = DBConnection.Error.exception("connection not available")
+      message = "connection not available because of queue"
+      err = DBConnection.Error.exception(message)
       {:reply, {:error, err}, state}
     end
   end
@@ -148,14 +138,23 @@ defmodule DBConnection.Ownership.Owner do
     {:noreply, state}
   end
 
-  def handle_cast({tag, ref, error, conn_state}, %{client: {ref, _}} = state)
-  when tag in [:stop, :disconnect] do
+  def handle_cast({:disconnect, ref, error, conn_state}, %{client: {ref, _}} = state) do
     %{pool_mod: pool_mod, pool_ref: pool_ref, pool_opts: pool_opts} = state
-    apply(pool_mod, tag, [pool_ref, error, conn_state, pool_opts])
-    {:stop, {:shutdown, tag}, state}
+    apply(pool_mod, :disconnect, [pool_ref, error, conn_state, pool_opts])
+    {:stop, {:shutdown, error}, state}
   end
 
-  def handle_cast({tag, _, _, _}, state) when tag in [:disconnect, :stop] do
+  def handle_cast({:disconnect, _, _, _}, state) do
+    {:noreply, state}
+  end
+
+  def handle_cast({:stop, ref, client, error, conn_state}, %{client: {ref, _}} = state) do
+    %{pool_mod: pool_mod, pool_ref: pool_ref, pool_opts: pool_opts} = state
+    apply(pool_mod, :stop, [pool_ref, client, error, conn_state, pool_opts])
+    {:stop, {:shutdown, error}, state}
+  end
+
+  def handle_cast({:stop, _, _, _, _}, state) do
     {:noreply, state}
   end
 
@@ -178,24 +177,27 @@ defmodule DBConnection.Ownership.Owner do
     {:noreply, %{state | queue: :queue.filter(cancel, queue)}}
   end
 
-  def handle_cast(:stop, state) do
-    down("owner checkin", state)
+  def handle_cast({:stop, pid}, state) do
+    down("owner #{inspect pid} checked in the connection", state)
   end
 
   defp next(queue, %{timer: timer} = state) do
     cancel_timer(timer)
     case :queue.peek(queue) do
-      {:value, {{ref, _} = client, timeout, from}} ->
+      {:value, {{ref, _} = client, timeout, {pid, _} = from}} ->
         %{conn_module: conn_module, conn_state: conn_state} = state
         GenServer.reply(from, {:ok, {self(), ref}, conn_module, conn_state})
-        %{state | queue: queue, client: client, timer: start_timer(timeout)}
+        %{state | queue: queue, client: client,
+                  timer: start_timer(pid, timeout)}
       :empty ->
         %{state | queue: queue, client: nil, timer: nil}
     end
   end
 
-  defp start_timer(:infinity), do: nil
-  defp start_timer(timeout), do: :erlang.start_timer(timeout, self, __MODULE__)
+  defp start_timer(_, :infinity), do: nil
+  defp start_timer(pid, timeout) do
+    :erlang.start_timer(timeout, self, {__MODULE__, pid, timeout})
+  end
 
   defp cancel_timer(nil), do: :ok
   defp cancel_timer(timer) do
@@ -207,7 +209,7 @@ defmodule DBConnection.Ownership.Owner do
 
   defp flush_timer(timer) do
     receive do
-      {:timeout, ^timer, __MODULE__} ->
+      {:timeout, ^timer, {__MODULE__, _, _}} ->
         :ok
     after
       0 ->
