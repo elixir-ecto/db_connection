@@ -17,21 +17,21 @@ defmodule DBAgent do
   @spec get(DBConnection.conn, ((state :: any) -> value), timeout) ::
     value when value: var
   def get(conn, fun, timeout \\ 5_000) do
-    DBConnection.query!(conn, %Query{query: :get}, fun,
+    DBConnection.execute!(conn, %Query{query: :get}, fun,
       [pool_timeout: timeout])
   end
 
   @spec update(DBConnection.conn, ((state :: any) -> new_state :: any), timeout) ::
     :ok
   def update(conn, fun, timeout \\ 5_000) do
-    DBConnection.query!(conn, %Query{query: :update}, fun,
+    DBConnection.execute!(conn, %Query{query: :update}, fun,
       [pool_timeout: timeout])
   end
 
   @spec get(DBConnection.conn, ((state :: any) -> {value, new_state :: any}), timeout) ::
     value when value: var
   def get_and_update(conn, fun, timeout \\ 5_000) do
-    DBConnection.query!(conn, %Query{query: :get_and_update}, fun,
+    DBConnection.execute!(conn, %Query{query: :get_and_update}, fun,
       [pool_timeout: timeout])
   end
 

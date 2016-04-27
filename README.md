@@ -2,7 +2,7 @@
 
 Database connection behaviour and database connection pool designed for
 handling transaction, prepare/execute and client process
-prepare/encode/decode.
+describe/encode/decode.
 
 Four pool implementations are provided: `DBConnection.Connection`
 (default/single connection), `DBConnection.Poolboy` (poolboy pool),

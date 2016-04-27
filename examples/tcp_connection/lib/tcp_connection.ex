@@ -25,14 +25,14 @@ defmodule TCPConnection do
   end
 
   def send(conn, data) do
-    case DBConnection.query(conn, %Query{query: :send}, data) do
+    case DBConnection.execute(conn, %Query{query: :send}, data) do
       {:ok, :ok}        -> :ok
       {:error, _} = err -> err
     end
   end
 
   def recv(conn, bytes, timeout \\ 3000) do
-    DBConnection.query(conn, %Query{query: :recv}, [bytes, timeout])
+    DBConnection.execute(conn, %Query{query: :recv}, [bytes, timeout])
   end
 
   def run(conn, fun, opts \\ []) when is_function(fun, 1) do
@@ -96,7 +96,7 @@ defmodule TCPConnection do
 
   def handle_execute(%Query{query: :recv}, [bytes, timeout], _, {sock, <<>>} = state) do
     # The simplest case when there is no buffer. This callback is called
-    # in the process that called DBConnection.query/3 or query!/3 so has
+    # in the process that called DBConnection.execute/4 so has
     # to block until there is a result or error. `active: :once` can't
     # be used.
     case :gen_tcp.recv(sock, bytes, timeout) do
