@@ -122,7 +122,7 @@ defmodule DBConnection.Ownership.Owner do
       queue = :queue.in({client, timeout, from}, queue)
       {:noreply, next(queue, state)}
     else
-      message = "connection not immediately available"
+      message = "connection not available and queuing is disabled"
       err = DBConnection.Error.exception(message)
       {:reply, {:error, err}, state}
     end

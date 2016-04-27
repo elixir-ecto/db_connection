@@ -177,7 +177,7 @@ defmodule DBConnection.Connection do
         queue = :queue.in({client, timeout, from}, queue)
         {:noreply, %{s | queue: queue}}
       _ when queue? == false ->
-        message = "connection not immediately available"
+        message = "connection not available and queuing is disabled"
         err = DBConnection.Error.exception(message)
         {:reply, {:error, err}, s}
     end

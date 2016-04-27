@@ -14,7 +14,8 @@ defmodule QueueTest do
     P.run(pool, fn(_) ->
       {queue_time, _} = :timer.tc(fn() ->
         opts = [queue: false]
-        assert_raise DBConnection.Error, "connection not immediately available",
+        assert_raise DBConnection.Error,
+          "connection not available and queuing is disabled",
           fn() -> P.run(pool, fn(_) -> flunk("got connection") end, opts) end
       end)
       assert queue_time <= 1_000_000, "request was queued"
@@ -134,7 +135,7 @@ defmodule QueueTest do
 
     {queue_time, _} = :timer.tc(fn() ->
       assert_raise DBConnection.Error,
-      "connection not available because dropped from queue",
+        ~r"^connection not available and request was dropped from queue after \d+ms$",
         fn() -> P.run(pool, fn(_) -> flunk("got connection") end, opts) end
     end)
     assert queue_time <= 1_000_000, "request was queued"

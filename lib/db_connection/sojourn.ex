@@ -41,10 +41,11 @@ defmodule DBConnection.Sojourn do
       {:go, ref, {pid, mod, state}, _, _} ->
         {:ok, {pid, ref}, mod, state}
       {:retry, _} ->
-        message = "connection not immediately available"
+        message = "connection not available and queuing is disabled"
         {:error, DBConnection.Error.exception(message)}
-      {:drop, _} ->
-        message = "connection not available because dropped from queue"
+      {:drop, wait_time} ->
+        message = "connection not available " <>
+        "and request was dropped from queue after #{div(wait_time, 1000)}ms"
         {:error, DBConnection.Error.exception(message)}
     end
   end
