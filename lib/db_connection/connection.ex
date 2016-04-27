@@ -513,7 +513,8 @@ defmodule DBConnection.Connection do
     clear =
       fn({{_, mon}, _, from}) ->
           Process.demonitor(mon, [:flush])
-          err = DBConnection.Error.exception("connection not available")
+          message = "connection not available because of disconnection"
+          err = DBConnection.Error.exception(message)
           Connection.reply(from, {:error, err})
           false
       end
