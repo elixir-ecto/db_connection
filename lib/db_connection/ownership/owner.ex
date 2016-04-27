@@ -153,7 +153,7 @@ defmodule DBConnection.Ownership.Owner do
 
   def handle_cast({:cancel, ref}, %{queue: queue} = state) do
     cancel =
-      fn({{ref2, mon}, _}) ->
+      fn({{ref2, mon}, _timeout, _from}) ->
         if ref === ref2 do
           Process.demonitor(mon, [:flush])
           false
