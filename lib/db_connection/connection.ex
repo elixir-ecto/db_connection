@@ -392,7 +392,7 @@ defmodule DBConnection.Connection do
     end
   end
 
-  defp handle_checkout({ref, pid} = client, timeout, from, state, s) do
+  defp handle_checkout({ref, _} = client, timeout, {pid, _} = from, state, s) do
     %{mod: mod} = s
     case apply(mod, :checkout, [state]) do
       {:ok, state} ->
