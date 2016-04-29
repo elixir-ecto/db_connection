@@ -1,5 +1,6 @@
 ExUnit.start([capture_log: true, assert_receive_timeout: 500,
-              exclude: [:idle_timeout, :dequeue_disconnected]])
+              exclude: [:idle_timeout, :dequeue_disconnected,
+                        :queue_timeout_raise]])
 
 Code.require_file "../../test/test_support.exs", __DIR__
 
