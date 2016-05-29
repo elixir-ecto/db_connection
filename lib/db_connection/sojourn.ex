@@ -15,7 +15,8 @@ defmodule DBConnection.Sojourn do
     `5`)
     * `:shutdown` - the shutdown strategy for connections (default `5_000`)
 
-  All options are passed as the argument to the sbroker callback module.
+  All options are passed as the argument to the sbroker callback module. This
+  pool overrides `:idle` to always be `:passive`.
   """
 
   @behaviour DBConnection.Pool

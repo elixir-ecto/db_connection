@@ -324,6 +324,8 @@ defmodule DBConnection do
 
     * `:pool` - The `DBConnection.Pool` module to use, (default:
     `DBConnection.Connection`)
+    * `:idle` - The idle strategy, `:passive` to avoid checkin when idle and
+    `:active` to checkin when idle (default: `:passive`)
     * `:idle_timeout` - The idle timeout to ping the database (default:
     `15_000`)
     * `:backoff_min` - The minimum backoff interval (default: `200`)

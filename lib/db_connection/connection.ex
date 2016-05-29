@@ -91,13 +91,14 @@ defmodule DBConnection.Connection do
   def init({mod, opts, mode, info}) do
     queue         = if mode == :sojourn, do: :broker, else: :queue.new()
     broker        = if mode == :sojourn, do: info
+    idle          = if mode == :sojourn, do: :passive, else: get_idle(opts)
     after_timeout = if mode == :poolboy, do: :stop, else: :backoff
 
     s = %{mod: mod, opts: opts, state: nil, client: :closed, broker: broker,
           queue: queue, timer: nil, backoff: Backoff.new(opts),
           after_connect: Keyword.get(opts, :after_connect),
           after_connect_timeout: Keyword.get(opts, :after_connect_timeout,
-                                             @timeout),
+                                             @timeout), idle: idle,
           idle_timeout: Keyword.get(opts, :idle_timeout, @idle_timeout),
           after_timeout: after_timeout}
     if mode == :connection and Keyword.get(opts, :sync_connect, false) do
@@ -110,18 +111,18 @@ defmodule DBConnection.Connection do
   @doc false
   def connect(_, s) do
     %{mod: mod, opts: opts, backoff: backoff, after_connect: after_connect,
-      queue: queue, idle_timeout: idle_timeout} = s
+      idle: idle, idle_timeout: idle_timeout} = s
     case apply(mod, :connect, [opts]) do
       {:ok, state} when after_connect != nil ->
         ref = make_ref()
         Connection.cast(self(), {:after_connect, ref})
         {:ok, %{s | state: state, client: {ref, :connect}}}
-      {:ok, state} when queue == :broker ->
+      {:ok, state} when idle == :passive ->
         backoff = backoff && Backoff.reset(backoff)
         ref = make_ref()
         Connection.cast(self(), {:connected, ref})
         {:ok, %{s | state: state, client: {ref, :connect}, backoff: backoff}}
-      {:ok, state} ->
+      {:ok, state} when idle == :active ->
         backoff = backoff && Backoff.reset(backoff)
         {:ok, %{s | state: state, client: nil, backoff: backoff}, idle_timeout}
       {:error, err} when is_nil(backoff) ->
@@ -165,7 +166,16 @@ defmodule DBConnection.Connection do
     case s do
       %{queue: :broker} ->
         exit(:bad_checkout)
-      %{client: nil, state: state} ->
+      %{client: nil, idle: :passive, mod: mod, state: state} ->
+        Connection.reply(from, {:ok, {self(), ref}, mod, state})
+        client = {ref, Process.monitor(pid)}
+        timer = start_timer(pid, timeout)
+        {:noreply,  %{s | client: client, timer: timer}}
+      %{client: {_, :connect}, after_connect: nil, idle: :passive,
+      state: state} ->
+        mon = Process.monitor(pid)
+        handle_checkout({ref, mon}, timeout, from, state, s)
+      %{client: nil, idle: :active, state: state} ->
         mon = Process.monitor(pid)
         handle_checkout({ref, mon}, timeout, from, state, s)
       %{client: :closed} ->
@@ -254,18 +264,20 @@ defmodule DBConnection.Connection do
   end
 
   def handle_cast({:connected, ref}, %{client: {ref, :connect}} = s) do
-    %{mod: mod, state: state, broker: broker} = s
+    %{mod: mod, state: state, queue: queue, broker: broker} = s
     case apply(mod, :checkout, [state]) do
-      {:ok, state} ->
+      {:ok, state} when queue == :broker ->
         info = {self(), mod, state}
         {:await, ^ref, _} = :sbroker.async_ask_r(broker, info, ref)
         {:noreply,  %{s | client: {ref, :broker}, state: state}}
+      {:ok, state} ->
+        handle_next(state, %{s | client: nil})
       {:disconnect, err, state} ->
         {:disconnect, err, %{s | state: state}}
     end
   end
 
-  def handle_cast({:connected, _}, %{queue: :broker} = s) do
+  def handle_cast({:connected, _}, %{idle: :passive} = s) do
     {:noreply, s}
   end
 
@@ -392,6 +404,13 @@ defmodule DBConnection.Connection do
     end
   end
 
+  defp get_idle(opts) do
+    case Keyword.get(opts, :idle, :passive) do
+      :passive -> :passive
+      :active  -> :active
+    end
+  end
+
   defp handle_checkout({ref, _} = client, timeout, {pid, _} = from, state, s) do
     %{mod: mod} = s
     case apply(mod, :checkout, [state]) do
@@ -419,7 +438,7 @@ defmodule DBConnection.Connection do
     {:noreply,  %{s | state: state, client: {ref, :broker}, timer: nil}}
   end
   defp handle_next(state, s) do
-    %{client: client, timer: timer, queue: queue} = s
+    %{client: client, timer: timer, queue: queue, idle: idle} = s
     demonitor(client)
     cancel_timer(timer)
     {item, queue} = :queue.out(queue)
@@ -430,7 +449,9 @@ defmodule DBConnection.Connection do
         Connection.reply(from, {:ok, {self(), ref}, mod, state})
         timer = start_timer(pid, timeout)
         {:noreply,  %{s | client: new_client, timer: timer, state: state}}
-      :empty ->
+      :empty when idle == :passive ->
+        handle_timeout(%{s | state: state})
+      :empty when idle == :active ->
         handle_checkin(state, s)
     end
   end
