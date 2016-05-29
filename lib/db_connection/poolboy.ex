@@ -45,14 +45,14 @@ defmodule DBConnection.Poolboy do
 
   @doc false
   def checkin({pool, worker, worker_ref}, state, opts) do
-    :poolboy.checkin(pool, worker)
     DBConnection.Connection.checkin(worker_ref, state, opts)
+    :poolboy.checkin(pool, worker)
   end
 
   @doc false
   def disconnect({pool, worker, worker_ref}, err, state, opts) do
-    :poolboy.checkin(pool, worker)
     DBConnection.Connection.disconnect(worker_ref, err, state, opts)
+    :poolboy.checkin(pool, worker)
   end
 
   @doc false
