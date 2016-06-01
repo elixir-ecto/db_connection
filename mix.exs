@@ -17,6 +17,7 @@ defmodule DBConnection.Mixfile do
      test_paths: test_paths(Mix.env),
      aliases: ["test.all": ["test", "test.pools"],
                "test.pools": &test_pools/1],
+     xref: [exclude: [:sbroker, :poolboy]],
      preferred_cli_env: ["test.all": :test]]
   end
 
