@@ -1,3 +1,7 @@
+defmodule DBConnection.OwnershipError do
+  defexception [:message]
+end
+
 defmodule DBConnection.Ownership do
   @moduledoc """
   A `DBConnection.Pool` that requires explicit checkout and checking
@@ -138,7 +142,7 @@ defmodule DBConnection.Ownership do
             If you are reading this error, it means you have not done one
             of the steps above or that the owner process has crashed.
             """
-            {:error, RuntimeError.exception(msg)}
+            {:error, DBConnection.OwnershipError.exception(msg)}
           {owner, opts} ->
             ownership_allow(manager, owner, self(), opts)
             checkout(manager, [pool_timeout: :infinity] ++ opts)

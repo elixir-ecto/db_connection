@@ -243,7 +243,7 @@ defmodule ManagerTest do
    end
 
   defp refute_checked_out(pool) do
-    assert_raise RuntimeError, ~r/cannot find ownership process/, fn ->
+    assert_raise DBConnection.OwnershipError, ~r/cannot find ownership process/, fn ->
       P.run(pool, fn _ -> :ok end)
     end
   end
