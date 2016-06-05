@@ -29,7 +29,7 @@ defmodule DBConnection.Mixfile do
   defp deps do
     [{:connection, "~> 1.0.2"},
      {:poolboy, "~> 1.5", [optional: true]},
-     {:sbroker, "~> 0.7", [optional: true]},
+     {:sbroker, "> 0.0.0", [github: "fishcakez/sbroker", ref: "081d7bb", optional: true]},
      {:earmark, "~> 0.1", only: :dev},
      {:ex_doc, "~> 0.11.1", only: :dev}]
   end

@@ -90,17 +90,19 @@ defmodule DBConnection.Connection do
   @doc false
   def init({mod, opts, mode, info}) do
     queue         = if mode == :sojourn, do: :broker, else: :queue.new()
-    broker        = if mode == :sojourn, do: info
+    broker        = if mode == :sojourn, do: elem(info, 0)
+    regulator     = if mode == :sojourn, do: elem(info, 1)
     idle          = if mode == :sojourn, do: :passive, else: get_idle(opts)
     after_timeout = if mode == :poolboy, do: :stop, else: :backoff
 
     s = %{mod: mod, opts: opts, state: nil, client: :closed, broker: broker,
-          queue: queue, timer: nil, backoff: Backoff.new(opts),
+          regulator: regulator, lock: nil, queue: queue, timer: nil,
+          backoff: Backoff.new(opts),
           after_connect: Keyword.get(opts, :after_connect),
           after_connect_timeout: Keyword.get(opts, :after_connect_timeout,
                                              @timeout), idle: idle,
           idle_timeout: Keyword.get(opts, :idle_timeout, @idle_timeout),
-          after_timeout: after_timeout}
+          idle_time: 0,  after_timeout: after_timeout}
     if mode == :connection and Keyword.get(opts, :sync_connect, false) do
       connect(:init, s)
     else
@@ -109,9 +111,15 @@ defmodule DBConnection.Connection do
   end
 
   @doc false
+  def connect(_, %{regulator: regulator, lock: nil} = s)
+      when is_pid(regulator) do
+    {:await, ref, _} = :sregulator.async_ask(regulator, make_ref())
+    {:ok, %{s | client: {ref, :regulator}}}
+  end
   def connect(_, s) do
     %{mod: mod, opts: opts, backoff: backoff, after_connect: after_connect,
-      idle: idle, idle_timeout: idle_timeout} = s
+      idle: idle, idle_timeout: idle_timeout, regulator: regulator,
+      lock: lock} = s
     case apply(mod, :connect, [opts]) do
       {:ok, state} when after_connect != nil ->
         ref = make_ref()
@@ -132,24 +140,32 @@ defmodule DBConnection.Connection do
           [inspect(mod), ?\s, ?(, inspect(self()), ") failed to connect: " |
             Exception.format_banner(:error, err, [])]
         end)
+        done_lock(regulator, lock)
         {timeout, backoff} = Backoff.backoff(backoff)
-        {:backoff, timeout, %{s | backoff: backoff}}
+        {:backoff, timeout, %{s | lock: nil, backoff: backoff}}
     end
   end
 
   @doc false
   def disconnect(err, %{mod: mod} = s) do
-    Logger.error(fn() ->
-      [inspect(mod), ?\s, ?(, inspect(self()),
-        ") disconnected: " | Exception.format_banner(:error, err, [])]
-    end)
-    %{state: state, client: client, timer: timer, queue: queue,
-      backoff: backoff} = s
+    case err do
+      %DBConnection.Sojourn.Error{} ->
+        :ok
+      _ ->
+        _ = Logger.error(fn() ->
+          [inspect(mod), ?\s, ?(, inspect(self()),
+            ") disconnected: " | Exception.format_banner(:error, err, [])]
+        end)
+        :ok
+    end
+    %{state: state, client: client, timer: timer, regulator: regulator,
+      lock: lock, queue: queue, backoff: backoff} = s
     demonitor(client)
     cancel_timer(timer)
+    done_lock(regulator, lock)
     queue = clear_queue(queue)
     :ok = apply(mod, :disconnect, [err, state])
-    s = %{s | state: nil, client: :closed, timer: nil, queue: queue}
+    s = %{s | state: nil, client: :closed, timer: nil, lock: nil, queue: queue}
     case client do
       _ when backoff == :nil ->
         {:stop, {:shutdown, err}, s}
@@ -340,6 +356,10 @@ defmodule DBConnection.Connection do
     handle_broker(msg, s)
   end
 
+  def handle_info({ref, msg}, %{client: {ref, :regulator}} = s) do
+    handle_regulator(msg, s)
+  end
+
   def handle_info(msg, %{client: nil} = s) do
     do_handle_info(msg, s)
   end
@@ -380,7 +400,7 @@ defmodule DBConnection.Connection do
     Keyword.take(opts, [:debug, :name, :timeout, :spawn_opt])
   end
   defp start_opts(mode, opts) when mode in [:poolboy, :sojourn] do
-    Keyword.take(opts, [:debug, :timeout, :spawn_opt])
+    Keyword.take(opts, [:debug, :spawn_opt])
   end
 
   defp cancel(pool, ref) do
@@ -468,19 +488,54 @@ defmodule DBConnection.Connection do
   defp handle_broker({:go, ref, {pid, timeout}, _, _}, s) do
     mon = Process.monitor(pid)
     timer = start_timer(pid, timeout)
-    {:noreply, %{s | client: {ref, mon}, timer: timer}}
+    {:noreply, %{s | idle_time: 0, client: {ref, mon}, timer: timer}}
   end
 
-  defp handle_broker({:drop, _}, s) do
+  defp handle_broker({:drop, queue_time}, s) do
+    %{regulator: regulator, lock: lock} = s
+    case :sregulator.continue(regulator, lock) do
+      {:go, ^lock, _, _, continue_time} ->
+        idle_native = queue_time + continue_time
+        idle = :erlang.convert_time_unit(idle_native, :native, :milli_seconds)
+        continue(idle, s)
+      {:stop, _} ->
+        msg = "regulator #{inspect regulator} did not allow connection to continue"
+        err = DBConnection.Sojourn.Error.exception(msg)
+        {:disconnect, err, %{s | idle_time: 0, lock: nil}}
+    end
+  end
+
+  defp continue(idle, s) do
+    %{idle_time: idle_time, idle_timeout: idle_timeout} = s
+    case idle_time + idle do
+      idle_time when idle_time < idle_timeout ->
+        continue_ask(%{s | idle_time: idle_time})
+      _ ->
+        continue_ping(s)
+    end
+  end
+
+  defp continue_ask(s) do
     %{mod: mod, state: state, broker: broker, client: {ref, :broker}} = s
-    case apply(mod, :ping, [state]) do
-      {:ok, state} ->
         info = {self(), mod, state}
         {:await, ^ref, _} = :sbroker.async_ask_r(broker, info, ref)
-        {:noreply,  %{s | state: state}}
+        {:noreply, s}
+  end
+
+  defp continue_ping(%{mod: mod, state: state} = s) do
+    case apply(mod, :ping, [state]) do
+      {:ok, state} ->
+        continue_ask(%{s | idle_time: 0, state: state})
       {:disconnect, err, state} ->
-        {:disconnect, err, %{s | state: state}}
+        {:disconnect, err, %{s | idle_time: 0, state: state}}
     end
+  end
+
+  defp handle_regulator({:go, lock, _, _, _}, s) do
+    {:connect, :go, %{s | client: nil, lock: lock}}
+  end
+  defp handle_regulator({:drop, _}, s) do
+    {:stop, :drop, %{s| client: nil}}
   end
 
   defp do_handle_info(msg, %{mod: mod, state: state} = s) do
@@ -540,6 +595,12 @@ defmodule DBConnection.Connection do
           false
       end
     :queue.filter(clear, queue)
+  end
+
+  defp done_lock(_, nil), do: :ok
+  defp done_lock(regulator, lock) do
+    {:stop, _} = :sregulator.done(regulator, lock, :infinity)
+    :ok
   end
 
   defp normal_status(mod, pdict, state) do

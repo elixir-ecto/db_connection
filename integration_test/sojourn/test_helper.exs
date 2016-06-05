@@ -3,6 +3,9 @@ ExUnit.start([capture_log: :true, assert_receive_timeout: 500,
 
 Code.require_file "../../test/test_support.exs", __DIR__
 
+{:ok, _} = Application.ensure_all_started(:sbroker)
+
 defmodule TestPool do
-  use TestConnection, [pool: DBConnection.Sojourn, pool_size: 1]
+  use TestConnection, [pool: DBConnection.Sojourn, pool_size: 1,
+                       protector: false]
 end
