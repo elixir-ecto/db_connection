@@ -1,3 +1,9 @@
+defmodule DBConnection.SojournError do
+  defexception [:message]
+
+  def exception(message), do: %DBConnection.SojournError{message: message}
+end
+
 defmodule DBConnection.Sojourn do
   @moduledoc """
   A `DBConnection.Pool` using sbroker.
@@ -52,12 +58,12 @@ defmodule DBConnection.Sojourn do
         {:ok, {pid, ref}, mod, state}
       :drop ->
         message = "connection not available and queuing is disabled"
-        {:error, DBConnection.Error.exception(message)}
+        {:error, DBConnection.ConnectionError.exception(message)}
       {:drop, wait} ->
         wait = :erlang.convert_time_unit(wait, :native, :milli_seconds)
         message = "connection not available " <>
         "and request was dropped from queue after #{wait}ms"
-        {:error, DBConnection.Error.exception(message)}
+        {:error, DBConnection.ConnectionError.exception(message)}
     end
   end
 

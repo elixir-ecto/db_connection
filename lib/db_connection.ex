@@ -211,7 +211,7 @@ defmodule DBConnection do
 
   If the state is controlled by a client and it exits or takes too long
   to process a request the state will be last known state. In these
-  cases the exception will be a `DBConnection.Error.
+  cases the exception will be a `DBConnection.ConnectionError`.
 
   This callback is called in the connection process.
   """
@@ -690,7 +690,7 @@ defmodule DBConnection do
       {:idle, _, _} ->
         raise "not inside transaction"
       :closed ->
-        raise DBConnection.Error, "connection is closed"
+        raise DBConnection.ConnectionError, "connection is closed"
     end
   end
 
@@ -726,7 +726,7 @@ defmodule DBConnection do
     _ = delete_info(conn)
     msg = "client #{inspect self()} stopped: " <>
       Exception.format(kind, reason, stack)
-    exception = DBConnection.Error.exception(msg)
+    exception = DBConnection.ConnectionError.exception(msg)
     %DBConnection{pool_mod: pool_mod, pool_ref: pool_ref} = conn
     args = [pool_ref, exception, conn_state, opts]
     _ = apply(pool_mod, :stop, args)
@@ -749,7 +749,7 @@ defmodule DBConnection do
         {:error, err}
       other ->
         try do
-          raise DBConnection.Error, "bad return value: #{inspect other}"
+          raise DBConnection.ConnectionError, "bad return value: #{inspect other}"
         catch
           :error, reason ->
             stack = System.stacktrace()
@@ -1028,7 +1028,7 @@ defmodule DBConnection do
         {:raise, err}
       other ->
         try do
-          raise DBConnection.Error, "bad return value: #{inspect other}"
+          raise DBConnection.ConnectionError, "bad return value: #{inspect other}"
         catch
           :error, reason ->
             stack = System.stacktrace()
@@ -1086,9 +1086,12 @@ defmodule DBConnection do
 
   defp fetch_info(conn) do
     case get_info(conn) do
-      {:failed, _}     -> raise DBConnection.Error, "transaction rolling back"
-      {_, _} = info    -> info
-      :closed          -> raise DBConnection.Error, "connection is closed"
+      {:failed, _} ->
+        raise DBConnection.ConnectionError, "transaction rolling back"
+      {_, _} = info ->
+        info
+      :closed ->
+        raise DBConnection.ConnectionError, "connection is closed"
     end
   end
 

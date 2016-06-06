@@ -36,7 +36,7 @@ defmodule DBConnection.Poolboy do
     case :poolboy.checkout(pool, queue?, pool_timeout) do
       :full ->
         message = "connection not available and queuing is disabled"
-        err = DBConnection.Error.exception(message)
+        err = DBConnection.ConnectionError.exception(message)
         {:error, err}
       worker ->
         checkout(pool, worker, opts)

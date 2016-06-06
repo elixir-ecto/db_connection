@@ -14,7 +14,7 @@ defmodule QueueTest do
     P.run(pool, fn(_) ->
       {queue_time, _} = :timer.tc(fn() ->
         opts = [queue: false]
-        assert_raise DBConnection.Error,
+        assert_raise DBConnection.ConnectionError,
           "connection not available and queuing is disabled",
           fn() -> P.run(pool, fn(_) -> flunk("got connection") end, opts) end
       end)
@@ -60,7 +60,7 @@ defmodule QueueTest do
       try do
         P.run(pool, fn(_) -> flunk("run ran") end, [pool_timeout: 50])
       rescue
-        DBConnection.Error ->
+        DBConnection.ConnectionError ->
           :error
       catch
         :exit, {:timeout, _} ->
@@ -117,7 +117,7 @@ defmodule QueueTest do
 
     {queue_time, _} = :timer.tc(fn() ->
       opts = [queue: false]
-      assert_raise DBConnection.Error,
+      assert_raise DBConnection.ConnectionError,
       "connection not available because of disconnection",
         fn() -> P.run(pool, fn(_) -> flunk("got connection") end, opts) end
     end)
@@ -134,7 +134,7 @@ defmodule QueueTest do
 
     {queue_time, _} = :timer.tc(fn() ->
       opts = [queue: false]
-      assert_raise DBConnection.Error,
+      assert_raise DBConnection.ConnectionError,
         "connection not available and queuing is disabled",
         fn() -> P.run(pool, fn(_) -> flunk("got connection") end, opts) end
     end)
@@ -169,7 +169,7 @@ defmodule QueueTest do
     {:ok, pool} = P.start_link(opts)
 
     P.run(pool, fn(_) ->
-      assert_raise DBConnection.Error,
+      assert_raise DBConnection.ConnectionError,
         ~r"^connection not available and request was dropped from queue after \d+ms$",
         fn() -> P.run(pool, fn(_) -> flunk("got connection") end, opts) end
     end)

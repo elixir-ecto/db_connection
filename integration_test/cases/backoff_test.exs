@@ -125,7 +125,7 @@ defmodule BackoffTest do
 
     assert [
       {:connect, [_]},
-      {:disconnect, [%DBConnection.Error{}, :state]},
+      {:disconnect, [%DBConnection.ConnectionError{}, :state]},
       {:connect, [_]} | _] = A.record(agent)
   end
 end
