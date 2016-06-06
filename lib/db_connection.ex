@@ -328,8 +328,8 @@ defmodule DBConnection do
     `:active` to checkin when idle (default: `:passive`)
     * `:idle_timeout` - The idle timeout to ping the database (default:
     `15_000`)
-    * `:backoff_min` - The minimum backoff interval (default: `200`)
-    * `:backoff_max` - The maximum backoff interval (default: `15_000`)
+    * `:backoff_min` - The minimum backoff interval (default: `1_000`)
+    * `:backoff_max` - The maximum backoff interval (default: `30_000`)
     * `:backoff_type` - The backoff strategy, `:stop` for no backoff and
     to stop, `:exp` for exponential, `:rand` for random and `:rand_exp` for
     random exponential (default: `:rand_exp`)

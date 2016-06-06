@@ -4,8 +4,8 @@ defmodule DBConnection.Backoff do
   alias DBConnection.Backoff
 
   @default_type :rand_exp
-  @min          200
-  @max          15_000
+  @min          1_000
+  @max          30_000
 
   defstruct [:type, :min, :max, :state]
 
