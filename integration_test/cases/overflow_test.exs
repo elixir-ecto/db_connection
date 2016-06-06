@@ -27,7 +27,6 @@ defmodule TestOverflow do
             idle_interval: 10, idle_target: 5]
     {:ok, pool} = P.start_link(opts)
     assert_receive {:hi1, conn1}
-    refute_receive {:hi2, _}
 
     P.run(pool, fn(_) ->
       conn2 = P.run(pool, fn(_) ->

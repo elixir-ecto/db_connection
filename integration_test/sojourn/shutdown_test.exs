@@ -26,21 +26,29 @@ defmodule TestShutdown do
   end
 
   test "pool shutdowns with broker" do
-    stack = [{:ok, :state}]
+    stack = [
+      fn(opts) ->
+        send(opts[:parent], {:hi, self()})
+        {:ok, :state}
+      end]
     {:ok, agent} = A.start_link(stack)
 
     opts = [agent: agent, parent: self(), shutdown: :brutal_kill]
     {:ok, pool} = P.start_link(opts)
 
+    assert_receive {:hi, conn}
+    conn_mon = Process.monitor(conn)
+
     assert {:links, links} = Process.info(pool, :links)
     assert [watcher] = links -- [self()]
 
     assert {:status, _, _, [_, _, pool_sup, _, _]} = :sys.get_status(watcher)
-    monitor = Process.monitor(pool_sup)
+    pool_mon = Process.monitor(pool_sup)
     _ = Process.flag(:trap_exit, true)
 
     Process.exit(pool, :shutdown)
-    assert_receive {:DOWN, ^monitor, _, _, :shutdown}
+    assert_receive {:DOWN, ^pool_mon, _, _, :shutdown}
+    assert_received {:DOWN, ^conn_mon, _, _, :killed}
 
     assert [connect: [_]] = A.record(agent)
   end
