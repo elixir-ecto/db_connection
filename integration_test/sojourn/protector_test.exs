@@ -5,17 +5,12 @@ defmodule TestProtector do
   alias TestAgent, as: A
 
   test "protector drops requests" do
-    stack = [
-      fn(opts) ->
-        send(opts[:parent], {:hi1, self()})
-        {:ok, :state}
-      end]
+    stack = [{:ok, :state}]
     {:ok, agent} = A.start_link(stack)
 
     opts = [agent: agent, parent: self(), queue_timeout: 5, protector: true,
             protector_update: 1, protector_interval: 1, protector_target: 0]
     {:ok, pool} = P.start_link(opts)
-    assert_receive {:hi1, conn1}
 
     P.run(pool, fn(_) ->
         assert_raise DBConnection.Error,
