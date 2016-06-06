@@ -50,8 +50,8 @@ defmodule DBConnection.Sojourn.Broker do
     start dropping idle connections, ideally the 95-99 percentile connection and
     handshake time for a database connection (default: `100`)
     * `:idle_target` - The target idle time for a connection in milliseconds,
-    ideally 10-50% of the `:idle_interval` so the connection queue does not
-    shrink or grow too quickly (default: `div(idle_interval, 2)`)
+    ideally 5-10% of the `:idle_interval` so the connection queue does not
+    shrink or grow too quickly (default: `div(idle_interval, 20)`)
     * `:idle_min` - The minimum number of idle connections before the pool
     will ping or drop idle connections (default: `div(pool_size, 4)`)
 
@@ -121,7 +121,7 @@ defmodule DBConnection.Sojourn.Broker do
   defp conn_queue(opts) do
     out         = Keyword.get(opts, :idle_out, :out)
     interval    = Keyword.get(opts, :idle_interval, 100)
-    target      = Keyword.get(opts, :idle_target, div(interval, 2))
+    target      = Keyword.get(opts, :idle_target, div(interval, 20))
     min_default = div(Keyword.get(opts, :pool_size, 10), 4)
     min         = Keyword.get(opts, :idle_size, min_default)
 
@@ -149,7 +149,7 @@ defmodule DBConnection.Sojourn.Broker do
         max      = Keyword.get(opts, :protector_size, 128)
 
         idle_interval = Keyword.get(opts, :idle_interval, 100)
-        idle_target   = Keyword.get(opts, :idle_target, div(idle_interval, 2))
+        idle_target   = Keyword.get(opts, :idle_target, div(idle_interval, 20))
 
         [{:sprotector_pie_meter,
             {target, interval, idle_interval, idle_target, update, min, max}}]

@@ -9,8 +9,8 @@ defmodule DBConnection.Sojourn.Regulator do
     start increasing connections, ideally the 95-99 percentile the connection
     and handshake time for a database connection (default: `100`)
     * `:idle_target` - The target idle time for a connection in milliseconds,
-    ideally 10-50% of the `:idle_interval` so the connection queue does not
-    shrink or grow too quickly (default: `div(idle_interval, 2)`)
+    ideally 5-10% of the `:idle_interval` so the connection queue does not
+    shrink or grow too quickly (default: `div(idle_interval, 20)`)
 
   ### Underload alarm options
 
@@ -42,7 +42,7 @@ defmodule DBConnection.Sojourn.Regulator do
 
   defp conn_valve(opts) do
     interval = Keyword.get(opts, :idle_interval, 100)
-    target   = Keyword.get(opts, :idle_target, div(interval, 2))
+    target   = Keyword.get(opts, :idle_target, div(interval, 20))
     size     = Keyword.get(opts, :pool_size, 10)
     overflow = Keyword.get(opts, :pool_overflow, 0)
     {:sregulator_codel_valve, {target, interval, size, size+overflow}}
