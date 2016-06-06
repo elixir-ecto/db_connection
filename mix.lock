@@ -2,4 +2,4 @@
   "earmark": {:hex, :earmark, "0.1.19"},
   "ex_doc": {:hex, :ex_doc, "0.11.1"},
   "poolboy": {:hex, :poolboy, "1.5.1"},
-  "sbroker": {:git, "https://github.com/fishcakez/sbroker.git", "081d7bb021ef0c3d9bcb960904861bb5af9fb435", [ref: "081d7bb"]}}
+  "sbroker": {:git, "https://github.com/fishcakez/sbroker.git", "5a9d90b06d6b252275adab88ff19947f8db04732", [ref: "v1.0.0-beta.1"]}}
