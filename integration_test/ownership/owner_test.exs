@@ -7,7 +7,7 @@ defmodule OwnerTest do
 
   defmodule BadPool do
     def checkout(_, _) do
-      {:error, DBConnection.Error.exception("connection not available")}
+      {:error, DBConnection.ConnectionError.exception("connection not available")}
     end
   end
 
@@ -15,12 +15,12 @@ defmodule OwnerTest do
     {:ok, pool} = start_pool()
 
     assert Ownership.ownership_checkout(pool, [ownership_pool: UnknownPool]) ==
-      {:error, %DBConnection.Error{message: "failed to checkout using UnknownPool"}}
+      {:error, %DBConnection.ConnectionError{message: "failed to checkout using UnknownPool"}}
   end
 
   test "returns error on checkout" do
     {:ok, pool} = start_pool()
-    assert {:error, %DBConnection.Error{}} =
+    assert {:error, %DBConnection.ConnectionError{}} =
       Ownership.ownership_checkout(pool, [ownership_pool: BadPool])
   end
 

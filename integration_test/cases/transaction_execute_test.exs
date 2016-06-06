@@ -145,7 +145,7 @@ defmodule TransactionExecuteTest do
     assert P.transaction(pool, fn(conn) ->
       assert P.execute(conn, %Q{}, [:param]) == {:error, err}
 
-      assert_raise DBConnection.Error, "connection is closed",
+      assert_raise DBConnection.ConnectionError, "connection is closed",
         fn() -> P.execute(conn, %Q{}, [:param]) end
 
       :closed
@@ -161,7 +161,7 @@ defmodule TransactionExecuteTest do
       connect: [opts2]] = A.record(agent)
   end
 
-  test "execute bad return raises DBConnection.Error and stops connection" do
+  test "execute bad return raises DBConnection.ConnectionError and stops" do
     stack = [
       fn(opts) ->
         send(opts[:parent], {:hi, self()})
@@ -181,20 +181,20 @@ defmodule TransactionExecuteTest do
     Process.flag(:trap_exit, true)
 
     assert P.transaction(pool, fn(conn) ->
-      assert_raise DBConnection.Error, "bad return value: :oops",
+      assert_raise DBConnection.ConnectionError, "bad return value: :oops",
         fn() -> P.execute(conn, %Q{}, [:param]) end
 
-      assert_raise DBConnection.Error, "connection is closed",
+      assert_raise DBConnection.ConnectionError, "connection is closed",
         fn() -> P.execute(conn, %Q{}, [:param]) end
 
       :closed
     end) == {:error, :rollback}
 
     prefix = "client #{inspect self()} stopped: " <>
-      "** (DBConnection.Error) bad return value: :oops"
+      "** (DBConnection.ConnectionError) bad return value: :oops"
     len = byte_size(prefix)
     assert_receive {:EXIT, ^conn,
-      {%DBConnection.Error{message: <<^prefix::binary-size(len), _::binary>>},
+      {%DBConnection.ConnectionError{message: <<^prefix::binary-size(len), _::binary>>},
         [_|_]}}
 
     assert [
@@ -228,7 +228,7 @@ defmodule TransactionExecuteTest do
       assert_raise RuntimeError, "oops",
         fn() -> P.execute(conn, %Q{}, [:param]) end
 
-      assert_raise DBConnection.Error, "connection is closed",
+      assert_raise DBConnection.ConnectionError, "connection is closed",
         fn() -> P.execute(conn, %Q{}, [:param]) end
 
       :closed
@@ -238,7 +238,7 @@ defmodule TransactionExecuteTest do
     prefix = "client #{inspect self()} stopped: ** (RuntimeError) oops"
     len = byte_size(prefix)
     assert_receive {:EXIT, ^conn,
-      {%DBConnection.Error{message: <<^prefix::binary-size(len), _::binary>>},
+      {%DBConnection.ConnectionError{message: <<^prefix::binary-size(len), _::binary>>},
        [_|_]}}
 
     assert [
@@ -263,7 +263,7 @@ defmodule TransactionExecuteTest do
         P.rollback(conn2, :oops)
       end) == {:error, :oops}
 
-      assert_raise DBConnection.Error, "transaction rolling back",
+      assert_raise DBConnection.ConnectionError, "transaction rolling back",
         fn() -> P.execute(conn, %Q{}, [:param]) end
     end) == {:error, :rollback}
 
@@ -292,8 +292,8 @@ defmodule TransactionExecuteTest do
     P.transaction(pool, fn(conn) ->
       assert_received %DBConnection.LogEntry{call: :transaction,
         query: :begin}
-      assert_raise DBConnection.Error,
-      fn() -> P.execute(conn, %Q{}, [:param]) end
+      assert_raise DBConnection.ConnectionError,
+        fn() -> P.execute(conn, %Q{}, [:param]) end
     end, [log: log])
 
     refute_received %DBConnection.LogEntry{call: :transaction}

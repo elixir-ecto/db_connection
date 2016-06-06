@@ -1,5 +1,7 @@
 defmodule DBConnection.OwnershipError do
   defexception [:message]
+
+  def exception(message), do: %DBConnection.OwnershipError{message: message}
 end
 
 defmodule DBConnection.Ownership do

@@ -3,7 +3,7 @@ defmodule TestConnection do
   defmacro __using__(opts) do
     quote do
       def start_link(opts2) do
-        defaults = [backoff_type: :exp]
+        defaults = [backoff_type: :exp, backoff_min: 200]
         TestConnection.start_link(opts2 ++ unquote(opts) ++ defaults)
       end
 

@@ -116,7 +116,7 @@ defmodule AfterConnectTest do
       _ = Process.put(:agent, agent)
       case P.execute(conn, %Q{}, [:after_connect]) do
         {:error, ^err} ->
-          assert_raise DBConnection.Error, "connection is closed",
+          assert_raise DBConnection.Connection.Error, "connection is closed",
             fn() -> P.execute(conn, %Q{}, [:after_connect]) end
           :ok
         {:ok, %R{}} ->
@@ -139,7 +139,7 @@ defmodule AfterConnectTest do
       handle_execute: [%Q{}, [:client], _, :new_state2]] = A.record(agent)
   end
 
-  test "after_connect execute bad return raises DBConnection.Error and stops" do
+  test "after_connect execute bad return raises DBConnection.ConnectionError" do
     stack = [
       fn(opts) ->
         send(opts[:parent], {:hi, self()})
@@ -157,7 +157,7 @@ defmodule AfterConnectTest do
     after_connect = fn(conn) ->
       send(parent, {:after_connect, self()})
       _ = Process.put(:agent, agent)
-      assert_raise DBConnection.Error, "bad return value: :oops",
+      assert_raise DBConnection.ConnectionError, "bad return value: :oops",
         fn() -> P.execute(conn, %Q{}, [:after_connect]) end
       :ok
     end
@@ -169,10 +169,10 @@ defmodule AfterConnectTest do
 
     assert_receive {:after_connect, after_pid}
     prefix = "client #{inspect after_pid} stopped: " <>
-      "** (DBConnection.Error) bad return value: :oops"
+      "** (DBConnection.ConnectionError) bad return value: :oops"
     len = byte_size(prefix)
     assert_receive {:EXIT, ^conn,
-      {%DBConnection.Error{message: <<^prefix::binary-size(len), _::binary>>},
+      {%DBConnection.ConnectionError{message: <<^prefix::binary-size(len), _::binary>>},
         [_|_]}}
 
     assert [
@@ -214,7 +214,7 @@ defmodule AfterConnectTest do
     prefix = "client #{inspect after_pid} stopped: ** (RuntimeError) oops"
     len = byte_size(prefix)
     assert_receive {:EXIT, ^conn,
-      {%DBConnection.Error{message: <<^prefix::binary-size(len), _::binary>>},
+      {%DBConnection.ConnectionError{message: <<^prefix::binary-size(len), _::binary>>},
        [_|_]}}
 
     assert [
@@ -252,7 +252,7 @@ defmodule AfterConnectTest do
     assert [
       {:connect, _},
       {:handle_execute, [%Q{}, [:after_connect], _, :state]},
-      {:disconnect, [%DBConnection.Error{}, :state]},
+      {:disconnect, [%DBConnection.ConnectionError{}, :state]},
       {:connect, _},
       {:handle_execute, [%Q{}, [:after_connect], _, :state2]},
       {:handle_execute, [%Q{}, [:client], _, :new_state2]}|

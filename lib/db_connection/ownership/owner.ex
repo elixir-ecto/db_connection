@@ -102,7 +102,8 @@ defmodule DBConnection.Ownership.Owner do
       kind, reason ->
         stack = System.stacktrace()
         msg = "failed to checkout using " <> inspect(pool_mod)
-        GenServer.reply(from, {:error, DBConnection.Error.exception(msg)})
+        err = DBConnection.ConnectionError.exception(msg)
+        GenServer.reply(from, {:error, err})
         :erlang.raise(kind, reason, stack)
     else
       {:ok, pool_ref, conn_module, conn_state} ->
@@ -123,7 +124,7 @@ defmodule DBConnection.Ownership.Owner do
       {:noreply, next(queue, state)}
     else
       message = "connection not available and queuing is disabled"
-      err = DBConnection.Error.exception(message)
+      err = DBConnection.ConnectionError.exception(message)
       {:reply, {:error, err}, state}
     end
   end
@@ -221,7 +222,7 @@ defmodule DBConnection.Ownership.Owner do
   defp down(reason, state) do
     %{pool_mod: pool_mod, pool_ref: pool_ref,
       conn_state: conn_state, pool_opts: pool_opts} = state
-    error = DBConnection.Error.exception(reason)
+    error = DBConnection.ConnectionError.exception(reason)
     pool_mod.disconnect(pool_ref, error, conn_state, pool_opts)
     {:stop, {:shutdown, reason}, state}
   end
@@ -229,7 +230,7 @@ defmodule DBConnection.Ownership.Owner do
   defp disconnect(reason, state) do
     %{conn_state: conn_state, pool_mod: pool_mod,
       pool_opts: pool_opts, pool_ref: pool_ref} = state
-    error = DBConnection.Error.exception(reason)
+    error = DBConnection.ConnectionError.exception(reason)
     pool_mod.disconnect(pool_ref, error, conn_state, pool_opts)
     {:stop, {:shutdown, reason}, state}
   end

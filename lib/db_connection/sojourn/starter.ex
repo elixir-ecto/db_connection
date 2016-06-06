@@ -11,26 +11,22 @@ defmodule DBConnection.Sojourn.Starter do
 
   def connect(:init, {sup, broker, opts}) do
     size = Keyword.get(opts, :pool_size, 10)
-    conn_sup = conn_sup(sup)
+    overflow = Keyword.get(opts, :pool_overflow, 0)
+    regulator = DBConnection.Sojourn.Pool.lookup_regulator(sup)
+    conn_sup = DBConnection.Sojourn.Pool.lookup_conn_sup(sup)
     %{workers: conns} = Supervisor.count_children(conn_sup)
-    start_conns(size - conns, conn_sup, broker)
+    start_conns(size + overflow - conns, conn_sup, {broker, regulator})
   end
-
-  defp start_conns(n, conn_sup, broker) when n > 0 do
-    case Supervisor.start_child(conn_sup, [broker]) do
-      {:ok, _} ->
-        start_conns(n - 1, conn_sup, broker)
-      {:error, reason} ->
-        {:stop, {:failed_to_start_connection, reason}, broker}
-    end
-  end
-  defp start_conns(_, _, _), do: {:stop, :normal, nil}
 
   ## Helpers
 
-  defp conn_sup(sup) do
-    children = Supervisor.which_children(sup)
-    {Supervisor, conn_sup, _, _}  = List.keyfind(children, Supervisor, 0)
-    conn_sup
+  defp start_conns(n, conn_sup, info) when n > 0 do
+    case Supervisor.start_child(conn_sup, [info]) do
+      {:ok, _} ->
+        start_conns(n - 1, conn_sup, info)
+      {:error, reason} ->
+        {:stop, {:failed_to_start_connection, reason}, info}
+    end
   end
+  defp start_conns(_, _, _), do: {:stop, :normal, nil}
 end

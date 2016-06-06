@@ -3,8 +3,8 @@ defmodule DBConnection.BackoffTest do
 
   alias DBConnection.Backoff
 
-  @moduletag backoff_min: 200
-  @moduletag backoff_max: 15_000
+  @moduletag backoff_min: 1_000
+  @moduletag backoff_max: 30_000
 
   @tag backoff_type: :exp
   test "exponential backoffs aways in [min, max]", context do
