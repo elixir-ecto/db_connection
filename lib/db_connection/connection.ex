@@ -153,11 +153,11 @@ defmodule DBConnection.Connection do
   end
 
   @doc false
-  def disconnect(err, %{mod: mod} = s) do
-    case err do
-      %DBConnection.SojournError{} ->
+  def disconnect({log, err}, %{mod: mod} = s) do
+    case log do
+      :nolog ->
         :ok
-      _ ->
+      :log ->
         _ = Logger.error(fn() ->
           [inspect(mod), ?\s, ?(, inspect(self()),
             ") disconnected: " | Exception.format_banner(:error, err, [])]
@@ -229,7 +229,7 @@ defmodule DBConnection.Connection do
   end
 
   def handle_cast({:disconnect, ref, err, state}, %{client: {ref, _}} = s) do
-    {:disconnect, err, %{s | state: state}}
+    {:disconnect, {:log, err}, %{s | state: state}}
   end
 
   def handle_cast({:stop, ref, err, state}, %{client: {ref, _}} = s) do
@@ -277,7 +277,7 @@ defmodule DBConnection.Connection do
         s = %{s | client: {ref, :after_connect}, timer: timer, state: state}
         {:noreply, s}
       {:disconnect, err, state} ->
-        {:disconnect, err, %{s | state: state}}
+        {:disconnect, {:log, err}, %{s | state: state}}
     end
   end
 
@@ -295,7 +295,7 @@ defmodule DBConnection.Connection do
       {:ok, state} ->
         handle_next(state, %{s | client: nil})
       {:disconnect, err, state} ->
-        {:disconnect, err, %{s | state: state}}
+        {:disconnect, {:log, err}, %{s | state: state}}
     end
   end
 
@@ -307,13 +307,13 @@ defmodule DBConnection.Connection do
   def handle_info({:DOWN, ref, _, pid, reason},
   %{client: {ref, :after_connect}} = s) do
     message = "client #{inspect pid} exited: " <> Exception.format_exit(reason)
-    exception = DBConnection.ConnectionError.exception(message)
-    {:disconnect, exception, %{s | client: {nil, :after_connect}}}
+    err = DBConnection.ConnectionError.exception(message)
+    {:disconnect, {down_log(reason), err}, %{s | client: {nil, :after_connect}}}
   end
   def handle_info({:DOWN, mon, _, pid, reason}, %{client: {ref, mon}} = s) do
     message = "client #{inspect pid} exited: " <> Exception.format_exit(reason)
-    exception = DBConnection.ConnectionError.exception(message)
-    {:disconnect, exception, %{s | client: {ref, nil}}}
+    err = DBConnection.ConnectionError.exception(message)
+    {:disconnect, {down_log(reason), err}, %{s | client: {ref, nil}}}
   end
   def handle_info({:DOWN, _, :process, _, _} = msg, %{queue: :broker} = s) do
     do_handle_info(msg, s)
@@ -342,9 +342,9 @@ defmodule DBConnection.Connection do
       # other pools because because poolboy does unlimited restarts and no
       # backoff required as connection is active.
       %{after_timeout: :stop, client: {_, mon}} when is_reference(mon) ->
-        {:disconnect, exception, %{s | timer: nil, backoff: nil}}
+        {:disconnect, {:log, exception}, %{s | timer: nil, backoff: nil}}
       _ ->
-        {:disconnect, exception, %{s | timer: nil}}
+        {:disconnect, {:log, exception}, %{s | timer: nil}}
     end
   end
 
@@ -354,7 +354,7 @@ defmodule DBConnection.Connection do
       {:ok, state} ->
         handle_timeout(%{s | state: state})
       {:disconnect, err, state} ->
-        {:disconnect, err, %{s | state: state}}
+        {:disconnect, {:log, err}, %{s | state: state}}
     end
   end
 
@@ -445,7 +445,7 @@ defmodule DBConnection.Connection do
         timer = start_timer(pid, timeout)
         {:noreply,  %{s | client: client, timer: timer, state: state}}
       {:disconnect, err, state} ->
-        {:disconnect, err, %{s | state: state}}
+        {:disconnect, {:log, err}, %{s | state: state}}
     end
   end
 
@@ -487,9 +487,14 @@ defmodule DBConnection.Connection do
       {:ok, state} ->
         handle_timeout(%{s | state: state})
       {:disconnect, err, state} ->
-        {:disconnect, err, %{s | state: state}}
+        {:disconnect, {:log, err}, %{s | state: state}}
     end
   end
+
+  defp down_log(:normal), do: :nolog
+  defp down_log(:shutdown), do: :nolog
+  defp down_log({:shutdown, _}), do: :nolog
+  defp down_log(_), do: :log
 
   defp handle_broker({:go, ref, {pid, timeout}, _, _}, s) do
     mon = Process.monitor(pid)
@@ -507,7 +512,7 @@ defmodule DBConnection.Connection do
       {:stop, _} ->
         msg = "regulator #{inspect regulator} did not allow connection to continue"
         err = DBConnection.SojournError.exception(msg)
-        {:disconnect, err, %{s | idle_time: 0, lock: nil}}
+        {:disconnect, {:nolog, err}, %{s | idle_time: 0, lock: nil}}
     end
   end
 
@@ -533,7 +538,7 @@ defmodule DBConnection.Connection do
       {:ok, state} ->
         continue_ask(%{s | idle_time: 0, state: state})
       {:disconnect, err, state} ->
-        {:disconnect, err, %{s | idle_time: 0, state: state}}
+        {:disconnect, {:log, err}, %{s | idle_time: 0, state: state}}
     end
   end
 
@@ -549,7 +554,7 @@ defmodule DBConnection.Connection do
       {:ok, state} ->
         handle_timeout(%{s | state: state})
       {:disconnect, err, state} ->
-        {:disconnect, err, %{s | state: state}}
+        {:disconnect, {:log, err}, %{s | state: state}}
     end
   end
 
