@@ -7,7 +7,7 @@ defmodule DBConnection.Poolboy do
     * `:pool_size` - The number of connections (default: `10`)
     * `:pool_overflow` - The maximum number of overflow connections to
     start if all connections are checked out (default: `0`)
-    * `:queue_out` - Either `:out` for a FIFO queue or `:out_r` for a
+    * `:idle_out` - Either `:out` for a FIFO queue or `:out_r` for a
     LIFO queue (default: `:out`)
   """
 
@@ -78,7 +78,7 @@ defmodule DBConnection.Poolboy do
   end
 
   defp strategy(opts) do
-    case Keyword.get(opts, :queue_out, :out) do
+    case Keyword.get(opts, :idle_out, :out) do
       :out   -> :fifo
       :out_r -> :lifo
     end
