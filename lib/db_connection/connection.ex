@@ -20,7 +20,7 @@ defmodule DBConnection.Connection do
 
   @pool_timeout  5_000
   @timeout       15_000
-  @idle_timeout  15_000
+  @idle_timeout  1_000
 
   ## DBConnection.Pool API
 
@@ -119,7 +119,7 @@ defmodule DBConnection.Connection do
   @doc false
   def connect(_, %{regulator: regulator, lock: nil} = s)
       when is_pid(regulator) do
-    {:await, ref, _} = :sregulator.async_ask(regulator, make_ref())
+    {:await, ref, _} = :sregulator.async_ask(regulator, {self(), make_ref()})
     {:ok, %{s | client: {ref, :regulator}}}
   end
   def connect(_, s) do
@@ -290,7 +290,7 @@ defmodule DBConnection.Connection do
     case apply(mod, :checkout, [state]) do
       {:ok, state} when queue == :broker ->
         info = {self(), mod, state}
-        {:await, ^ref, _} = :sbroker.async_ask_r(broker, info, ref)
+        {:await, ^ref, _} = :sbroker.async_ask_r(broker, info, {self(), ref})
         {:noreply,  %{s | client: {ref, :broker}, state: state}}
       {:ok, state} ->
         handle_next(state, %{s | client: nil})
@@ -460,7 +460,7 @@ defmodule DBConnection.Connection do
     demonitor(client)
     cancel_timer(timer)
     info = {self(), mod, state}
-    {:await, ref, _} = :sbroker.async_ask_r(broker, info, make_ref())
+    {:await, ref, _} = :sbroker.async_ask_r(broker, info, {self(), make_ref()})
     {:noreply,  %{s | state: state, client: {ref, :broker}, timer: nil}}
   end
   defp handle_next(state, s) do
@@ -529,7 +529,7 @@ defmodule DBConnection.Connection do
   defp continue_ask(s) do
     %{mod: mod, state: state, broker: broker, client: {ref, :broker}} = s
         info = {self(), mod, state}
-        {:await, ^ref, _} = :sbroker.async_ask_r(broker, info, ref)
+        {:await, ^ref, _} = :sbroker.async_ask_r(broker, info, {self(), ref})
         {:noreply, s}
   end
 

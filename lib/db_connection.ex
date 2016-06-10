@@ -327,7 +327,7 @@ defmodule DBConnection do
     * `:idle` - The idle strategy, `:passive` to avoid checkin when idle and
     `:active` to checkin when idle (default: `:passive`)
     * `:idle_timeout` - The idle timeout to ping the database (default:
-    `15_000`)
+    `1_000`)
     * `:backoff_min` - The minimum backoff interval (default: `1_000`)
     * `:backoff_max` - The maximum backoff interval (default: `30_000`)
     * `:backoff_type` - The backoff strategy, `:stop` for no backoff and

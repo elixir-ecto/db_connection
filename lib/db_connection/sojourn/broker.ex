@@ -45,13 +45,7 @@ defmodule DBConnection.Sojourn.Broker do
   ### Idle connection options
 
     * `:idle_out` - Either `:out` for a FIFO queue or `:out_r` for a LIFO queue
-    (default: `:out`)
-    * `:idle_interval` - The time interval in milliseconds before the pool will
-    start dropping idle connections, ideally the 95-99 percentile connection and
-    handshake time for a database connection (default: `100`)
-    * `:idle_target` - The target idle time for a connection in milliseconds,
-    ideally 5-10% of the `:idle_interval` so the connection queue does not
-    shrink or grow too quickly (default: `div(idle_interval, 20)`)
+    (default: if `pool_overflow == 0` `:out`, otherwise `:out_r`)
     * `:idle_min` - The minimum number of idle connections before the pool
     will ping or drop idle connections (default: `div(pool_size, 4)`)
 
@@ -119,13 +113,14 @@ defmodule DBConnection.Sojourn.Broker do
   end
 
   defp conn_queue(opts) do
-    out         = Keyword.get(opts, :idle_out, :out)
-    interval    = Keyword.get(opts, :idle_interval, 100)
-    target      = Keyword.get(opts, :idle_target, div(interval, 20))
-    min_default = div(Keyword.get(opts, :pool_size, 10), 4)
-    min         = Keyword.get(opts, :idle_size, min_default)
+    pool_overflow = Keyword.get(opts, :pool_overflow, 0)
+    out_default   = if pool_overflow === 0, do: :out, else: :out_r
+    out           = Keyword.get(opts, :idle_out, out_default)
+    timeout       = Keyword.get(opts, :idle_timeout, 1_000)
+    min_default   = div(Keyword.get(opts, :pool_size, 10), 4)
+    min           = Keyword.get(opts, :idle_size, min_default)
 
-    {:sbroker_codel_queue, {out, interval, target, :drop, min, :infinity}}
+    {:sbroker_timeout_queue, {out, timeout, :drop, min, :infinity}}
   end
 
   defp meters(opts) do
