@@ -24,7 +24,7 @@ defmodule TestOverflow do
     {:ok, agent} = A.start_link(stack)
 
     opts = [agent: agent, pool_overflow: 1, regulator_update: 10,
-            idle_interval: 10, idle_target: 5, idle_timeout: 10, idle_min: 1]
+            idle_interval: 10, idle_target: 5, idle_timeout: 100, idle_min: 1]
     {:ok, pool} = P.start_link(opts)
     assert_receive {:hi1, conn1}
 
