@@ -65,13 +65,21 @@ defmodule DBConnection.Ownership.Owner do
     {:ok, state}
   end
 
-  def handle_info({:DOWN, mon, _, pid, reason}, %{client: {_, mon}} = state) do
-    message = "client #{inspect pid} exited: " <> Exception.format_exit(reason)
+  def handle_info({:DOWN, mon, _, pid, reason},
+                  %{client: {_, _, mon}} = state) do
+    message = "client #{inspect pid} exited with: " <> Exception.format_exit(reason)
     disconnect(message, state)
   end
 
-  def handle_info({:DOWN, ref, _, pid, reason}, %{owner_ref: ref} = state) do
-    message = "owner #{inspect pid} exited: " <> Exception.format_exit(reason)
+  def handle_info({:DOWN, ref, _, pid, reason},
+                  %{owner_ref: ref, client: nil} = state) do
+    message = "owner #{inspect pid} exited with: " <> Exception.format_exit(reason)
+    down(message, state)
+  end
+
+  def handle_info({:DOWN, ref, _, pid, reason},
+                  %{owner_ref: ref, client: {client, _, _}} = state) do
+    message = "owner #{inspect pid} exited while client #{inspect client} is still running with: " <> Exception.format_exit(reason)
     down(message, state)
   end
 
@@ -129,7 +137,7 @@ defmodule DBConnection.Ownership.Owner do
     end
   end
 
-  def handle_cast({:checkin, ref, conn_state}, %{client: {ref, mon}} = state) do
+  def handle_cast({:checkin, ref, conn_state}, %{client: {_, ref, mon}} = state) do
     %{queue: queue} = state
     Process.demonitor(mon, [:flush])
     {:noreply, next(:queue.drop(queue), %{state | conn_state: conn_state})}
@@ -139,14 +147,14 @@ defmodule DBConnection.Ownership.Owner do
     {:noreply, state}
   end
 
-  def handle_cast({tag, ref, error, conn_state}, %{client: {ref, _}} = state)
+  def handle_cast({tag, ref, error, conn_state}, %{client: {_, ref, _}} = state)
   when tag in [:stop, :disconnect] do
     %{pool_mod: pool_mod, pool_ref: pool_ref, pool_opts: pool_opts} = state
     apply(pool_mod, tag, [pool_ref, error, conn_state, pool_opts])
     {:stop, {:shutdown, error}, state}
   end
 
-  def handle_cast({:cancel, ref}, %{client: {ref, mon}} = state) do
+  def handle_cast({:cancel, ref}, %{client: {_, ref, mon}} = state) do
     %{queue: queue} = state
     Process.demonitor(mon, [:flush])
     {:noreply, next(:queue.drop(queue), state)}
@@ -172,10 +180,10 @@ defmodule DBConnection.Ownership.Owner do
   defp next(queue, %{timer: timer} = state) do
     cancel_timer(timer)
     case :queue.peek(queue) do
-      {:value, {{ref, _} = client, timeout, {pid, _} = from}} ->
+      {:value, {{ref, mon}, timeout, {pid, _} = from}} ->
         %{conn_module: conn_module, conn_state: conn_state} = state
         GenServer.reply(from, {:ok, {self(), ref}, conn_module, conn_state})
-        %{state | queue: queue, client: client,
+        %{state | queue: queue, client: {pid, ref, mon},
                   timer: start_timer(pid, timeout)}
       :empty ->
         %{state | queue: queue, client: nil, timer: nil}
