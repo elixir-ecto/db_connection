@@ -6,7 +6,7 @@ defmodule DBConnection.Ownership.Pool do
   def start_link(owner, mod, opts) do
     children = [watcher(owner),
                 DBConnection.child_spec(mod, opts, [id: :pool]),
-                supervisor(DBConnection.Ownership.OwnerSupervisor, [],
+                supervisor(DBConnection.Ownership.ProxySupervisor, [],
                   [id: :owner_sup])]
     sup_opts = [strategy: :rest_for_one, max_restarts: 0]
     Supervisor.start_link(children, sup_opts)
