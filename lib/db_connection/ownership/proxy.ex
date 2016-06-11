@@ -1,4 +1,4 @@
-defmodule DBConnection.Ownership.Owner do
+defmodule DBConnection.Ownership.Proxy do
   @moduledoc false
 
   use GenServer
@@ -10,22 +10,22 @@ defmodule DBConnection.Ownership.Owner do
     GenServer.start_link(__MODULE__, {manager, caller, pool, pool_opts}, [])
   end
 
-  def init(owner, opts) do
+  def init(proxy, opts) do
     ownership_timeout = opts[:ownership_timeout] || @ownership_timeout
-    case GenServer.call(owner, {:init, ownership_timeout}, :infinity) do
+    case GenServer.call(proxy, {:init, ownership_timeout}, :infinity) do
       :ok                 -> :ok
       {:error, _} = error -> error
    end
   end
 
-  def checkout(pool, opts) do
+  def checkout(proxy, opts) do
     pool_timeout = opts[:pool_timeout] || @pool_timeout
     queue?       = Keyword.get(opts, :queue, true)
     timeout      = opts[:timeout] || @timeout
 
     ref = make_ref()
     try do
-      GenServer.call(pool, {:checkout, ref, queue?, timeout}, pool_timeout)
+      GenServer.call(proxy, {:checkout, ref, queue?, timeout}, pool_timeout)
     catch
       :exit, {_, {_, :call, [pool | _]}} = reason ->
         GenServer.cast(pool, {:cancel, ref})
@@ -33,20 +33,20 @@ defmodule DBConnection.Ownership.Owner do
     end
   end
 
-  def checkin({owner, ref}, state, _opts) do
-    GenServer.cast(owner, {:checkin, ref, state})
+  def checkin({proxy, ref}, state, _opts) do
+    GenServer.cast(proxy, {:checkin, ref, state})
   end
 
-  def disconnect({owner, ref}, exception, state, _opts) do
-    GenServer.cast(owner, {:disconnect, ref, exception, state})
+  def disconnect({proxy, ref}, exception, state, _opts) do
+    GenServer.cast(proxy, {:disconnect, ref, exception, state})
   end
 
-  def stop({owner, ref}, exception, state, _opts) do
-    GenServer.cast(owner, {:stop, ref, exception, state})
+  def stop({proxy, ref}, exception, state, _opts) do
+    GenServer.cast(proxy, {:stop, ref, exception, state})
   end
 
-  def stop(owner, caller) do
-    GenServer.cast(owner, {:stop, caller})
+  def stop(proxy, caller) do
+    GenServer.cast(proxy, {:stop, caller})
   end
 
   # Callbacks

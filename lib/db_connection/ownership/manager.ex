@@ -3,8 +3,8 @@ defmodule DBConnection.Ownership.Manager do
   use GenServer
 
   alias DBConnection.Ownership.PoolSupervisor
-  alias DBConnection.Ownership.OwnerSupervisor
-  alias DBConnection.Ownership.Owner
+  alias DBConnection.Ownership.ProxySupervisor
+  alias DBConnection.Ownership.Proxy
 
   @timeout 5_000
 
@@ -51,7 +51,7 @@ defmodule DBConnection.Ownership.Manager do
   def lookup(manager, opts) when is_atom(manager) do
     client = self()
     case :ets.lookup(manager, client) do
-      [{^client, owner}] -> {:ok, owner}
+      [{^client, proxy}] -> {:ok, proxy}
       [] -> server_lookup(manager, opts)
     end
   end
@@ -103,26 +103,26 @@ defmodule DBConnection.Ownership.Manager do
   def handle_call({:lookup, opts}, {caller, _},
                   %{checkouts: checkouts, mode: mode} = state) do
     case Map.get(checkouts, caller, :not_found) do
-      {:owner, _, owner} ->
-        {:reply, {:ok, owner}, state}
-      {:allowed, _, owner} ->
-        {:reply, {:ok, owner}, state}
+      {:owner, _, proxy} ->
+        {:reply, {:ok, proxy}, state}
+      {:allowed, _, proxy} ->
+        {:reply, {:ok, proxy}, state}
       :not_found when mode == :manual ->
         {:reply, :not_found, state}
       :not_found when mode == :auto ->
-        {owner, state} = checkout(state, caller, opts)
-        {:reply, {:init, owner}, state}
+        {proxy, state} = checkout(state, caller, opts)
+        {:reply, {:init, proxy}, state}
       :not_found ->
         {:shared, shared} = mode
-        {:owner, ref, owner} = Map.fetch!(checkouts, shared)
-        {:reply, {:ok, owner}, owner_allow(state, caller, ref, owner)}
+        {:owner, ref, proxy} = Map.fetch!(checkouts, shared)
+        {:reply, {:ok, proxy}, owner_allow(state, caller, ref, proxy)}
     end
   end
 
   def handle_call(:checkin, {caller, _}, state) do
     case get_and_update_in(state.checkouts, &Map.pop(&1, caller, :not_found)) do
-      {{:owner, ref, owner}, state} ->
-        Owner.stop(owner, caller)
+      {{:owner, ref, proxy}, state} ->
+        Proxy.stop(proxy, caller)
         {:reply, :ok, owner_down(state, ref)}
       {{:allowed, _, _}, _} ->
         {:reply, :not_owner, state}
@@ -136,10 +136,10 @@ defmodule DBConnection.Ownership.Manager do
       {:reply, {:already, kind}, state}
     else
       case Map.get(checkouts, caller, :not_found) do
-        {:owner, ref, owner} ->
-          {:reply, :ok, owner_allow(state, allow, ref, owner)}
-        {:allowed, ref, owner} ->
-          {:reply, :ok, owner_allow(state, allow, ref, owner)}
+        {:owner, ref, proxy} ->
+          {:reply, :ok, owner_allow(state, allow, ref, proxy)}
+        {:allowed, ref, proxy} ->
+          {:reply, :ok, owner_allow(state, allow, ref, proxy)}
         :not_found ->
           {:reply, :not_found, state}
       end
@@ -150,8 +150,8 @@ defmodule DBConnection.Ownership.Manager do
     if kind = already_checked_out(checkouts, caller) do
       {:reply, {:already, kind}, state}
     else
-      {owner, state} = checkout(state, caller, opts)
-      {:reply, {:init, owner}, state}
+      {proxy, state} = checkout(state, caller, opts)
+      {:reply, {:init, proxy}, state}
     end
   end
 
@@ -174,26 +174,26 @@ defmodule DBConnection.Ownership.Manager do
   defp checkout(state, caller, opts) do
     %{pool: pool, owner_sup: owner_sup, checkouts: checkouts, owners: owners,
       ets: ets} = state
-    {:ok, owner} = OwnerSupervisor.start_owner(owner_sup, caller, pool, opts)
-    ref = Process.monitor(owner)
-    checkouts = Map.put(checkouts, caller, {:owner, ref, owner})
-    owners = Map.put(owners, ref, {owner, caller, []})
-    ets && :ets.insert(ets, {caller, owner})
-    {owner, %{state | checkouts: checkouts, owners: owners}}
+    {:ok, proxy} = ProxySupervisor.start_owner(owner_sup, caller, pool, opts)
+    ref = Process.monitor(proxy)
+    checkouts = Map.put(checkouts, caller, {:owner, ref, proxy})
+    owners = Map.put(owners, ref, {proxy, caller, []})
+    ets && :ets.insert(ets, {caller, proxy})
+    {proxy, %{state | checkouts: checkouts, owners: owners}}
   end
 
-  defp owner_allow(%{ets: ets} = state, allow, ref, owner) do
-    state = put_in(state.checkouts[allow], {:allowed, ref, owner})
-    state = update_in(state.owners[ref], fn {owner, caller, allowed} ->
-      {owner, caller, [allow|List.delete(allowed, allow)]}
+  defp owner_allow(%{ets: ets} = state, allow, ref, proxy) do
+    state = put_in(state.checkouts[allow], {:allowed, ref, proxy})
+    state = update_in(state.owners[ref], fn {proxy, caller, allowed} ->
+      {proxy, caller, [allow|List.delete(allowed, allow)]}
     end)
-    ets && :ets.insert(ets, {allow, owner})
+    ets && :ets.insert(ets, {allow, proxy})
     state
   end
 
   defp owner_down(%{ets: ets} = state, ref) do
     case get_and_update_in(state.owners, &Map.pop(&1, ref)) do
-      {{_owner, caller, allowed}, state} ->
+      {{_proxy, caller, allowed}, state} ->
         Process.demonitor(ref, [:flush])
         entries = [caller|allowed]
         ets && Enum.each(entries, &:ets.delete(ets, &1))

@@ -38,7 +38,7 @@ defmodule DBConnection.Ownership do
   @behaviour DBConnection.Pool
 
   alias DBConnection.Ownership.Manager
-  alias DBConnection.Ownership.Owner
+  alias DBConnection.Ownership.Proxy
 
   ## Ownership API
 
@@ -54,7 +54,7 @@ defmodule DBConnection.Ownership do
     :ok | {:already, :owner | :allowed} | :error | no_return
   def ownership_checkout(manager, opts) do
      case Manager.checkout(manager, opts) do
-      {:init, owner} -> Owner.init(owner, opts)
+      {:init, proxy} -> Proxy.init(proxy, opts)
       {:already, _} = already -> already
     end
   end
@@ -113,13 +113,13 @@ defmodule DBConnection.Ownership do
   @doc false
   def checkout(manager, opts) do
     case Manager.lookup(manager, opts) do
-      {:init, owner} ->
-        case Owner.init(owner, opts) do
-          :ok                 -> Owner.checkout(owner, opts)
+      {:init, proxy} ->
+        case Proxy.init(proxy, opts) do
+          :ok                 -> Proxy.checkout(proxy, opts)
           {:error, _} = error -> error
         end
-      {:ok, owner} ->
-        Owner.checkout(owner, opts)
+      {:ok, proxy} ->
+        Proxy.checkout(proxy, opts)
       :not_found ->
         case Keyword.pop(opts, :caller) do
           {nil, _} ->
@@ -153,17 +153,17 @@ defmodule DBConnection.Ownership do
   end
 
   @doc false
-  def checkin(owner, state, opts) do
-    Owner.checkin(owner, state, opts)
+  def checkin(proxy, state, opts) do
+    Proxy.checkin(proxy, state, opts)
   end
 
   @doc false
-  def disconnect(owner, exception, state, opts) do
-    Owner.disconnect(owner, exception, state, opts)
+  def disconnect(proxy, exception, state, opts) do
+    Proxy.disconnect(proxy, exception, state, opts)
   end
 
   @doc false
-  def stop(owner, err, state, opts) do
-    Owner.stop(owner, err, state, opts)
+  def stop(proxy, err, state, opts) do
+    Proxy.stop(proxy, err, state, opts)
   end
 end
