@@ -420,7 +420,7 @@ defmodule DBConnection do
   preprared query and the result, `{:ok, query, result}` on success or
   `{:error, exception}` if there was an error.
 
-  The returned `query` can be passed to `execute/4 and `close/3`.
+  The returned `query` can be passed to `execute/4` and `close/3`.
 
   ### Options
 
@@ -442,7 +442,7 @@ defmodule DBConnection do
       :ok                 = DBConnection.close(pid, query)
    """
   @spec prepare_execute(conn, query, params, Keyword.t) ::
-    {:ok, {query, result}} |
+    {:ok, query, result} |
     {:error, Exception.t}
   def prepare_execute(conn, query, params, opts \\ []) do
     query = DBConnection.Query.parse(query, opts)
