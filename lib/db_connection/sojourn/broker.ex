@@ -67,6 +67,25 @@ defmodule DBConnection.Sojourn.Broker do
 
   @doc false
   def init({broker, mod, opts}) do
+    apps = :application.which_applications()
+    unless IO.inspect List.keyfind(apps, :sbroker, 0) do
+      msg = """
+      The `:sbroker` application must be started to use #{inspect __MODULE__}.
+
+      Add `:sbroker` to the applications list in the project's `mix.exs` file.
+
+      Starting `:sbroker` will also start the `:sasl` application. By default
+      `:sasl` will generate many erlang reports, these can be disabled in the
+      project's `config/config.exs` file or another config file with:
+
+          config: :sasl, :sasl_error_logger: false
+
+      Alternatively the `:logger` application can handle these reports with:
+
+          config: :logger, handle_sasl_reports: true
+      """
+      raise RuntimeError, msg
+    end
     opts = Keyword.put(opts, :broker_pid, self())
     pool = ensure_pool(mod, opts)
     reg = lookup_regulator(pool)
