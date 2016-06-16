@@ -35,7 +35,7 @@ defmodule DBConnection.Mixfile do
   end
 
   defp docs do
-    [source_url: "https://github.com/fishcakez/db_connection",
+    [source_url: "https://github.com/elixir-ecto/db_connection",
      source_ref: "v#{@version}",
      main: DBConnection]
   end
@@ -49,7 +49,7 @@ defmodule DBConnection.Mixfile do
   defp package do
     %{licenses: ["Apache 2.0"],
       maintainers: ["James Fish"],
-      links: %{"Github" => "https://github.com/fishcakez/db_connection"}}
+      links: %{"Github" => "https://github.com/elixir-ecto/db_connection"}}
   end
 
   defp test_paths(pool) when pool in @pools, do: ["integration_test/#{pool}"]
