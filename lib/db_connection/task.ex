@@ -2,6 +2,10 @@ defmodule DBConnection.Task do
   @moduledoc false
   @behaviour DBConnection.Pool
 
+  def ensure_all_started(_opts, _type) do
+    {:ok, []}
+  end
+
   def start_link() do
     Task.Supervisor.start_link([name: __MODULE__])
   end

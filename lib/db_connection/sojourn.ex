@@ -42,6 +42,11 @@ defmodule DBConnection.Sojourn do
   import Supervisor.Spec
 
   @doc false
+  def ensure_all_started(_opts, type) do
+    Application.ensure_all_started(:sbroker, type)
+  end
+
+  @doc false
   def start_link(mod, opts) do
     apply(:sbroker, :start_link, broker_args(mod, opts))
   end
