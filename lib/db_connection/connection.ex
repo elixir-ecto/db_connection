@@ -25,6 +25,11 @@ defmodule DBConnection.Connection do
   ## DBConnection.Pool API
 
   @doc false
+  def ensure_all_started(_opts, _type) do
+    {:ok, []}
+  end
+
+  @doc false
   def start_link(mod, opts) do
     start_link(mod, opts, :connection)
   end

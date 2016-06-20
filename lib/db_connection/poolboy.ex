@@ -16,6 +16,11 @@ defmodule DBConnection.Poolboy do
   @pool_timeout 5000
 
   @doc false
+  def ensure_all_started(_opts, type) do
+    Application.ensure_all_started(:poolboy, type)
+  end
+
+  @doc false
   def start_link(mod, opts) do
     {pool_opts, worker_opts} = pool_args(mod, opts)
     :poolboy.start_link(pool_opts, worker_opts)

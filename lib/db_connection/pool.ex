@@ -5,6 +5,12 @@ defmodule DBConnection.Pool do
   """
 
   @doc """
+  Ensure all applications necessary to run the pool are started.
+  """
+  @callback ensure_all_started(opts :: Keyword.t, type :: :application.restart_type) ::
+    {:ok, [atom]} | {:error, atom}
+
+  @doc """
   Start and link to a pool of `module` connections with options `opts`.
   """
   @callback start_link(module, opts :: Keyword.t) ::

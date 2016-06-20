@@ -101,6 +101,11 @@ defmodule DBConnection.Ownership do
   ## Pool callbacks
 
   @doc false
+  def ensure_all_started(opts, type) do
+    Keyword.get(opts, :ownership_pool, DBConnection.Poolboy).ensure_all_started(opts, type)
+  end
+
+  @doc false
   def start_link(module, opts) do
     Manager.start_link(module, opts)
   end

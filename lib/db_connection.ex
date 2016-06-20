@@ -318,6 +318,21 @@ defmodule DBConnection do
   end
 
   @doc """
+  Ensures the given pool applications have been started.
+
+  ### Options
+
+    * `:pool` - The `DBConnection.Pool` module to use, (default:
+    `DBConnection.Connection`)
+
+  """
+  @spec ensure_all_started(opts :: Keyword.t, type :: atom) ::
+    {:ok, [atom]} | {:error, atom}
+  def ensure_all_started(opts, type \\ :temporary) do
+    Keyword.get(opts, :pool, DBConnection.Connection).ensure_all_started(opts, type)
+  end
+
+  @doc """
   Start and link to a database connection process.
 
   ### Options
