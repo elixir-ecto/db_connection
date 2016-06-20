@@ -56,7 +56,7 @@ defmodule DBConnectionTest do
     opts = [agent: agent]
     {:ok, conn} = C.start_link(opts)
 
-    {:links, links} = Process.info(self, :links)
+    {:links, links} = Process.info(self(), :links)
     assert conn in links
 
     _ = :sys.get_state(conn)

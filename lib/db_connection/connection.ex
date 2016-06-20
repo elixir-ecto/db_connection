@@ -574,7 +574,7 @@ defmodule DBConnection.Connection do
 
   defp start_timer(_, :infinity), do: nil
   defp start_timer(pid, timeout) do
-    :erlang.start_timer(timeout, self, {__MODULE__, pid, timeout})
+    :erlang.start_timer(timeout, self(), {__MODULE__, pid, timeout})
   end
 
   defp cancel_timer(nil), do: :ok
