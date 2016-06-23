@@ -124,12 +124,19 @@ defmodule DBConnection.Ownership.Proxy do
     end
   end
 
-  def handle_call({:checkout, ref, queue?, timeout}, from, %{queue: queue} = state) do
-    if queue? or :queue.is_empty(queue) do
+  def handle_call({:checkout, ref, _, timeout}, from, %{client: nil} = state) do
+    {pid, _} = from
+    client = {ref, Process.monitor(pid)}
+    handle_checkout(client, timeout, from, state)
+  end
+
+  def handle_call({:checkout, ref, queue?, timeout}, from, state) do
+    if queue? do
+      %{queue: queue} = state
       {pid, _} = from
       client = {ref, Process.monitor(pid)}
       queue = :queue.in({client, timeout, from}, queue)
-      {:noreply, next(queue, state)}
+      {:noreply, %{state | queue: queue}}
     else
       message = "connection not available and queuing is disabled"
       err = DBConnection.ConnectionError.exception(message)
@@ -137,10 +144,8 @@ defmodule DBConnection.Ownership.Proxy do
     end
   end
 
-  def handle_cast({:checkin, ref, conn_state}, %{client: {_, ref, mon}} = state) do
-    %{queue: queue} = state
-    Process.demonitor(mon, [:flush])
-    {:noreply, next(:queue.drop(queue), %{state | conn_state: conn_state})}
+  def handle_cast({:checkin, ref, conn_state}, %{client: {_, ref, _}} = state) do
+    handle_checkin(conn_state, state)
   end
 
   def handle_cast({:checkin, _, _}, state) do
@@ -154,10 +159,9 @@ defmodule DBConnection.Ownership.Proxy do
     {:stop, {:shutdown, error}, state}
   end
 
-  def handle_cast({:cancel, ref}, %{client: {_, ref, mon}} = state) do
-    %{queue: queue} = state
-    Process.demonitor(mon, [:flush])
-    {:noreply, next(:queue.drop(queue), state)}
+  def handle_cast({:cancel, ref}, %{client: {_, ref, _}} = state) do
+    %{conn_state: conn_state} = state
+    handle_checkin(conn_state, state)
   end
 
   def handle_cast({:cancel, ref}, %{queue: queue} = state) do
@@ -177,16 +181,26 @@ defmodule DBConnection.Ownership.Proxy do
     down("owner #{inspect pid} checked in the connection", state)
   end
 
-  defp next(queue, %{timer: timer} = state) do
+  defp handle_checkout({ref, mon}, timeout, {pid, _} = from, state) do
+    %{conn_module: conn_module, conn_state: conn_state} = state
+    GenServer.reply(from, {:ok, {self(), ref}, conn_module, conn_state})
+    state = %{state | client: {pid, ref, mon}, timer: start_timer(pid, timeout)}
+    {:noreply, state}
+  end
+
+  defp handle_checkin(conn_state, state) do
+    %{timer: timer, client: {_, _, mon}} = state
     cancel_timer(timer)
-    case :queue.peek(queue) do
-      {:value, {{ref, mon}, timeout, {pid, _} = from}} ->
-        %{conn_module: conn_module, conn_state: conn_state} = state
-        GenServer.reply(from, {:ok, {self(), ref}, conn_module, conn_state})
-        %{state | queue: queue, client: {pid, ref, mon},
-                  timer: start_timer(pid, timeout)}
-      :empty ->
-        %{state | queue: queue, client: nil, timer: nil}
+    Process.demonitor(mon, [:flush])
+    next(%{state | timer: nil, client: nil, conn_state: conn_state})
+  end
+
+  defp next(%{queue: queue} = state) do
+    case :queue.out(queue) do
+      {{:value, {client, timeout, from}}, queue} ->
+        handle_checkout(client, timeout, from, %{state | queue: queue})
+      {:empty, queue} ->
+        {:noreply, %{state | queue: queue}}
     end
   end
 
