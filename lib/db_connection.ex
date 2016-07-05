@@ -55,7 +55,7 @@ defmodule DBConnection do
   @type result :: any
 
   @doc """
-  Connect to the databases. Return `{:ok, state}` on success or
+  Connect to the database. Return `{:ok, state}` on success or
   `{:error, exception}` on failure.
 
   If an error is returned it will be logged and another
