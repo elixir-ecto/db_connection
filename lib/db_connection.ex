@@ -958,10 +958,18 @@ defmodule DBConnection do
   end
 
   defp log(call, query, params, log, times, result) do
+    result = entry_result(result)
     entry = DBConnection.LogEntry.new(call, query, params, times, result)
     log(log, entry)
     log_result(result)
   end
+
+  defp entry_result({kind, reason, stack})
+  when kind in [:error, :exit, :throw] do
+    msg = "an exception was raised: " <> Exception.format(kind, reason, stack)
+    {:error, %DBConnection.ConnectionError{message: msg}}
+  end
+  defp entry_result(other), do: other
 
   defp log({mod, fun, args}, entry), do: apply(mod, fun, [entry | args])
   defp log(fun, entry), do: fun.(entry)
