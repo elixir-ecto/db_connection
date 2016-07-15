@@ -1,6 +1,7 @@
 defmodule DBConnection.Ownership.Manager do
   @moduledoc false
   use GenServer
+  require Logger
 
   alias DBConnection.Ownership.PoolSupervisor
   alias DBConnection.Ownership.ProxySupervisor
@@ -175,6 +176,7 @@ defmodule DBConnection.Ownership.Manager do
     %{pool: pool, owner_sup: owner_sup, checkouts: checkouts, owners: owners,
       ets: ets} = state
     {:ok, proxy} = ProxySupervisor.start_owner(owner_sup, caller, pool, opts)
+    Logger.debug(fn -> [inspect(caller), " owns proxy " | inspect(proxy)] end)
     ref = Process.monitor(proxy)
     checkouts = Map.put(checkouts, caller, {:owner, ref, proxy})
     owners = Map.put(owners, ref, {proxy, caller, []})
@@ -183,6 +185,7 @@ defmodule DBConnection.Ownership.Manager do
   end
 
   defp owner_allow(%{ets: ets} = state, allow, ref, proxy) do
+    Logger.debug(fn -> [inspect(allow), " allowed on proxy " | inspect(proxy)] end)
     state = put_in(state.checkouts[allow], {:allowed, ref, proxy})
     state = update_in(state.owners[ref], fn {proxy, caller, allowed} ->
       {proxy, caller, [allow|List.delete(allowed, allow)]}
@@ -193,9 +196,13 @@ defmodule DBConnection.Ownership.Manager do
 
   defp owner_down(%{ets: ets} = state, ref) do
     case get_and_update_in(state.owners, &Map.pop(&1, ref)) do
-      {{_proxy, caller, allowed}, state} ->
+      {{proxy, caller, allowed}, state} ->
         Process.demonitor(ref, [:flush])
         entries = [caller|allowed]
+        Logger.debug(fn ->
+          [Enum.map_join(entries, ", ", &inspect/1), " lose proxy " |
+            inspect(proxy)]
+        end)
         ets && Enum.each(entries, &:ets.delete(ets, &1))
         update_in(state.checkouts, &Map.drop(&1, entries))
       {nil, state} ->
