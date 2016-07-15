@@ -406,12 +406,11 @@ defmodule DBConnection do
   @spec prepare(conn, query, opts :: Keyword.t) ::
     {:ok, query} | {:error, Exception.t}
   def prepare(conn, query, opts \\ []) do
-    query = DBConnection.Query.parse(query, opts)
+    query = parse(:prepare, query, nil, opts)
     case run_prepare(conn, query, opts) do
       {{:ok, query}, meter} ->
-        query = DBConnection.Query.describe(query, opts)
-        log(:prepare, query, nil, meter, {:ok, query})
-      {{:error, _} = error, meter} ->
+        describe(query, meter, opts)
+      {error, meter} ->
         log(:prepare, query, nil, meter, error)
     end
   end
@@ -460,12 +459,11 @@ defmodule DBConnection do
     {:ok, query, result} |
     {:error, Exception.t}
   def prepare_execute(conn, query, params, opts \\ []) do
-    query = DBConnection.Query.parse(query, opts)
+    query = parse(:prepare_execute, query, params, opts)
     case run_prepare_execute(conn, query, params, opts) do
       {{:ok, query, result}, meter} ->
-        ok = {:ok, query, DBConnection.Query.decode(query, result, opts)}
-        decode_log(:prepare_execute, query, params, meter, ok)
-      {{:error, _} = error, meter} ->
+        decode(:prepare_execute, query, params, meter, result, opts)
+      {error, meter} ->
         log(:prepare_execute, query, params, meter, error)
     end
   end
@@ -513,12 +511,11 @@ defmodule DBConnection do
   @spec execute(conn, query, params, opts :: Keyword.t) ::
     {:ok, result} | {:error, Exception.t}
   def execute(conn, query, params, opts) do
-    encoded = DBConnection.Query.encode(query, params, opts)
+    encoded = encode(query, params, opts)
     case run_execute(conn, query, encoded, opts)  do
       {{:ok, query, result}, meter} ->
-        ok = {:ok, DBConnection.Query.decode(query, result, opts)}
-        decode_log(:execute, query, params, meter, ok)
-      {{:error, _} = error, meter} ->
+        decode(:execute, query, params, meter, result, opts)
+      {error, meter} ->
         log(:execute, query, params, meter, error)
     end
   end
@@ -567,7 +564,6 @@ defmodule DBConnection do
   def close(conn, query, opts \\ []) do
     {result, meter} = run_close(conn, query, opts)
     log(:close, query, nil, meter, result)
-    result
   end
 
   @doc """
@@ -769,13 +765,70 @@ defmodule DBConnection do
           :error, reason ->
             stack = System.stacktrace()
             delete_stop(conn, conn_state, :error, reason, stack, opts)
-            :erlang.raise(:error, reason, stack)
+            {:error, reason, stack}
         end
     catch
       kind, reason ->
         stack = System.stacktrace()
         delete_stop(conn, conn_state, kind, reason, stack, opts)
-        :erlang.raise(kind, reason, stack)
+        {kind, reason, stack}
+    end
+  end
+
+  defp parse(call, query, params, opts) do
+    try do
+      DBConnection.Query.parse(query, opts)
+    catch
+      kind, reason ->
+        pre_log(call, query, params, opts, kind, reason, System.stacktrace())
+    end
+  end
+
+  defp describe(query, meter, opts) do
+    try do
+      DBConnection.Query.describe(query, opts)
+    catch
+      kind, reason ->
+        raised = {kind, reason, System.stacktrace()}
+        log(:prepare, query, nil, meter, raised)
+    else
+      query ->
+        ok = {:ok, query}
+        log(:prepare, query, nil, meter, ok)
+    end
+  end
+
+ defp encode(query, params, opts) do
+    try do
+      DBConnection.Query.encode(query, params, opts)
+    catch
+      kind, reason ->
+        stack = System.stacktrace()
+        pre_log(:execute, query, params, opts, kind, reason, stack)
+    end
+  end
+
+  defp decode(call, query, params, meter, result, opts) do
+    try do
+      DBConnection.Query.decode(query, result, opts)
+    catch
+      kind, reason ->
+        raised = {kind, reason, System.stacktrace()}
+        decode_log(call, query, params, meter, raised)
+    else
+      result when call == :prepare_execute ->
+        ok = {:ok, query, result}
+        decode_log(call, query, params, meter, ok)
+      result when call == :execute ->
+        ok = {:ok, result}
+        decode_log(call, query, params, meter, ok)
+    end
+  end
+
+  defp pre_log(call, query, params, opts, kind, reason, stack) do
+    case Keyword.get(opts, :log) do
+      nil -> :erlang.raise(kind, reason, stack)
+      log -> log(call, query, params, {log, []}, {kind, reason, stack})
     end
   end
 
@@ -797,13 +850,20 @@ defmodule DBConnection do
   end
 
   defp describe_execute(conn, query, params, opts) do
-    query = DBConnection.Query.describe(query, opts)
-    params = DBConnection.Query.encode(query, params, opts)
-    case handle(conn, :handle_execute, [query, params], opts) do
-      {:ok, result} ->
-        {:ok, query, result}
-      other ->
-        other
+    try do
+      query = DBConnection.Query.describe(query, opts)
+      [query, DBConnection.Query.encode(query, params, opts)]
+    catch
+      class, reason ->
+        {class, reason, System.stacktrace()}
+    else
+      [query, _params] = args ->
+        case handle(conn, :handle_execute, args, opts) do
+          {:ok, result} ->
+            {:ok, query, result}
+          other ->
+            other
+        end
     end
   end
 
@@ -859,7 +919,7 @@ defmodule DBConnection do
     run(conn, fun, opts)
   end
 
-  defp decode_log(_, _, _, nil, result), do: result
+  defp decode_log(_, _, _, nil, result), do: log_result(result)
   defp decode_log(call, query, params, {log, times}, result) do
    log(call, query, params, log, [decode: time()] ++ times, result)
   end
@@ -868,7 +928,8 @@ defmodule DBConnection do
   defp transaction_log({log, times, callback, result}) do
     call = transaction_call(callback)
     result = transaction_result(result)
-    log(:transaction, call, nil, log, times, result)
+    _ = log(:transaction, call, nil, log, times, result)
+    :ok
   end
 
   defp transaction_call(:handle_begin), do: :begin
@@ -877,8 +938,9 @@ defmodule DBConnection do
 
   defp transaction_result({:ok, _} = ok), do: ok
   defp transaction_result({:raise, err}), do: {:error, err}
+  defp transaction_result({_kind, _reason, _stack} = raised), do: raised
 
-  defp log(_, _, _, nil, result), do: result
+  defp log(_, _, _, nil, result), do: log_result(result)
   defp log(call, query, params, {log, times}, result) do
     log(call, query, params, log, times, result)
   end
@@ -886,11 +948,16 @@ defmodule DBConnection do
   defp log(call, query, params, log, times, result) do
     entry = DBConnection.LogEntry.new(call, query, params, times, result)
     log(log, entry)
-    result
+    log_result(result)
   end
 
   defp log({mod, fun, args}, entry), do: apply(mod, fun, [entry | args])
   defp log(fun, entry), do: fun.(entry)
+
+  defp log_result({kind, reason, stack}) when kind in [:error, :exit, :throw] do
+    :erlang.raise(kind, reason, stack)
+  end
+  defp log_result(other), do: other
 
   defp run_begin(conn, fun, opts) do
     try do
@@ -946,8 +1013,8 @@ defmodule DBConnection do
     case handle(conn, conn_state, :handle_begin, opts, :transaction) do
       {:ok, _} ->
         transaction_run(conn, nil, fun, opts)
-      {:raise, _} = err ->
-        {err, nil}
+      error ->
+        {error, nil}
     end
   end
   defp begin_meter(conn, conn_state, log, times, fun, opts) do
@@ -962,7 +1029,7 @@ defmodule DBConnection do
           fun.(conn2)
         end
         transaction_run(conn, log, fun, opts)
-      {:raise, _} = error ->
+      error ->
         {error, log_info}
     end
   end
@@ -1010,7 +1077,7 @@ defmodule DBConnection do
     case handle(conn, conn_state, callback, opts, :idle) do
       {:ok, _} ->
         {result, nil}
-      {:raise, _} = error ->
+      error ->
         {error, nil}
     end
   end
@@ -1022,7 +1089,7 @@ defmodule DBConnection do
     case cb_result do
       {:ok, _} ->
         {result, {log, times, callback, cb_result}}
-      {:raise, _} ->
+      _error ->
         {cb_result, {log, times, callback, cb_result}}
     end
   end
@@ -1048,13 +1115,13 @@ defmodule DBConnection do
           :error, reason ->
             stack = System.stacktrace()
             delete_stop(conn, conn_state, :error, reason, stack, opts)
-            :erlang.raise(:error, reason, stack)
+            {:error, reason, stack}
         end
     catch
       kind, reason ->
         stack = System.stacktrace()
         delete_stop(conn, conn_state, kind, reason, stack, opts)
-        :erlang.raise(kind, reason, stack)
+        {kind, reason, stack}
     end
   end
 
