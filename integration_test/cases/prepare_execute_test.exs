@@ -225,4 +225,33 @@ defmodule PrepareExecuteTest do
       disconnect: [^err, :newer_state],
       connect: [opts2]] = A.record(agent)
   end
+
+  test "prepare_execute describe or encode raises and closes query" do
+    stack = [
+      {:ok, :state},
+      {:ok, %Q{}, :new_state},
+      {:ok, %R{}, :newer_state},
+      {:ok, %Q{}, :newest_state},
+      {:ok, %R{}, :state2},
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self()]
+    {:ok, pool} = P.start_link(opts)
+
+    describe = fn(%Q{}) -> raise "oops" end
+    assert_raise RuntimeError, "oops",
+      fn() -> P.prepare_execute(pool, %Q{}, [:param], [describe: describe]) end
+
+    encode = fn([:param]) -> raise "oops" end
+    assert_raise RuntimeError, "oops",
+      fn() -> P.prepare_execute(pool, %Q{}, [:param], [encode: encode]) end
+
+    assert [
+      connect: [_],
+      handle_prepare: [%Q{}, _, :state],
+      handle_close: [%Q{}, _, :new_state],
+      handle_prepare: [%Q{}, _, :newer_state],
+      handle_close: [%Q{}, _, :newest_state]] = A.record(agent)
+  end
 end

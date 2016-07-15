@@ -854,8 +854,9 @@ defmodule DBConnection do
       query = DBConnection.Query.describe(query, opts)
       [query, DBConnection.Query.encode(query, params, opts)]
     catch
-      class, reason ->
-        {class, reason, System.stacktrace()}
+      kind, reason ->
+        raised = {kind, reason, System.stacktrace()}
+        raised_close(conn, query, opts, raised)
     else
       [query, _params] = args ->
         case handle(conn, :handle_execute, args, opts) do
@@ -864,6 +865,17 @@ defmodule DBConnection do
           other ->
             other
         end
+    end
+  end
+
+  defp raised_close(conn, query, opts, raised) do
+    case handle(conn, :handle_close, [query], opts) do
+      {:ok, _} ->
+        raised
+      {:error, _} ->
+        raised
+      {_kind, _reason, _stack} = raised ->
+        raised
     end
   end
 
