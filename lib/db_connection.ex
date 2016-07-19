@@ -958,8 +958,7 @@ defmodule DBConnection do
   end
 
   defp log(call, query, params, log, times, result) do
-    result = entry_result(result)
-    entry = DBConnection.LogEntry.new(call, query, params, times, result)
+    entry = DBConnection.LogEntry.new(call, query, params, times, entry_result(result))
     log(log, entry)
     log_result(result)
   end

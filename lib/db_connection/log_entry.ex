@@ -39,6 +39,7 @@ defmodule DBConnection.LogEntry do
 
   ## Helpers
 
+  defp parse_times([], entry), do: entry
   defp parse_times([first | times], entry) do
     {_, entry} = Enum.reduce(times, {first, entry}, &parse_time/2)
     entry

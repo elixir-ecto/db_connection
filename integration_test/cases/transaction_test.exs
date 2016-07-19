@@ -319,6 +319,45 @@ defmodule TransactionTest do
       handle_begin: [ _, :state]] = A.record(agent)
   end
 
+  test "transaction logs begin raise" do
+    stack = [
+      fn(opts) ->
+        Process.link(opts[:parent])
+        {:ok, :state}
+      end,
+      fn(_, _) ->
+        raise "oops"
+      end,
+      {:ok, :state2}
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    parent = self()
+    opts = [agent: agent, parent: parent]
+    _ = Process.flag(:trap_exit, true)
+    {:ok, pool} = P.start_link(opts)
+
+    log = &send(parent, &1)
+    assert_raise RuntimeError, "oops",
+      fn() ->
+        P.transaction(pool, fn(_) -> flunk("transaction ran") end, [log: log])
+      end
+
+    assert_received %DBConnection.LogEntry{call: :transaction} = entry
+    assert %{query: :begin, params: nil, result: {:error, err}} = entry
+    assert %DBConnection.ConnectionError{message: "an exception was raised: ** (RuntimeError) oops" <> _} = err
+    assert is_integer(entry.pool_time)
+    assert entry.pool_time >= 0
+    assert is_integer(entry.connection_time)
+    assert entry.connection_time >= 0
+    assert is_nil(entry.decode_time)
+    assert_receive {:EXIT, _, {%DBConnection.ConnectionError{}, [_|_]}}
+
+    assert [
+      {:connect, [_]},
+      {:handle_begin, [ _, :state]} | _] = A.record(agent)
+  end
+
   test "transaction begin disconnect raises error" do
     err = RuntimeError.exception("oops")
     stack = [
@@ -573,6 +612,49 @@ defmodule TransactionTest do
       {:handle_commit, [_, :new_state]} | _] = A.record(agent)
   end
 
+  test "transaction logs commit raise" do
+    stack = [
+      fn(opts) ->
+        Process.link(opts[:parent])
+        {:ok, :state}
+      end,
+      {:ok, :began, :new_state},
+      fn(_, _) ->
+        raise "oops"
+      end,
+      {:ok, :state2}
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    parent = self()
+    opts = [agent: agent, parent: parent]
+    _ = Process.flag(:trap_exit, true)
+    {:ok, pool} = P.start_link(opts)
+
+    log = &send(parent, &1)
+    assert_raise RuntimeError, "oops",
+      fn() ->
+        P.transaction(pool, fn(_) -> :ok end, [log: log])
+      end
+
+    assert_received %DBConnection.LogEntry{call: :transaction} = entry
+    assert %{query: :begin, params: nil, result: {:ok, :began}} = entry
+
+    assert_received %DBConnection.LogEntry{call: :transaction} = entry
+    assert %{query: :commit, params: nil, result: {:error, err}} = entry
+    assert %DBConnection.ConnectionError{message: "an exception was raised: ** (RuntimeError) oops" <> _} = err
+    assert is_nil(entry.pool_time)
+    assert is_integer(entry.connection_time)
+    assert entry.connection_time >= 0
+    assert is_nil(entry.decode_time)
+    assert_receive {:EXIT, _, {%DBConnection.ConnectionError{}, [_|_]}}
+
+    assert [
+      {:connect, [_]},
+      {:handle_begin, [_, :state]},
+      {:handle_commit, [_, :new_state]} | _] = A.record(agent)
+  end
+
   test "transaction rollback error raises error" do
     err = RuntimeError.exception("oops")
     stack = [
@@ -618,6 +700,49 @@ defmodule TransactionTest do
       connect: [_],
       handle_begin: [_, :state],
       handle_rollback: [_, :new_state]] = A.record(agent)
+  end
+
+  test "transaction logs rollback raise" do
+    stack = [
+      fn(opts) ->
+        Process.link(opts[:parent])
+        {:ok, :state}
+      end,
+      {:ok, :began, :new_state},
+      fn(_, _) ->
+        raise "oops"
+      end,
+      {:ok, :state2}
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    parent = self()
+    opts = [agent: agent, parent: parent]
+    _ = Process.flag(:trap_exit, true)
+    {:ok, pool} = P.start_link(opts)
+
+    log = &send(parent, &1)
+    assert_raise RuntimeError, "oops",
+      fn() ->
+        P.transaction(pool, &P.rollback(&1, :oops), [log: log])
+      end
+
+    assert_received %DBConnection.LogEntry{call: :transaction} = entry
+    assert %{query: :begin, params: nil, result: {:ok, :began}} = entry
+
+    assert_received %DBConnection.LogEntry{call: :transaction} = entry
+    assert %{query: :rollback, params: nil, result: {:error, err}} = entry
+    assert %DBConnection.ConnectionError{message: "an exception was raised: ** (RuntimeError) oops" <> _} = err
+    assert is_nil(entry.pool_time)
+    assert is_integer(entry.connection_time)
+    assert entry.connection_time >= 0
+    assert is_nil(entry.decode_time)
+    assert_receive {:EXIT, _, {%DBConnection.ConnectionError{}, [_|_]}}
+
+    assert [
+      {:connect, [_]},
+      {:handle_begin, [_, :state]},
+      {:handle_rollback, [_, :new_state]} | _] = A.record(agent)
   end
 
   test "transaction logs on fun raise" do
