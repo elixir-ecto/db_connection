@@ -177,7 +177,8 @@ defmodule PrepareTest do
   test "prepare logs parse and describe raise" do
     stack = [
       {:ok, :state},
-      {:ok, %Q{}, :new_state}
+      {:ok, %Q{}, :new_state},
+      {:ok, :result, :newer_state}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -216,7 +217,8 @@ defmodule PrepareTest do
 
     assert [
       connect: [_],
-      handle_prepare: [%Q{}, _, :state]] = A.record(agent)
+      handle_prepare: [%Q{}, _, :state],
+      handle_close: [%Q{}, _, :new_state]] = A.record(agent)
   end
 
   test "prepare! error raises error" do

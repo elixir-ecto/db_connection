@@ -408,8 +408,8 @@ defmodule DBConnection do
   def prepare(conn, query, opts \\ []) do
     query = parse(:prepare, query, nil, opts)
     case run_prepare(conn, query, opts) do
-      {{:ok, query}, meter} ->
-        describe(query, meter, opts)
+      {{:ok, query} = ok, meter} ->
+        log(:prepare, query, nil, meter, ok)
       {error, meter} ->
         log(:prepare, query, nil, meter, error)
     end
@@ -784,21 +784,7 @@ defmodule DBConnection do
     end
   end
 
-  defp describe(query, meter, opts) do
-    try do
-      DBConnection.Query.describe(query, opts)
-    catch
-      kind, reason ->
-        raised = {kind, reason, System.stacktrace()}
-        log(:prepare, query, nil, meter, raised)
-    else
-      query ->
-        ok = {:ok, query}
-        log(:prepare, query, nil, meter, ok)
-    end
-  end
-
- defp encode(query, params, opts) do
+  defp encode(query, params, opts) do
     try do
       DBConnection.Query.encode(query, params, opts)
     catch
@@ -834,8 +820,26 @@ defmodule DBConnection do
 
   defp run_prepare(conn, query, opts) do
     run_meter(conn, fn(conn2) ->
-      handle(conn2, :handle_prepare, [query], opts)
+      case handle(conn2, :handle_prepare, [query], opts) do
+        {:ok, query} ->
+          describe(conn2, query, opts)
+        other ->
+          other
+      end
     end, opts)
+  end
+
+  defp describe(conn, query, opts) do
+    try do
+      DBConnection.Query.describe(query, opts)
+    catch
+      kind, reason ->
+        raised = {kind, reason, System.stacktrace()}
+        raised_close(conn, query, opts, raised)
+    else
+      query ->
+        {:ok, query}
+    end
   end
 
   defp run_prepare_execute(conn, query, params, opts) do
