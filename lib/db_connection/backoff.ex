@@ -1,5 +1,6 @@
 defmodule DBConnection.Backoff do
   @moduledoc false
+  @compile :nowarn_deprecated_function
 
   alias DBConnection.Backoff
 
