@@ -12,6 +12,7 @@ defmodule DBConnection.LogEntry do
     * `:call` - The `DBConnection` function called
     * `:query` - The query used by the function
     * `:params` - The params passed to the function (if any)
+    * `:result` - The result of the call
     * `:pool_time` - The length of time awaiting a connection from the pool (if
     the connection was not already checked out)
     * `:connection_time` - The length of time using the connection
@@ -24,6 +25,7 @@ defmodule DBConnection.LogEntry do
   @type t :: %__MODULE__{call: atom,
                          query: any,
                          params: any,
+                         result: {:ok, any} | {:ok, any, any} | {:error, Exception.t},
                          pool_time: non_neg_integer | nil,
                          connection_time: non_neg_integer,
                          decode_time: non_neg_integer | nil}
@@ -37,6 +39,7 @@ defmodule DBConnection.LogEntry do
 
   ## Helpers
 
+  defp parse_times([], entry), do: entry
   defp parse_times([first | times], entry) do
     {_, entry} = Enum.reduce(times, {first, entry}, &parse_time/2)
     entry

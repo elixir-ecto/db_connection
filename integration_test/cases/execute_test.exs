@@ -123,6 +123,92 @@ defmodule ExecuteTest do
       handle_execute: [%Q{}, [:param], _, :state]] = A.record(agent)
   end
 
+  test "execute logs raise" do
+    stack = [
+      fn(opts) ->
+        Process.link(opts[:parent])
+        {:ok, :state}
+      end,
+      fn(_, _, _, _) ->
+        raise "oops"
+      end,
+      {:ok, :state2}
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    parent = self()
+    opts = [agent: agent, parent: parent]
+    _ = Process.flag(:trap_exit, true)
+    {:ok, pool} = P.start_link(opts)
+    log = fn(entry) ->
+      assert %DBConnection.LogEntry{call: :execute, query: %Q{},
+                                    params: [:param],
+                                    result: {:error, err}} = entry
+      assert %DBConnection.ConnectionError{message: "an exception was raised: ** (RuntimeError) oops" <> _} = err
+      assert is_integer(entry.pool_time)
+      assert entry.pool_time >= 0
+      assert is_integer(entry.connection_time)
+      assert entry.connection_time >= 0
+      assert is_nil(entry.decode_time)
+      send(parent, :logged)
+    end
+    assert_raise RuntimeError, "oops",
+      fn() -> P.execute(pool, %Q{}, [:param], [log: log]) end
+    assert_received :logged
+    assert_receive {:EXIT, _, {%DBConnection.ConnectionError{}, [_|_]}}
+
+    assert [
+      {:connect, [_]},
+      {:handle_execute, [%Q{}, [:param], _, :state]} | _] = A.record(agent)
+  end
+
+  test "execute logs encode and decode raise" do
+    stack = [
+      {:ok, :state},
+      {:ok, %R{}, :new_state}
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    parent = self()
+    opts = [agent: agent, parent: parent]
+    _ = Process.flag(:trap_exit, true)
+    {:ok, pool} = P.start_link(opts)
+    log = fn(entry) ->
+      assert %DBConnection.LogEntry{call: :execute, query: %Q{},
+                                    params: [:param], result: {:error, err}} = entry
+      assert %DBConnection.ConnectionError{message: "an exception was raised: ** (RuntimeError) oops" <> _} = err
+      assert is_nil(entry.pool_time)
+      assert is_nil(entry.connection_time)
+      assert is_nil(entry.decode_time)
+      send(parent, :logged)
+    end
+    opts2 = [encode: fn([:param]) -> raise "oops" end, log: log]
+    assert_raise RuntimeError, "oops",
+      fn() -> P.execute(pool, %Q{}, [:param], opts2) end
+    assert_received :logged
+
+    log = fn(entry) ->
+      assert %DBConnection.LogEntry{call: :execute, query: %Q{},
+                                    params: [:param], result: {:error, err}} = entry
+      assert %DBConnection.ConnectionError{message: "an exception was raised: ** (RuntimeError) oops" <> _} = err
+      assert is_integer(entry.pool_time)
+      assert entry.pool_time >= 0
+      assert is_integer(entry.connection_time)
+      assert entry.connection_time >= 0
+      assert is_integer(entry.decode_time)
+      assert entry.decode_time >= 0
+      send(parent, :logged)
+    end
+    opts3 = [decode: fn(%R{}) -> raise "oops" end, log: log]
+    assert_raise RuntimeError, "oops",
+      fn() -> P.execute(pool, %Q{}, [:param], opts3) end
+    assert_received :logged
+
+    assert [
+      connect: [_],
+      handle_execute: [%Q{}, [:param], _, :state]] = A.record(agent)
+  end
+
   test "execute! error raises error" do
     err = RuntimeError.exception("oops")
     stack = [
