@@ -80,8 +80,9 @@ defmodule DBConnection.Ownership.Manager do
     pool_opts = Keyword.put(pool_opts, :pool, pool_mod)
     {:ok, pool, owner_sup} = PoolSupervisor.start_pool(module, pool_opts)
     mode = Keyword.get(pool_opts, :ownership_mode, :auto)
+    log = Keyword.get(pool_opts, :ownership_log, nil)
     {:ok, %{pool: pool, owner_sup: owner_sup, checkouts: %{}, owners: %{},
-            mode: mode, mode_ref: nil, ets: ets}}
+            mode: mode, mode_ref: nil, ets: ets, log: log}}
   end
 
   def handle_call({:mode, {:shared, pid}}, _from, %{mode: {:shared, current}} = state) do
@@ -174,9 +175,9 @@ defmodule DBConnection.Ownership.Manager do
 
   defp checkout(state, caller, opts) do
     %{pool: pool, owner_sup: owner_sup, checkouts: checkouts, owners: owners,
-      ets: ets} = state
+      ets: ets, log: log} = state
     {:ok, proxy} = ProxySupervisor.start_owner(owner_sup, caller, pool, opts)
-    Logger.debug(fn -> [inspect(caller), " owns proxy " | inspect(proxy)] end)
+    log && Logger.log(log, fn -> [inspect(caller), " owns proxy " | inspect(proxy)] end)
     ref = Process.monitor(proxy)
     checkouts = Map.put(checkouts, caller, {:owner, ref, proxy})
     owners = Map.put(owners, ref, {proxy, caller, []})
@@ -184,8 +185,8 @@ defmodule DBConnection.Ownership.Manager do
     {proxy, %{state | checkouts: checkouts, owners: owners}}
   end
 
-  defp owner_allow(%{ets: ets} = state, allow, ref, proxy) do
-    Logger.debug(fn -> [inspect(allow), " allowed on proxy " | inspect(proxy)] end)
+  defp owner_allow(%{ets: ets, log: log} = state, allow, ref, proxy) do
+    log && Logger.log(log, fn -> [inspect(allow), " allowed on proxy " | inspect(proxy)] end)
     state = put_in(state.checkouts[allow], {:allowed, ref, proxy})
     state = update_in(state.owners[ref], fn {proxy, caller, allowed} ->
       {proxy, caller, [allow|List.delete(allowed, allow)]}
@@ -194,12 +195,12 @@ defmodule DBConnection.Ownership.Manager do
     state
   end
 
-  defp owner_down(%{ets: ets} = state, ref) do
+  defp owner_down(%{ets: ets, log: log} = state, ref) do
     case get_and_update_in(state.owners, &Map.pop(&1, ref)) do
       {{proxy, caller, allowed}, state} ->
         Process.demonitor(ref, [:flush])
         entries = [caller|allowed]
-        Logger.debug(fn ->
+        log && Logger.log(log, fn ->
           [Enum.map_join(entries, ", ", &inspect/1), " lose proxy " |
             inspect(proxy)]
         end)

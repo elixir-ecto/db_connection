@@ -23,6 +23,8 @@ defmodule DBConnection.Ownership do
       explicit via `ownership_checkin/2`. Defaults to `:auto`.
     * `:ownership_timeout` - The maximum time that a process is allowed to own
       a connection, default `15_000`.
+    * `:ownership_log` - The `Logger.level` to log ownership changes, or `nil`
+      not to log, default `nil`.
 
   If the `:ownership_pool` has an atom name given in the `:name` option,
   an ETS table will be created and automatically used for lookups whenever
