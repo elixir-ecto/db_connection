@@ -38,7 +38,7 @@ defprotocol DBConnection.Query do
   def encode(query, params, opts)
 
   @doc """
-  Decode a result using aquery.
+  Decode a result using a query.
 
   This function is called to decode a result after it is returned by a
   connection callback module.
