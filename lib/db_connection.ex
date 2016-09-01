@@ -1003,7 +1003,7 @@ defmodule DBConnection do
             delete_stop(conn, conn_state, :error, reason, stack, opts)
             :erlang.raise(:error, reason, stack)
         end
-    :closed ->
+      :closed ->
         :ok
     end
   end
@@ -1082,7 +1082,7 @@ defmodule DBConnection do
       {:failed, conn_state} ->
         result = {:error, :rollback}
         conclude_meter(conn, conn_state, log, :handle_rollback, opts, result)
-     :closed ->
+      :closed ->
         {{:error, :rollback}, nil}
     end
   end
@@ -1091,7 +1091,7 @@ defmodule DBConnection do
     case get_info(conn) do
       {trans, conn_state} when trans in [:transaction, :failed] ->
         conclude_meter(conn, conn_state, log, :handle_rollback, opts, result)
-     :closed ->
+      :closed ->
         {result, nil}
     end
   end
