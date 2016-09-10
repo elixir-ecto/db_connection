@@ -623,7 +623,7 @@ defmodule DBConnection do
 
   @doc """
   Acquire a lock on a connection and run a series of requests inside a
-  tranction. The result of the transaction fun is return inside an `:ok`
+  transaction. The result of the transaction fun is return inside an `:ok`
   tuple: `{:ok result}`.
 
   To use the locked connection call the request with the connection
