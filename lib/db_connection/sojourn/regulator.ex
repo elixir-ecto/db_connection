@@ -31,7 +31,7 @@ defmodule DBConnection.Sojourn.Regulator do
 
   @doc false
   def init(opts) do
-    queue      = {:sbroker_drop_queue, {:out, :drop, :infinity}}
+    queue      = {:sbroker_drop_queue, %{}}
     conn_valve = conn_valve(opts)
     meters     = underload_meters(opts)
 
@@ -45,7 +45,9 @@ defmodule DBConnection.Sojourn.Regulator do
     target   = Keyword.get(opts, :idle_target, div(interval, 20))
     size     = Keyword.get(opts, :pool_size, 10)
     overflow = Keyword.get(opts, :pool_overflow, 0)
-    {:sregulator_codel_valve, {target, interval, size, size+overflow}}
+
+    spec = %{target: target, interval: interval, min: size, max: size+overflow}
+    {:sregulator_codel_valve, spec}
   end
 
   defp underload_meters(opts) do
@@ -53,7 +55,8 @@ defmodule DBConnection.Sojourn.Regulator do
       true ->
         target   = Keyword.get(opts, :underload_target, 500)
         interval = Keyword.get(opts, :underload_interval, 5_000)
-        [{:sregulator_underload_meter, {target, interval, alarm_id(opts)}}]
+        spec = %{alarm: alarm_id(opts), target: target, interval: interval}
+        [{:sregulator_underload_meter, spec}]
       false ->
         []
     end

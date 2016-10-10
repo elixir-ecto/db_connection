@@ -112,7 +112,8 @@ defmodule DBConnection.Sojourn.Broker do
     min     = Keyword.get(opts, :queue_min, 0)
     size    = Keyword.get(opts, :queue_size, 1024)
 
-    {:sbroker_timeout_queue, {out, timeout, drop, min, size}}
+    spec = %{out: out, timeout: timeout, drop: drop, min: min, max: size}
+    {:sbroker_timeout_queue, spec}
   end
 
   defp conn_queue(opts) do
@@ -124,7 +125,8 @@ defmodule DBConnection.Sojourn.Broker do
     min_default   = div(Keyword.get(opts, :pool_size, 10), 4)
     min           = Keyword.get(opts, :idle_size, min_default)
 
-    {:sbroker_codel_queue, {out, timeout, interval, :drop, min, :infinity}}
+    spec = %{out: out, target: timeout, interval: interval, min: min}
+    {:sbroker_codel_queue, spec}
   end
 
   defp meters(opts) do
@@ -135,7 +137,8 @@ defmodule DBConnection.Sojourn.Broker do
     update = Keyword.get(opts, :regulator_update, 50)
     pid    = Keyword.fetch!(opts, :regulator_pid)
 
-    [{:sregulator_update_meter, [{pid, :ask_r, update}]}]
+    spec = %{update: update}
+    [{:sregulator_update_meter, [{pid, :ask_r, spec}]}]
   end
 
   defp protector_meters(opts) do
@@ -147,11 +150,9 @@ defmodule DBConnection.Sojourn.Broker do
         min      = Keyword.get(opts, :protector_min, 0)
         max      = Keyword.get(opts, :protector_size, 128)
 
-        idle_interval = Keyword.get(opts, :idle_interval, 100)
-        idle_target   = Keyword.get(opts, :idle_target, div(idle_interval, 20))
-
-        [{:sprotector_pie_meter,
-            {target, interval, idle_interval, idle_target, update, min, max}}]
+        spec = %{ask: %{target: target, interval: interval},
+                 update: update, min: min, max: max}
+        [{:sprotector_pie_meter, spec}]
       false ->
         []
     end
@@ -163,7 +164,8 @@ defmodule DBConnection.Sojourn.Broker do
       true ->
         target   = Keyword.get(opts, :overload_target, 500)
         interval = Keyword.get(opts, :overload_interval, 5_000)
-        [{:sbroker_overload_meter, {target, interval, alarm_id(opts)}}]
+        spec = %{alarm: alarm_id(opts), target: target, interval: interval}
+        [{:sbroker_overload_meter, spec}]
       false ->
         []
     end
