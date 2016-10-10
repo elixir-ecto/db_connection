@@ -7,7 +7,7 @@ defmodule DBConnection.Mixfile do
   def project do
     [app: :db_connection,
      version: @version,
-     elixir: "~> 1.0",
+     elixir: "~> 1.2,
      deps: deps(),
      docs: docs(),
      description: description(),
