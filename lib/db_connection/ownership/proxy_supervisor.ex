@@ -1,4 +1,5 @@
 defmodule DBConnection.Ownership.ProxySupervisor do
+  @moduledoc false
   import Supervisor.Spec
 
   def start_link do

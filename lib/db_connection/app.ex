@@ -1,4 +1,5 @@
 defmodule DBConnection.App do
+  @moduledoc false
   use Application
 
   import Supervisor.Spec
