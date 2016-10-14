@@ -354,7 +354,7 @@ defmodule DBConnection do
 
   ### Example
 
-      {:ok, pid} = DBConnection.start_link(mod, [idle_timeout: 5_000])
+      {:ok, conn} = DBConnection.start_link(mod, [idle_timeout: 5_000])
   """
   @spec start_link(module, opts :: Keyword.t) :: GenServer.on_start
   def start_link(conn_mod, opts) do
@@ -399,9 +399,11 @@ defmodule DBConnection do
 
   ### Example
 
-      {ok, query}   = DBConnection.prepare(pid, "SELECT id FROM table")
-      {:ok, result} = DBConnection.execute(pid, query, [])
-      :ok           = DBConnection.close(pid, query)
+      query         = %Query{statement: "SELECT id FROM table"}
+      {:ok, query}  = DBConnection.prepare(conn, query)
+      {:ok, result} = DBConnection.execute(conn, query, [])
+      :ok           = DBConnection.close(conn, query)
+
   """
   @spec prepare(conn, query, opts :: Keyword.t) ::
     {:ok, query} | {:error, Exception.t}
@@ -451,9 +453,10 @@ defmodule DBConnection do
 
   ### Example
 
-      {ok, query, result} = DBConnection.prepare_execute(pid, "SELECT id FROM table WHERE id=$1", [1])
-      {:ok, result2}      = DBConnection.execute(pid, query, [2])
-      :ok                 = DBConnection.close(pid, query)
+      query                = %Query{statement: "SELECT id FROM table WHERE id=$1"}
+      {:ok, query, result} = DBConnection.prepare_execute(conn, [1])
+      {:ok, result2}       = DBConnection.execute(conn, query, [2])
+      :ok                  = DBConnection.close(conn, query)
    """
   @spec prepare_execute(conn, query, params, Keyword.t) ::
     {:ok, query, result} |
@@ -582,7 +585,7 @@ defmodule DBConnection do
 
   @doc """
   Acquire a lock on a connection and run a series of requests on it. The
-  result of the fun is return inside an `:ok` tuple: `{:ok result}`.
+  result of the fun is return inside an `:ok` tuple: `{:ok, result}`.
 
   To use the locked connection call the request with the connection
   reference passed as the single argument to the `fun`. If the
@@ -606,7 +609,7 @@ defmodule DBConnection do
 
   ### Example
 
-      {:ok, res} = DBConnection.run(pid, fn(conn) ->
+      {:ok, res} = DBConnection.run(conn, fn(conn) ->
         DBConnection.execute!(conn, "SELECT id FROM table", [])
       end)
   """
@@ -658,7 +661,7 @@ defmodule DBConnection do
 
   ### Example
 
-      {:ok, res} = DBConnection.transaction(pid, fn(conn) ->
+      {:ok, res} = DBConnection.transaction(conn, fn(conn) ->
         DBConnection.execute!(conn, "SELECT id FROM table", [])
       end)
   """
@@ -685,7 +688,7 @@ defmodule DBConnection do
 
   ### Example
 
-      {:error, :bar} = DBConnection.transaction(pid, fn(conn) ->
+      {:error, :bar} = DBConnection.transaction(conn, fn(conn) ->
         DBConnection.rollback(conn, :bar)
         IO.puts "never reaches here!"
       end)
