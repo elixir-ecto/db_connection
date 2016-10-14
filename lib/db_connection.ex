@@ -422,7 +422,7 @@ defmodule DBConnection do
   See `prepare/3`.
   """
   @spec prepare!(conn, query, opts :: Keyword.t) :: query
-  def prepare!(conn, query, opts) do
+  def prepare!(conn, query, opts \\ []) do
     case prepare(conn, query, opts) do
       {:ok, result} -> result
       {:error, err} -> raise err
@@ -510,7 +510,7 @@ defmodule DBConnection do
   """
   @spec execute(conn, query, params, opts :: Keyword.t) ::
     {:ok, result} | {:error, Exception.t}
-  def execute(conn, query, params, opts) do
+  def execute(conn, query, params, opts \\ []) do
     encoded = encode(query, params, opts)
     case run_execute(conn, query, encoded, opts)  do
       {{:ok, query, result}, meter} ->
@@ -611,6 +611,7 @@ defmodule DBConnection do
       end)
   """
   @spec run(conn, (t -> result), opts :: Keyword.t) :: result when result: var
+  def run(conn, fun, opts \\ [])
   def run(%DBConnection{} = conn, fun, _) do
     _ = fetch_info(conn)
     fun.(conn)
@@ -663,7 +664,7 @@ defmodule DBConnection do
   """
   @spec transaction(conn, (conn -> result), opts :: Keyword.t) ::
     {:ok, result} | {:error, reason :: any} when result: var
-  def transaction(conn, fun, opts) do
+  def transaction(conn, fun, opts \\ []) do
     {result, log_info} = transaction_meter(conn, fun, opts)
     transaction_log(log_info)
     case result do
