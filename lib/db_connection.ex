@@ -454,7 +454,7 @@ defmodule DBConnection do
   ### Example
 
       query                = %Query{statement: "SELECT id FROM table WHERE id=$1"}
-      {:ok, query, result} = DBConnection.prepare_execute(conn, [1])
+      {:ok, query, result} = DBConnection.prepare_execute(conn, query, [1])
       {:ok, result2}       = DBConnection.execute(conn, query, [2])
       :ok                  = DBConnection.close(conn, query)
    """
