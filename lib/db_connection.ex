@@ -351,6 +351,8 @@ defmodule DBConnection do
     * `:after_connect` - A function to run on connect using `run/3`, either
     a 1-arity fun, `{module, function, args}` with `DBConnection.t` prepended
     to `args` or `nil` (default: `nil`)
+    * `:name` - A name to register the started process (see the `:name` option
+    in `GenServer.start_link/3`).
 
   ### Example
 
