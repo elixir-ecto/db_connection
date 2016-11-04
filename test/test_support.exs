@@ -47,6 +47,14 @@ defmodule TestConnection do
         DBConnection.execute!(pool, query, params, opts2 ++ unquote(opts))
       end
 
+      def stream(pool, query, params, opts2 \\ []) do
+        DBConnection.stream(pool, query, params, opts2 ++ unquote(opts))
+      end
+
+      def prepare_stream(pool, query, params, opts2 \\ []) do
+        DBConnection.prepare_stream(pool, query, params, opts2 ++ unquote(opts))
+      end
+
       def close(pool, query, opts2 \\ []) do
         DBConnection.close(pool, query, opts2 ++ unquote(opts))
       end
@@ -107,6 +115,18 @@ defmodule TestConnection do
     TestAgent.eval(:handle_close, [query, opts, state])
   end
 
+  def handle_open(query, params, opts, state) do
+    TestAgent.eval(:handle_open, [query, params, opts, state])
+  end
+
+  def handle_fetch(query, cursor, opts, state) do
+    TestAgent.eval(:handle_fetch, [query, cursor, opts, state])
+  end
+
+  def handle_close(query, cursor, opts, state) do
+    TestAgent.eval(:handle_close, [query, cursor, opts, state])
+  end
+
   def handle_info(msg, state) do
     TestAgent.eval(:handle_info, [msg, state])
   end
@@ -115,6 +135,10 @@ end
 
 defmodule TestQuery do
   defstruct [:state]
+end
+
+defmodule TestCursor do
+  defstruct []
 end
 
 defmodule TestResult do
