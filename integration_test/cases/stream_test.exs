@@ -10,91 +10,86 @@ defmodule StreamTest do
   test "stream returns result" do
     stack = [
       {:ok, :state},
-      {:ok, %C{}, :new_state},
-      {:cont, %R{}, :newer_state},
-      {:done, %R{}, :newest_state}
+      {:ok, :began, :new_state},
+      {:ok, %C{}, :newer_state},
+      {:cont, %R{}, :newest_state},
+      {:done, %R{}, :state2},
+      {:ok, :committed, :new_state2}
       ]
     {:ok, agent} = A.start_link(stack)
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
-    stream = P.stream(pool, %Q{}, [:param])
-    assert %DBConnection.Stream{} = stream
-    assert Enum.to_list(stream) == [%R{}, %R{}]
+    assert P.transaction(pool, fn(conn) ->
+      stream = P.stream(conn, %Q{}, [:param])
+      assert %DBConnection.Stream{} = stream
+      assert Enum.to_list(stream) == [%R{}, %R{}]
+      :hi
+    end) == {:ok, :hi}
 
     assert [
       connect: [_],
-      handle_open: [%Q{}, [:param], _, :state],
-      handle_fetch: [%Q{}, %C{}, _, :new_state],
-      handle_fetch: [%Q{}, %C{}, _, :newer_state]
-      ] = A.record(agent)
-  end
-
-  test "halted stream closes and returns result" do
-    stack = [
-      {:ok, :state},
-      {:ok, %C{}, :new_state},
-      {:cont, %R{}, :newer_state},
-      {:ok, :result, :newest_state}
-      ]
-    {:ok, agent} = A.start_link(stack)
-
-    opts = [agent: agent, parent: self()]
-    {:ok, pool} = P.start_link(opts)
-    stream = P.stream(pool, %Q{}, [:param])
-    assert Enum.take(stream, 1) == [%R{}]
-
-    assert [
-      connect: [_],
-      handle_open: [%Q{}, [:param], _, :state],
-      handle_fetch: [%Q{}, %C{}, _, :new_state],
-      handle_close: [%Q{}, %C{}, _, :newer_state]
+      handle_begin: [_, :state],
+      handle_open: [%Q{}, [:param], _, :new_state],
+      handle_fetch: [%Q{}, %C{}, _, :newer_state],
+      handle_fetch: [%Q{}, %C{}, _, :newest_state],
+      handle_commit: [_, :state2]
       ] = A.record(agent)
   end
 
   test "stream encodes params and decodes result" do
     stack = [
       {:ok, :state},
-      {:ok, %C{}, :new_state},
-      {:done, %R{}, :newer_state},
+      {:ok, :began, :new_state},
+      {:ok, %C{}, :newer_state},
+      {:done, %R{}, :newest_state},
+      {:ok, :committed, :state2}
       ]
     {:ok, agent} = A.start_link(stack)
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
 
-    opts2 = [encode: fn([:param]) -> :encoded end,
-             decode: fn(%R{}) -> :decoded end]
-    stream = P.stream(pool, %Q{}, [:param], opts2)
-    assert Enum.to_list(stream) == [:decoded]
+    assert P.transaction(pool, fn(conn) ->
+      opts2 = [encode: fn([:param]) -> :encoded end,
+               decode: fn(%R{}) -> :decoded end]
+      stream = P.stream(conn, %Q{}, [:param], opts2)
+      assert Enum.to_list(stream) == [:decoded]
+      :hi
+    end) == {:ok, :hi}
 
     assert [
       connect: [_],
-      handle_open: [_, :encoded, _, :state],
-      handle_fetch: [%Q{}, %C{}, _, :new_state]
+      handle_begin: [_, :state],
+      handle_open: [_, :encoded, _, :new_state],
+      handle_fetch: [%Q{}, %C{}, _, :newer_state],
+      handle_commit: [_, :newest_state]
       ] = A.record(agent)
   end
 
   test "stream logs result" do
     stack = [
       {:ok, :state},
-      {:ok, %C{}, :new_state},
-      {:cont, %R{}, :newer_state},
-      {:ok, :result, :newest_state}
+      {:ok, :began, :new_state},
+      {:ok, %C{}, :newer_state},
+      {:cont, %R{}, :newest_state},
+      {:ok, :result, :state2},
+      {:ok, :committed, :new_state2}
       ]
     {:ok, agent} = A.start_link(stack)
 
     parent = self()
     opts = [agent: agent, parent: parent]
     {:ok, pool} = P.start_link(opts)
-
-    stream = P.stream(pool, %Q{}, [:param], [log: &send(parent, &1)])
-    assert Enum.take(stream, 1) == [%R{}]
+    assert P.transaction(pool, fn(conn) ->
+      stream = P.stream(conn, %Q{}, [:param], [log: &send(parent, &1)])
+      assert Enum.take(stream, 1) == [%R{}]
+      :hi
+    end) == {:ok, :hi}
 
     assert_received %DBConnection.LogEntry{call: :open} = entry
     assert %{query: %Q{}, params: [:param], result: {:ok, %C{}}} = entry
-    assert is_integer(entry.pool_time)
-    assert entry.pool_time >= 0
+    assert is_nil(entry.pool_time)
     assert is_integer(entry.connection_time)
     assert entry.connection_time >= 0
     assert is_nil(entry.decode_time)
@@ -116,9 +111,11 @@ defmodule StreamTest do
 
     assert [
       connect: [_],
-      handle_open: [%Q{}, [:param], _, :state],
-      handle_fetch: [%Q{}, %C{}, _, :new_state],
-      handle_close: [%Q{}, %C{}, _, :newer_state]
+      handle_begin: [_, :state],
+      handle_open: [%Q{}, [:param], _, :new_state],
+      handle_fetch: [%Q{}, %C{}, _, :newer_state],
+      handle_close: [%Q{}, %C{}, _, :newest_state],
+      handle_commit: [_, :state2]
       ] = A.record(agent)
   end
 
@@ -126,7 +123,9 @@ defmodule StreamTest do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
-      {:error, err, :new_state}
+      {:ok, :began, :new_state},
+      {:error, err, :newer_state},
+      {:ok, :comitted, :newest_state}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -134,28 +133,32 @@ defmodule StreamTest do
     opts = [agent: agent, parent: parent]
     {:ok, pool} = P.start_link(opts)
 
-    stream = P.stream(pool, %Q{}, [:param], [log: &send(parent, &1)])
-    assert_raise RuntimeError, "oops", fn() -> Enum.to_list(stream) end
+    assert P.transaction(pool, fn(conn) ->
+      stream = P.stream(conn, %Q{}, [:param], [log: &send(parent, &1)])
+      assert_raise RuntimeError, "oops",  fn() -> Enum.take(stream, 1) end
+      :hi
+    end) == {:ok, :hi}
 
     assert_received %DBConnection.LogEntry{call: :open} = entry
     assert %{query: %Q{}, params: [:param], result: {:error, ^err}} = entry
-    assert is_integer(entry.pool_time)
-    assert entry.pool_time >= 0
+    assert is_nil(entry.pool_time)
     assert is_integer(entry.connection_time)
     assert entry.connection_time >= 0
     assert is_nil(entry.decode_time)
 
     assert [
       connect: [_],
-      handle_open: [%Q{}, [:param], _, :state]
+      handle_begin: [_, :state],
+      handle_open: [%Q{}, [:param], _, :new_state],
+      handle_commit: [_, :newer_state],
       ] = A.record(agent)
   end
 
-  test "stream logs fetch disconnect" do
+  test "stream open disconnects" do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
-      {:ok, %C{}, :new_state},
+      {:ok, :began, :new_state},
       {:disconnect, err, :newer_state},
       :ok,
       fn(opts) ->
@@ -169,8 +172,47 @@ defmodule StreamTest do
     opts = [agent: agent, parent: parent]
     {:ok, pool} = P.start_link(opts)
 
-    stream = P.stream(pool, %Q{}, [:param], [log: &send(parent, &1)])
-    assert_raise RuntimeError, "oops", fn() -> Enum.to_list(stream) end
+    assert P.transaction(pool, fn(conn) ->
+      stream = P.stream(conn, %Q{}, [:param])
+      assert_raise RuntimeError, "oops",  fn() -> Enum.take(stream, 1) end
+      :hi
+    end) == {:error, :rollback}
+
+    assert_receive :reconnected
+
+    assert [
+      connect: [_],
+      handle_begin: [_, :state],
+      handle_open: [%Q{}, [:param], _, :new_state],
+      disconnect: [^err, :newer_state],
+      connect: [_]
+      ] = A.record(agent)
+  end
+
+  test "stream logs fetch disconnects" do
+    err = RuntimeError.exception("oops")
+    stack = [
+      {:ok, :state},
+      {:ok, :began, :new_state},
+      {:ok, %C{}, :newer_state},
+      {:disconnect, err, :newest_state},
+      :ok,
+      fn(opts) ->
+        send(opts[:parent], :reconnected)
+        {:ok, :state2}
+      end
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    parent = self()
+    opts = [agent: agent, parent: parent]
+    {:ok, pool} = P.start_link(opts)
+
+    assert P.transaction(pool, fn(conn) ->
+      stream = P.stream(conn, %Q{}, [:param], [log: &send(parent, &1)])
+      assert_raise RuntimeError, "oops",  fn() -> Enum.take(stream, 1) end
+      :hi
+    end) == {:error, :rollback}
 
     assert_received %DBConnection.LogEntry{call: :open}
 
@@ -187,9 +229,10 @@ defmodule StreamTest do
 
     assert [
       connect: [_],
-      handle_open: [%Q{}, [:param], _, :state],
-      handle_fetch: [%Q{}, %C{}, _, :new_state],
-      disconnect: [^err, :newer_state],
+      handle_begin: [_, :state],
+      handle_open: [%Q{}, [:param], _, :new_state],
+      handle_fetch: [%Q{}, %C{}, _, :newer_state],
+      disconnect: [^err, :newest_state],
       connect: [_]
       ] = A.record(agent)
   end
@@ -198,9 +241,10 @@ defmodule StreamTest do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
-      {:ok, %C{}, :new_state},
-      {:cont, %R{}, :newer_state},
-      {:disconnect, err, :newest_state},
+      {:ok, :began, :new_state},
+      {:ok, %C{}, :newer_state},
+      {:cont, %R{}, :newest_state},
+      {:disconnect, err, :state2},
       :ok,
       fn(opts) ->
         send(opts[:parent], :reconnected)
@@ -213,8 +257,11 @@ defmodule StreamTest do
     opts = [agent: agent, parent: parent]
     {:ok, pool} = P.start_link(opts)
 
-    stream = P.stream(pool, %Q{}, [:param], [log: &send(parent, &1)])
-    assert_raise RuntimeError, "oops", fn() -> Enum.take(stream, 1) end
+    assert P.transaction(pool, fn(conn) ->
+      stream = P.stream(conn, %Q{}, [:param], [log: &send(parent, &1)])
+      assert_raise RuntimeError, "oops",  fn() -> Enum.take(stream, 1) end
+      :hi
+    end) == {:error, :rollback}
 
     assert_received %DBConnection.LogEntry{call: :open}
     assert_received %DBConnection.LogEntry{call: :fetch}
@@ -230,10 +277,11 @@ defmodule StreamTest do
 
     assert [
       connect: [_],
-      handle_open: [%Q{}, [:param], _, :state],
-      handle_fetch: [%Q{}, %C{}, _, :new_state],
-      handle_close: [%Q{}, %C{}, _, :newer_state],
-      disconnect: [^err, :newest_state],
+      handle_begin: [_, :state],
+      handle_open: [%Q{}, [:param], _, :new_state],
+      handle_fetch: [%Q{}, %C{}, _, :newer_state],
+      handle_close: [%Q{}, %C{}, _, :newest_state],
+      disconnect: [^err, :state2],
       connect: [_]
       ] = A.record(agent)
   end
@@ -245,6 +293,7 @@ defmodule StreamTest do
         Process.link(opts[:parent])
         {:ok, :state}
       end,
+      {:ok, :began, :new_state},
       :oops,
       {:ok, :state2}
       ]
@@ -256,9 +305,12 @@ defmodule StreamTest do
     assert_receive {:hi, conn}
 
     Process.flag(:trap_exit, true)
-    stream = P.stream(pool, %Q{}, [:param], [])
-    assert_raise DBConnection.ConnectionError, "bad return value: :oops",
-      fn() -> Enum.to_list(stream) end
+    assert P.transaction(pool, fn(conn) ->
+      stream = P.stream(conn, %Q{}, [:param])
+      assert_raise DBConnection.ConnectionError, "bad return value: :oops",
+        fn() -> Enum.to_list(stream) end
+      :hi
+    end) == {:error, :rollback}
 
     prefix = "client #{inspect self()} stopped: " <>
       "** (DBConnection.ConnectionError) bad return value: :oops"
@@ -269,7 +321,8 @@ defmodule StreamTest do
 
     assert [
       {:connect, _},
-      {:handle_open, [%Q{}, [:param], _, :state]} | _] = A.record(agent)
+      {:handle_begin, [_, :state]},
+      {:handle_open, [%Q{}, [:param], _, :new_state]} | _] = A.record(agent)
   end
 
   test "stream open raise raises and stops connection" do
@@ -279,6 +332,7 @@ defmodule StreamTest do
         Process.link(opts[:parent])
         {:ok, :state}
       end,
+      {:ok, :began, :new_state},
       fn(_, _, _, _) ->
         raise "oops"
       end,
@@ -292,8 +346,11 @@ defmodule StreamTest do
     assert_receive {:hi, conn}
 
     Process.flag(:trap_exit, true)
-    stream = P.stream(pool, %Q{}, [:param], [])
-    assert_raise RuntimeError, "oops", fn() -> Enum.to_list(stream) end
+    assert P.transaction(pool, fn(conn) ->
+      stream = P.stream(conn, %Q{}, [:param])
+      assert_raise RuntimeError, "oops", fn() -> Enum.to_list(stream) end
+      :hi
+    end) == {:error, :rollback}
 
     prefix = "client #{inspect self()} stopped: ** (RuntimeError) oops"
     len = byte_size(prefix)
@@ -303,7 +360,8 @@ defmodule StreamTest do
 
     assert [
       {:connect, _},
-      {:handle_open, [%Q{}, [:param], _, :state]} | _] = A.record(agent)
+      {:handle_begin, [_, :state]},
+      {:handle_open, [%Q{}, [:param], _, :new_state]} | _] = A.record(agent)
   end
 
   test "stream fetch bad return raises and stops" do
@@ -313,7 +371,8 @@ defmodule StreamTest do
         Process.link(opts[:parent])
         {:ok, :state}
       end,
-      {:ok, %C{}, :new_state},
+      {:ok, :began, :new_state},
+      {:ok, %C{}, :newer_state},
       :oops,
       {:ok, :state2}
       ]
@@ -325,9 +384,12 @@ defmodule StreamTest do
     assert_receive {:hi, conn}
 
     Process.flag(:trap_exit, true)
-    stream = P.stream(pool, %Q{}, [:param], [])
-    assert_raise DBConnection.ConnectionError, "bad return value: :oops",
-      fn() -> Enum.to_list(stream) end
+    assert P.transaction(pool, fn(conn) ->
+      stream = P.stream(conn, %Q{}, [:param])
+      assert_raise DBConnection.ConnectionError, "bad return value: :oops",
+        fn() -> Enum.to_list(stream) end
+      :hi
+    end) == {:error, :rollback}
 
     prefix = "client #{inspect self()} stopped: " <>
       "** (DBConnection.ConnectionError) bad return value: :oops"
@@ -338,8 +400,9 @@ defmodule StreamTest do
 
     assert [
       {:connect, _},
-      {:handle_open, [%Q{}, [:param], _, :state]},
-      {:handle_fetch, [%Q{}, %C{}, _, :new_state]} | _] = A.record(agent)
+      {:handle_begin, [_, :state]},
+      {:handle_open, [%Q{}, [:param], _, :new_state]},
+      {:handle_fetch, [%Q{}, %C{}, _, :newer_state]} | _] = A.record(agent)
   end
 
   test "stream close raise raises and stops connection" do
@@ -349,8 +412,9 @@ defmodule StreamTest do
         Process.link(opts[:parent])
         {:ok, :state}
       end,
-      {:ok, %C{}, :new_state},
-      {:cont, %R{}, :newer_state},
+      {:ok, :began, :new_state},
+      {:ok, %C{}, :newer_state},
+      {:cont, %R{}, :newest_state},
       fn(_, _, _, _) ->
         raise "oops"
       end,
@@ -364,8 +428,11 @@ defmodule StreamTest do
     assert_receive {:hi, conn}
 
     Process.flag(:trap_exit, true)
-    stream = P.stream(pool, %Q{}, [:param], [])
-    assert_raise RuntimeError, "oops", fn() -> Enum.take(stream, 1) end
+    assert P.transaction(pool, fn(conn) ->
+      stream = P.stream(conn, %Q{}, [:param])
+      assert_raise RuntimeError, "oops", fn() -> Enum.take(stream, 1) end
+      :hi
+    end) == {:error, :rollback}
 
     prefix = "client #{inspect self()} stopped: ** (RuntimeError) oops"
     len = byte_size(prefix)
@@ -375,8 +442,9 @@ defmodule StreamTest do
 
     assert [
       {:connect, _},
-      {:handle_open, [%Q{}, [:param], _, :state]},
-      {:handle_fetch, [%Q{}, %C{}, _, :new_state]},
-      {:handle_close, [%Q{}, %C{}, _, :newer_state]} | _] = A.record(agent)
+      {:handle_begin, [_, :state]},
+      {:handle_open, [%Q{}, [:param], _, :new_state]},
+      {:handle_fetch, [%Q{}, %C{}, _, :newer_state]},
+      {:handle_close, [%Q{}, %C{}, _, :newest_state]} | _] = A.record(agent)
   end
 end
