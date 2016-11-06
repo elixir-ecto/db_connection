@@ -13,9 +13,10 @@ defmodule PrepareStreamTest do
       {:ok, :began, :new_state},
       {:ok, %Q{}, :newer_state},
       {:ok, %C{}, :newest_state},
-      {:cont, %R{}, :state2},
-      {:done, %R{}, :new_state2},
-      {:ok, :committed, :newer_state2}
+      {:ok, %R{}, :state2},
+      {:deallocate, %R{}, :new_state2},
+      {:ok, :deallocated, :newer_state2},
+      {:ok, :committed, :newest_state2}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -32,10 +33,11 @@ defmodule PrepareStreamTest do
       connect: [_],
       handle_begin: [_, :state],
       handle_prepare: [%Q{}, _, :new_state],
-      handle_open: [%Q{}, [:param], _, :newer_state],
-      handle_fetch: [%Q{}, %C{}, _, :newest_state],
-      handle_fetch: [%Q{}, %C{}, _, :state2],
-      handle_commit: [_, :new_state2]
+      handle_declare: [%Q{}, [:param], _, :newer_state],
+      handle_first: [%Q{}, %C{}, _, :newest_state],
+      handle_next: [%Q{}, %C{}, _, :state2],
+      handle_deallocate: [%Q{}, %C{}, _, :new_state2],
+      handle_commit: [_, :newer_state2]
       ] = A.record(agent)
   end
 
@@ -45,8 +47,9 @@ defmodule PrepareStreamTest do
       {:ok, :began, :new_state},
       {:ok, %Q{state: :prepared}, :newer_state},
       {:ok, %C{}, :newest_state},
-      {:done, %R{}, :state2},
-      {:ok, :committed, :new_state2}
+      {:deallocate, %R{}, :state2},
+      {:ok, :deallocated, :new_state2},
+      {:ok, :committed, :newer_state2}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -67,9 +70,10 @@ defmodule PrepareStreamTest do
       connect: [_],
       handle_begin: [_, :state],
       handle_prepare: [%Q{state: :parsed}, _, :new_state],
-      handle_open: [%Q{state: :described}, :encoded, _, :newer_state],
-      handle_fetch: [%Q{state: :described}, %C{}, _, :newest_state],
-      handle_commit: [_, :state2]
+      handle_declare: [%Q{state: :described}, :encoded, _, :newer_state],
+      handle_first: [%Q{state: :described}, %C{}, _, :newest_state],
+      handle_deallocate: [%Q{}, %C{}, _, :state2],
+      handle_commit: [_, :new_state2]
       ] = A.record(agent)
   end
 
@@ -79,8 +83,8 @@ defmodule PrepareStreamTest do
       {:ok, :began, :new_state},
       {:ok, %Q{}, :newer_state},
       {:ok, %C{}, :newest_state},
-      {:cont, %R{}, :state2},
-      {:ok, :result, :new_state2},
+      {:ok, %R{}, :state2},
+      {:ok, :deallocated, :new_state2},
       {:ok, :committed, :newest_state2}
       ]
     {:ok, agent} = A.start_link(stack)
@@ -94,14 +98,14 @@ defmodule PrepareStreamTest do
       :hi
     end) == {:ok, :hi}
 
-    assert_received %DBConnection.LogEntry{call: :prepare_open} = entry
+    assert_received %DBConnection.LogEntry{call: :prepare_declare} = entry
     assert %{query: %Q{}, params: [:param], result: {:ok, %Q{}, %C{}}} = entry
     assert is_nil(entry.pool_time)
     assert is_integer(entry.connection_time)
     assert entry.connection_time >= 0
     assert is_nil(entry.decode_time)
 
-    assert_received %DBConnection.LogEntry{call: :fetch} = entry
+    assert_received %DBConnection.LogEntry{call: :first} = entry
     assert %{query: %Q{}, params: %C{}, result: {:ok, %R{}}} = entry
     assert is_nil(entry.pool_time)
     assert is_integer(entry.connection_time)
@@ -109,8 +113,8 @@ defmodule PrepareStreamTest do
     assert is_integer(entry.decode_time)
     assert entry.decode_time >= 0
 
-    assert_received %DBConnection.LogEntry{call: :close} = entry
-    assert %{query: %Q{}, params: %C{}, result: {:ok, :result}} = entry
+    assert_received %DBConnection.LogEntry{call: :deallocate} = entry
+    assert %{query: %Q{}, params: %C{}, result: {:ok, :deallocated}} = entry
     assert is_nil(entry.pool_time)
     assert is_integer(entry.connection_time)
     assert entry.connection_time >= 0
@@ -120,9 +124,9 @@ defmodule PrepareStreamTest do
       connect: [_],
       handle_begin: [_, :state],
       handle_prepare: [%Q{}, _, :new_state],
-      handle_open: [%Q{}, [:param], _, :newer_state],
-      handle_fetch: [%Q{}, %C{}, _, :newest_state],
-      handle_close: [%Q{}, %C{}, _, :state2],
+      handle_declare: [%Q{}, [:param], _, :newer_state],
+      handle_first: [%Q{}, %C{}, _, :newest_state],
+      handle_deallocate: [%Q{}, %C{}, _, :state2],
       handle_commit: [_, :new_state2]
       ] = A.record(agent)
   end
@@ -147,7 +151,7 @@ defmodule PrepareStreamTest do
       :hi
     end) == {:ok, :hi}
 
-    assert_received %DBConnection.LogEntry{call: :prepare_open} = entry
+    assert_received %DBConnection.LogEntry{call: :prepare_declare} = entry
     assert %{query: %Q{}, params: [:param], result: {:error, ^err}} = entry
     assert is_nil(entry.pool_time)
     assert is_integer(entry.connection_time)
@@ -162,7 +166,7 @@ defmodule PrepareStreamTest do
       ] = A.record(agent)
   end
 
-  test "prepare_stream logs open error" do
+  test "prepare_stream logs declare error" do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
@@ -183,7 +187,7 @@ defmodule PrepareStreamTest do
       :hi
     end) == {:ok, :hi}
 
-    assert_received %DBConnection.LogEntry{call: :prepare_open} = entry
+    assert_received %DBConnection.LogEntry{call: :prepare_declare} = entry
     assert %{query: %Q{}, params: [:param], result: {:error, ^err}} = entry
     assert is_nil(entry.pool_time)
     assert is_integer(entry.connection_time)
@@ -194,12 +198,12 @@ defmodule PrepareStreamTest do
       connect: [_],
       handle_begin: [_, :state],
       handle_prepare: [%Q{}, _, :new_state],
-      handle_open: [%Q{}, [:param], _, :newer_state],
+      handle_declare: [%Q{}, [:param], _, :newer_state],
       handle_commit: [_, :newest_state],
       ] = A.record(agent)
   end
 
-  test "prepare_stream open disconnects" do
+  test "prepare_stream declare disconnects" do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
@@ -230,7 +234,7 @@ defmodule PrepareStreamTest do
       connect: [_],
       handle_begin: [_, :state],
       handle_prepare: [%Q{}, _, :new_state],
-      handle_open: [%Q{}, [:param], _, :newer_state],
+      handle_declare: [%Q{}, [:param], _, :newer_state],
       disconnect: [^err, :newest_state],
       connect: [_]
       ] = A.record(agent)
@@ -275,7 +279,7 @@ defmodule PrepareStreamTest do
       {:handle_prepare, [%Q{}, _, :new_state]} | _] = A.record(agent)
   end
 
-  test "prepare_stream open raise raises and stops connection" do
+  test "prepare_stream declare raise raises and stops connection" do
     stack = [
       fn(opts) ->
         send(opts[:parent], {:hi, self()})
@@ -313,7 +317,7 @@ defmodule PrepareStreamTest do
       {:connect, _},
       {:handle_begin, [_, :state]},
       {:handle_prepare, [%Q{}, _, :new_state]},
-      {:handle_open, [%Q{}, [:param], _, :newer_state]} | _] = A.record(agent)
+      {:handle_declare, [%Q{}, [:param], _, :newer_state]} | _] = A.record(agent)
   end
 
   test "prepare_stream describe or encode raises and closes query" do
@@ -321,7 +325,7 @@ defmodule PrepareStreamTest do
       {:ok, :state},
       {:ok, :began, :new_state},
       {:ok, %Q{}, :newer_state},
-      {:ok, :result, :newest_state},
+      {:ok, :closed, :newest_state},
       {:ok, %Q{}, :state2},
       {:ok, :result, :new_state2},
       {:ok, :committed, :newer_state2}
@@ -353,4 +357,38 @@ defmodule PrepareStreamTest do
       handle_close: [%Q{}, _, :state2],
       handle_commit: [_, :new_state2]] = A.record(agent)
   end
+
+  test "prepare_stream declare log raises and deallocates" do
+    stack = [
+      {:ok, :state},
+      {:ok, :began, :new_state},
+      {:ok, %Q{}, :newer_state},
+      {:ok, %C{}, :newest_state},
+      {:ok, :deallocated, :state2},
+      {:ok, :commited, :new_state2}
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    parent = self()
+    opts = [agent: agent, parent: parent]
+    {:ok, pool} = P.start_link(opts)
+
+    Process.flag(:trap_exit, true)
+    assert P.transaction(pool, fn(conn) ->
+      opts2 = [log: fn(_) -> raise "oops" end]
+      stream = P.prepare_stream(conn, %Q{}, [:param], opts2)
+      assert_raise RuntimeError, "oops", fn() -> Enum.to_list(stream) end
+      :hi
+    end) == {:ok, :hi}
+
+    assert [
+      connect: [_],
+      handle_begin: [_, :state],
+      handle_prepare: [%Q{}, _, :new_state],
+      handle_declare: [%Q{}, [:param], _, :newer_state],
+      handle_deallocate: [%Q{}, %C{}, _, :newest_state],
+      handle_commit: [_, :state2]
+      ] = A.record(agent)
+  end
+
 end

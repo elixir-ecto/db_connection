@@ -12,9 +12,10 @@ defmodule StreamTest do
       {:ok, :state},
       {:ok, :began, :new_state},
       {:ok, %C{}, :newer_state},
-      {:cont, %R{}, :newest_state},
-      {:done, %R{}, :state2},
-      {:ok, :committed, :new_state2}
+      {:ok, %R{}, :newest_state},
+      {:deallocate, %R{}, :state2},
+      {:ok, :deallocated, :new_state2},
+      {:ok, :commited, :newer_state2}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -30,10 +31,11 @@ defmodule StreamTest do
     assert [
       connect: [_],
       handle_begin: [_, :state],
-      handle_open: [%Q{}, [:param], _, :new_state],
-      handle_fetch: [%Q{}, %C{}, _, :newer_state],
-      handle_fetch: [%Q{}, %C{}, _, :newest_state],
-      handle_commit: [_, :state2]
+      handle_declare: [%Q{}, [:param], _, :new_state],
+      handle_first: [%Q{}, %C{}, _, :newer_state],
+      handle_next: [%Q{}, %C{}, _, :newest_state],
+      handle_deallocate: [%Q{}, %C{}, _, :state2],
+      handle_commit: [_, :new_state2]
       ] = A.record(agent)
   end
 
@@ -42,8 +44,9 @@ defmodule StreamTest do
       {:ok, :state},
       {:ok, :began, :new_state},
       {:ok, %C{}, :newer_state},
-      {:done, %R{}, :newest_state},
-      {:ok, :committed, :state2}
+      {:deallocate, %R{}, :newest_state},
+      {:ok, :deallocated, :state2},
+      {:ok, :committed, :new_state2}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -61,9 +64,10 @@ defmodule StreamTest do
     assert [
       connect: [_],
       handle_begin: [_, :state],
-      handle_open: [_, :encoded, _, :new_state],
-      handle_fetch: [%Q{}, %C{}, _, :newer_state],
-      handle_commit: [_, :newest_state]
+      handle_declare: [_, :encoded, _, :new_state],
+      handle_first: [%Q{}, %C{}, _, :newer_state],
+      handle_deallocate: [%Q{}, %C{}, _, :newest_state],
+      handle_commit: [_, :state2]
       ] = A.record(agent)
   end
 
@@ -72,7 +76,7 @@ defmodule StreamTest do
       {:ok, :state},
       {:ok, :began, :new_state},
       {:ok, %C{}, :newer_state},
-      {:cont, %R{}, :newest_state},
+      {:ok, %R{}, :newest_state},
       {:ok, :result, :state2},
       {:ok, :committed, :new_state2}
       ]
@@ -87,14 +91,14 @@ defmodule StreamTest do
       :hi
     end) == {:ok, :hi}
 
-    assert_received %DBConnection.LogEntry{call: :open} = entry
+    assert_received %DBConnection.LogEntry{call: :declare} = entry
     assert %{query: %Q{}, params: [:param], result: {:ok, %C{}}} = entry
     assert is_nil(entry.pool_time)
     assert is_integer(entry.connection_time)
     assert entry.connection_time >= 0
     assert is_nil(entry.decode_time)
 
-    assert_received %DBConnection.LogEntry{call: :fetch} = entry
+    assert_received %DBConnection.LogEntry{call: :first} = entry
     assert %{query: %Q{}, params: %C{}, result: {:ok, %R{}}} = entry
     assert is_nil(entry.pool_time)
     assert is_integer(entry.connection_time)
@@ -102,7 +106,7 @@ defmodule StreamTest do
     assert is_integer(entry.decode_time)
     assert entry.decode_time >= 0
 
-    assert_received %DBConnection.LogEntry{call: :close} = entry
+    assert_received %DBConnection.LogEntry{call: :deallocate} = entry
     assert %{query: %Q{}, params: %C{}, result: {:ok, :result}} = entry
     assert is_nil(entry.pool_time)
     assert is_integer(entry.connection_time)
@@ -112,14 +116,14 @@ defmodule StreamTest do
     assert [
       connect: [_],
       handle_begin: [_, :state],
-      handle_open: [%Q{}, [:param], _, :new_state],
-      handle_fetch: [%Q{}, %C{}, _, :newer_state],
-      handle_close: [%Q{}, %C{}, _, :newest_state],
+      handle_declare: [%Q{}, [:param], _, :new_state],
+      handle_first: [%Q{}, %C{}, _, :newer_state],
+      handle_deallocate: [%Q{}, %C{}, _, :newest_state],
       handle_commit: [_, :state2]
       ] = A.record(agent)
   end
 
-  test "stream logs open error" do
+  test "stream logs declare error" do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
@@ -139,7 +143,7 @@ defmodule StreamTest do
       :hi
     end) == {:ok, :hi}
 
-    assert_received %DBConnection.LogEntry{call: :open} = entry
+    assert_received %DBConnection.LogEntry{call: :declare} = entry
     assert %{query: %Q{}, params: [:param], result: {:error, ^err}} = entry
     assert is_nil(entry.pool_time)
     assert is_integer(entry.connection_time)
@@ -149,12 +153,12 @@ defmodule StreamTest do
     assert [
       connect: [_],
       handle_begin: [_, :state],
-      handle_open: [%Q{}, [:param], _, :new_state],
+      handle_declare: [%Q{}, [:param], _, :new_state],
       handle_commit: [_, :newer_state],
       ] = A.record(agent)
   end
 
-  test "stream open disconnects" do
+  test "stream declare disconnects" do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
@@ -183,13 +187,13 @@ defmodule StreamTest do
     assert [
       connect: [_],
       handle_begin: [_, :state],
-      handle_open: [%Q{}, [:param], _, :new_state],
+      handle_declare: [%Q{}, [:param], _, :new_state],
       disconnect: [^err, :newer_state],
       connect: [_]
       ] = A.record(agent)
   end
 
-  test "stream logs fetch disconnects" do
+  test "stream logs first disconnects" do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
@@ -214,36 +218,36 @@ defmodule StreamTest do
       :hi
     end) == {:error, :rollback}
 
-    assert_received %DBConnection.LogEntry{call: :open}
+    assert_received %DBConnection.LogEntry{call: :declare}
 
-    assert_received %DBConnection.LogEntry{call: :fetch} = entry
+    assert_received %DBConnection.LogEntry{call: :first} = entry
     assert %{query: %Q{}, params: %C{}, result: {:error, ^err}} = entry
     assert is_nil(entry.pool_time)
     assert is_integer(entry.connection_time)
     assert entry.connection_time >= 0
     assert is_nil(entry.decode_time)
 
-    refute_received %DBConnection.LogEntry{call: :close}
+    refute_received %DBConnection.LogEntry{call: :deallocate}
 
     assert_receive :reconnected
 
     assert [
       connect: [_],
       handle_begin: [_, :state],
-      handle_open: [%Q{}, [:param], _, :new_state],
-      handle_fetch: [%Q{}, %C{}, _, :newer_state],
+      handle_declare: [%Q{}, [:param], _, :new_state],
+      handle_first: [%Q{}, %C{}, _, :newer_state],
       disconnect: [^err, :newest_state],
       connect: [_]
       ] = A.record(agent)
   end
 
-  test "stream logs close disconnect" do
+  test "stream logs deallocate disconnect" do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
       {:ok, :began, :new_state},
       {:ok, %C{}, :newer_state},
-      {:cont, %R{}, :newest_state},
+      {:ok, %R{}, :newest_state},
       {:disconnect, err, :state2},
       :ok,
       fn(opts) ->
@@ -263,10 +267,10 @@ defmodule StreamTest do
       :hi
     end) == {:error, :rollback}
 
-    assert_received %DBConnection.LogEntry{call: :open}
-    assert_received %DBConnection.LogEntry{call: :fetch}
+    assert_received %DBConnection.LogEntry{call: :declare}
+    assert_received %DBConnection.LogEntry{call: :first}
 
-    assert_received %DBConnection.LogEntry{call: :close} = entry
+    assert_received %DBConnection.LogEntry{call: :deallocate} = entry
     assert %{query: %Q{}, params: %C{}, result: {:error, ^err}} = entry
     assert is_nil(entry.pool_time)
     assert is_integer(entry.connection_time)
@@ -278,15 +282,15 @@ defmodule StreamTest do
     assert [
       connect: [_],
       handle_begin: [_, :state],
-      handle_open: [%Q{}, [:param], _, :new_state],
-      handle_fetch: [%Q{}, %C{}, _, :newer_state],
-      handle_close: [%Q{}, %C{}, _, :newest_state],
+      handle_declare: [%Q{}, [:param], _, :new_state],
+      handle_first: [%Q{}, %C{}, _, :newer_state],
+      handle_deallocate: [%Q{}, %C{}, _, :newest_state],
       disconnect: [^err, :state2],
       connect: [_]
       ] = A.record(agent)
   end
 
-  test "stream open bad return raises and stops" do
+  test "stream declare bad return raises and stops" do
     stack = [
       fn(opts) ->
         send(opts[:parent], {:hi, self()})
@@ -322,10 +326,10 @@ defmodule StreamTest do
     assert [
       {:connect, _},
       {:handle_begin, [_, :state]},
-      {:handle_open, [%Q{}, [:param], _, :new_state]} | _] = A.record(agent)
+      {:handle_declare, [%Q{}, [:param], _, :new_state]} | _] = A.record(agent)
   end
 
-  test "stream open raise raises and stops connection" do
+  test "stream declare raise raises and stops connection" do
     stack = [
       fn(opts) ->
         send(opts[:parent], {:hi, self()})
@@ -361,10 +365,41 @@ defmodule StreamTest do
     assert [
       {:connect, _},
       {:handle_begin, [_, :state]},
-      {:handle_open, [%Q{}, [:param], _, :new_state]} | _] = A.record(agent)
+      {:handle_declare, [%Q{}, [:param], _, :new_state]} | _] = A.record(agent)
   end
 
-  test "stream fetch bad return raises and stops" do
+  test "stream declare log raises and deallocates" do
+    stack = [
+      {:ok, :state},
+      {:ok, :began, :new_state},
+      {:ok, %C{}, :newer_state},
+      {:ok, :deallocated, :newest_state},
+      {:ok, :commited, :state2}
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    parent = self()
+    opts = [agent: agent, parent: parent]
+    {:ok, pool} = P.start_link(opts)
+
+    Process.flag(:trap_exit, true)
+    assert P.transaction(pool, fn(conn) ->
+      opts2 = [log: fn(_) -> raise "oops" end]
+      stream = P.stream(conn, %Q{}, [:param], opts2)
+      assert_raise RuntimeError, "oops", fn() -> Enum.to_list(stream) end
+      :hi
+    end) == {:ok, :hi}
+
+    assert [
+      connect: [_],
+      handle_begin: [_, :state],
+      handle_declare: [%Q{}, [:param], _, :new_state],
+      handle_deallocate: [%Q{}, %C{}, _, :newer_state],
+      handle_commit: [_, :newest_state]
+      ] = A.record(agent)
+  end
+
+  test "stream first bad return raises and stops" do
     stack = [
       fn(opts) ->
         send(opts[:parent], {:hi, self()})
@@ -401,11 +436,11 @@ defmodule StreamTest do
     assert [
       {:connect, _},
       {:handle_begin, [_, :state]},
-      {:handle_open, [%Q{}, [:param], _, :new_state]},
-      {:handle_fetch, [%Q{}, %C{}, _, :newer_state]} | _] = A.record(agent)
+      {:handle_declare, [%Q{}, [:param], _, :new_state]},
+      {:handle_first, [%Q{}, %C{}, _, :newer_state]} | _] = A.record(agent)
   end
 
-  test "stream close raise raises and stops connection" do
+  test "stream deallocate raise raises and stops connection" do
     stack = [
       fn(opts) ->
         send(opts[:parent], {:hi, self()})
@@ -414,7 +449,7 @@ defmodule StreamTest do
       end,
       {:ok, :began, :new_state},
       {:ok, %C{}, :newer_state},
-      {:cont, %R{}, :newest_state},
+      {:ok, %R{}, :newest_state},
       fn(_, _, _, _) ->
         raise "oops"
       end,
@@ -443,8 +478,8 @@ defmodule StreamTest do
     assert [
       {:connect, _},
       {:handle_begin, [_, :state]},
-      {:handle_open, [%Q{}, [:param], _, :new_state]},
-      {:handle_fetch, [%Q{}, %C{}, _, :newer_state]},
-      {:handle_close, [%Q{}, %C{}, _, :newest_state]} | _] = A.record(agent)
+      {:handle_declare, [%Q{}, [:param], _, :new_state]},
+      {:handle_first, [%Q{}, %C{}, _, :newer_state]},
+      {:handle_deallocate, [%Q{}, %C{}, _, :newest_state]} | _] = A.record(agent)
   end
 end
