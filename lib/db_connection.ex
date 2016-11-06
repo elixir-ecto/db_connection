@@ -829,13 +829,15 @@ defmodule DBConnection do
 
   ### Example
 
-      query         = %Query{statement: "SELECT id FROM table"}
-      stream        = DBConnection.prepare_stream(conn, query, [])
-      [result1 | _] = Enum.to_list(stream)
+      {:ok, results} = DBConnection.transaction(conn, fn(conn) ->
+        query  = %Query{statement: "SELECT id FROM table"}
+        stream = DBConnection.prepare_stream(conn, query, [])
+        Enum.to_list(stream)
+      end)
   """
-  @spec prepare_stream(conn, query, params, opts :: Keyword.t) ::
+  @spec prepare_stream(t, query, params, opts :: Keyword.t) ::
     DBConnection.PrepareStream.t
-  def prepare_stream(conn, query, params, opts) do
+  def prepare_stream(%DBConnection{} = conn, query, params, opts) do
     %DBConnection.PrepareStream{conn: conn, query: query, params: params,
                                 opts: opts}
   end
@@ -862,13 +864,15 @@ defmodule DBConnection do
 
   ### Example
 
-      query         = %Query{statement: "SELECT id FROM table"}
-      {:ok, query}  = DBConnection.prepare(conn, query)
-      stream        = DBConnection.stream(conn, query, [])
-      [result1 | _] = Enum.to_list(stream)
+      {:ok, results} = DBConnection.transaction(conn, fn(conn) ->
+        query  = %Query{statement: "SELECT id FROM table"}
+        query  = DBConnection.prepare!(conn, query)
+        stream = DBConnection.stream(conn, query, [])
+        Enum.to_list(stream)
+      end)
   """
-  @spec stream(conn, query, params, opts :: Keyword.t) :: DBConnection.Stream.t
-  def stream(conn, query, params, opts) do
+  @spec stream(t, query, params, opts :: Keyword.t) :: DBConnection.Stream.t
+  def stream(%DBConnection{} = conn, query, params, opts) do
     %DBConnection.Stream{conn: conn, query: query, params: params, opts: opts}
   end
 
@@ -876,20 +880,14 @@ defmodule DBConnection do
   def reduce(%DBConnection.PrepareStream{} = stream, acc, fun) do
     %DBConnection.PrepareStream{conn: conn, query: query, params: params,
                                 opts: opts} = stream
-    query = parse(:prepare_open, query, params, opts)
-    start = &prepare_open_meter(&1, &2, &3, query, params, &4)
-    next = &fetch(&1, &2, &3)
-    stop = &close_cursor/3
-    resource(conn, start, next, stop, opts).(acc, fun)
+    start = &prepare_open(&1, query, params, &2)
+    resource(conn, start, &fetch/3, &close_cursor/3, opts).(acc, fun)
   end
   def reduce(%DBConnection.Stream{} = stream, acc, fun) do
     %DBConnection.Stream{conn: conn, query: query, params: params,
                          opts: opts} = stream
-    encoded = encode(:open, query, params, opts)
-    start = &open_meter(&1, &2, &3, query, params, encoded, &4)
-    next = &fetch(&1, &2, &3)
-    stop = &close_cursor/3
-    resource(conn, start, next, stop, opts).(acc, fun)
+    start = &open(&1, query, params, &2)
+    resource(conn, start, &fetch/3, &close_cursor/3, opts).(acc, fun)
   end
 
   ## Helpers
@@ -1375,50 +1373,31 @@ defmodule DBConnection do
     end
   end
 
-  defp prepare_open_meter(conn, log, times, query, params, opts) do
-    result = prepare_open(conn, query, params, opts)
-    open_log(:prepare_open, conn, log, times, query, params, result, opts)
-  end
-
   defp prepare_open(conn, query, params, opts) do
-    case handle(conn, :handle_prepare, [query], opts) do
-      {:ok, query} ->
-        describe_run(conn, :handle_open, query, params, opts)
-      other ->
-        other
+    query = parse(:prepare_open, query, params, opts)
+    case run_prepare_open(conn, query, params, opts) do
+      {{:ok, query, cursor}, meter} ->
+        prepare_open_log(:prepare_open, query, params, meter, cursor, opts)
+      {error, meter} ->
+        {:error, err} = log(:prepare_open, query, params, meter, error)
+        raise err
     end
   end
 
-  defp open_meter(conn, log, times, query, params, encoded, opts) do
-    result = handle(conn, :handle_open, [query, encoded], opts)
-    open_log(:open, conn, log, times, query, params, result, opts)
+  defp run_prepare_open(conn, query, params, opts) do
+    run_meter(conn, fn(conn2) ->
+      case handle(conn2, :handle_prepare, [query], opts) do
+        {:ok, query} ->
+          describe_run(conn2, :handle_open, query, params, opts)
+        other ->
+          other
+      end
+    end, opts)
   end
 
-  defp open_log(fun, conn, nil, [], query, params, result, opts) do
-    open_log(fun, conn, query, params, nil, result, opts)
-  end
-
-  defp open_log(fun, conn, log, times, query, params, result, opts) do
-    times = [stop: time()] ++ times
-    open_log(fun, conn, query, params, {log, times}, result, opts)
-  end
-
-  defp open_log(fun, conn, query, params, meter, {:ok, cursor} = ok, opts) do
+  defp prepare_open_log(conn, query, params, meter, cursor, opts) do
     try do
-      log(fun, query, params, meter, ok)
-    catch
-      kind, reason ->
-        stack = System.stacktrace()
-        close!(conn, cursor, opts)
-        :erlang.raise(kind, reason, stack)
-    else
-      {:ok, cursor} ->
-        {:cont, query, cursor}
-    end
-  end
-  defp open_log(fun, conn, _, params, meter, {:ok, query, cursor} = ok, opts) do
-    try do
-      log(fun, query, params, meter, ok)
+      log(:prepare_open, query, params, meter, {:ok, query, cursor})
     catch
       kind, reason ->
         stack = System.stacktrace()
@@ -1429,9 +1408,34 @@ defmodule DBConnection do
         {:cont, query, cursor}
     end
   end
-  defp open_log(fun, _, query, params, meter, error, _) do
-    {:error, err} = log(fun, query, params, meter, error)
-    raise err
+
+  defp open(conn, query, params, opts) do
+    encoded = encode(:open, query, params, opts)
+    case run_open(conn, query, encoded, opts) do
+      {{:ok, cursor}, meter} ->
+        open_log(:open, query, params, meter, cursor, opts)
+      {error, meter} ->
+        {:error, err} = log(:open, query, params, meter, error)
+        raise err
+    end
+  end
+
+  defp run_open(conn, query, params, opts) do
+    run_meter(conn, &handle(&1, :handle_open, [query, params], opts), opts)
+  end
+
+  defp open_log(conn, query, params, meter, cursor, opts) do
+    try do
+      log(:open, query, params, meter, {:ok, cursor})
+    catch
+      kind, reason ->
+        stack = System.stacktrace()
+        close!(conn, cursor, opts)
+        :erlang.raise(kind, reason, stack)
+    else
+      {:ok, cursor} ->
+        {:cont, query, cursor}
+    end
   end
 
   defp fetch(_, {:done, _,  _} = state, _), do: {:halt, state}
@@ -1471,62 +1475,10 @@ defmodule DBConnection do
   end
 
   defp resource(%DBConnection{} = conn, start, next, stop, opts) do
-    log = Keyword.get(opts, :log)
-    start = fn() -> resource_run(conn, log, start, opts) end
+    start = fn() -> start.(conn, opts) end
     next = fn(state) -> next.(conn, state, opts) end
     stop = fn(state) -> stop.(conn, state, opts) end
     Stream.resource(start, next, stop)
-  end
-  defp resource(pool, start, next, stop, opts) do
-    {conn, log, times} = resource_meter(pool, opts)
-    start = fn() -> resource_begin(conn, log, times, start, opts) end
-    next = fn(state) -> next.(conn, state, opts) end
-    stop = fn(state) -> resource_end(conn, stop, state, opts) end
-    Stream.resource(start, next, stop)
-  end
-
-  defp resource_run(conn, nil, start, opts) do
-    start.(conn, nil, [], opts)
-  end
-  defp resource_run(conn, log, start, opts) do
-    start.(conn, log, [start: time()], opts)
-  end
-
-  defp resource_meter(pool, opts) do
-    case Keyword.get(opts, :log) do
-      nil ->
-        {resource_checkout(pool, opts), nil, []}
-      log ->
-        checkout = time()
-        conn = resource_checkout(pool, opts)
-        start = time()
-        {conn, log, [start: start, checkout: checkout]}
-    end
-  end
-
-  defp resource_checkout(pool, opts) do
-    {conn, conn_state} = checkout(pool, opts)
-    put_info(conn, :idle, conn_state)
-    conn
-  end
-
-  defp resource_begin(conn, log, times, fun, opts) do
-    try do
-      fun.(conn, log, times, opts)
-    catch
-      kind, reason ->
-        stack = System.stacktrace()
-        run_end(conn, opts)
-        :erlang.raise(kind, reason, stack)
-    end
-  end
-
-  defp resource_end(conn, fun, state, opts) do
-    try do
-      fun.(conn, state, opts)
-    after
-      run_end(conn, opts)
-    end
   end
 
   defp put_info(conn, status, conn_state) do
