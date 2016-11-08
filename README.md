@@ -1,7 +1,7 @@
 # DBConnection
 
 Database connection behaviour and database connection pool designed for
-handling transaction, prepare/execute and client process
+handling transaction, prepare/execute, cursors and client process
 describe/encode/decode.
 
 Four pool implementations are provided: `DBConnection.Connection`
