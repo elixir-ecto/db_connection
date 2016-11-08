@@ -894,7 +894,7 @@ defmodule DBConnection do
       end)
   """
   @spec stream(t, query, params, opts :: Keyword.t) :: DBConnection.Stream.t
-  def stream(%DBConnection{} = conn, query, params, opts) do
+  def stream(%DBConnection{} = conn, query, params, opts \\ []) do
     %DBConnection.Stream{conn: conn, query: query, params: params, opts: opts}
   end
 
