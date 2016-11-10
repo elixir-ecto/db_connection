@@ -44,6 +44,7 @@ defmodule TestIdle do
       ping: [:state]] = A.record(agent)
   end
 
+  @tag :idle_timeout
   test "ping manually" do
     err = RuntimeError.exception(message: "oops")
     stack = [
