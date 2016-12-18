@@ -156,7 +156,7 @@ defmodule DBConnection do
     {:error | :disconnect, Exception.t, new_state :: any}
 
   @doc """
-  Handle commiting a transaction. Return `{:ok, result, state}` on success and
+  Handle committing a transaction. Return `{:ok, result, state}` on success and
   to continue, `{:error, exception, state}` to abort the transaction and
   continue or `{:disconnect, exception, state}` to abort the transaction
   and disconnect.
