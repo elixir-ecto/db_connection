@@ -54,11 +54,18 @@ defmodule TestShutdown do
   end
 
   test "broker shutdowns with pool" do
-    stack = [{:ok, :state}]
+    stack = [
+      fn(opts) ->
+        send(opts[:parent], {:hi, self()})
+        {:ok, :state}
+      end]
     {:ok, agent} = A.start_link(stack)
 
     opts = [agent: agent, parent: self(), shutdown: :brutal_kill]
     {:ok, pool} = P.start_link(opts)
+
+    assert_receive {:hi, conn}
+    conn_mon = Process.monitor(conn)
 
     assert {:links, links} = Process.info(pool, :links)
     assert [watcher] = links -- [self()]
@@ -68,6 +75,7 @@ defmodule TestShutdown do
     _ = Process.flag(:trap_exit, true)
     sup = DBConnection.Sojourn.Supervisor
     assert Supervisor.terminate_child(sup, pool_sup) == :ok
+    assert_receive {:DOWN, ^conn_mon, _, _, :killed}
     assert_receive {:EXIT, ^pool, :shutdown}
 
     assert [connect: [_]] = A.record(agent)
