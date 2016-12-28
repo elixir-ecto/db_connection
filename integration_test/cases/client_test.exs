@@ -71,30 +71,29 @@ defmodule ClientTest do
       {:ok, :state},
       :ok,
       fn(opts) ->
-        send(opts[:runner], :reconnected)
+        send(opts[:parent], :reconnected)
         {:ok, :new_state}
       end,
       {:disconnect, RuntimeError.exception("oops"), :bad_state},
       {:ok, %R{}, :newer_state}]
     {:ok, agent} = A.start_link(stack)
 
+    parent = self()
 
-    runner = spawn_link(fn() ->
-      assert_receive {:pool, pool}
-      assert_receive :reconnected
-      assert P.run(pool, fn(_) -> :result end) == :result
-    end)
-
-    opts = [agent: agent, parent: self(), runner: runner]
+    opts = [agent: agent, parent: parent]
     {:ok, pool} = P.start_link(opts)
 
-    send(runner, {:pool, pool})
-
     assert P.run(pool, fn(conn) ->
-        :timer.sleep(50)
-        assert {:error, %RuntimeError{}} = P.execute(conn, %Q{}, [:param])
-        :result
-    end, [timeout: 0])  == :result
+      assert_receive :reconnected
+      spawn_link(fn() ->
+        assert P.run(pool, fn(_) -> :result end) == :result
+        send(parent, :done)
+      end)
+      assert {:error, %RuntimeError{}} = P.execute(conn, %Q{}, [:param])
+      :result
+    end, [timeout: 0]) == :result
+
+    assert_receive :done
 
     assert P.execute(pool, %Q{}, [:param]) == {:ok, %R{}}
 
@@ -111,7 +110,7 @@ defmodule ClientTest do
       {:ok, :state},
       :ok,
       fn(opts) ->
-        send(opts[:runner], :reconnected)
+        send(opts[:parent], :reconnected)
         {:ok, :new_state}
       end,
       fn(_, _, _, _) ->
@@ -122,27 +121,24 @@ defmodule ClientTest do
 
     parent = self()
 
-    runner = spawn_link(fn() ->
-      assert_receive {:pool, pool}
-      assert_receive :reconnected
-      assert P.run(pool, fn(_) -> :result end) == :result
-      send(parent, :continue)
-    end)
-
-    opts = [agent: agent, parent: parent, runner: runner]
+    opts = [agent: agent, parent: parent]
     {:ok, pool} = P.start_link(opts)
-
-    send(runner, {:pool, pool})
 
     try do
       P.run(pool, fn(conn) ->
-        assert_receive :continue
+        assert_receive :reconnected
+        spawn_link(fn() ->
+          assert P.run(pool, fn(_) -> :result end) == :result
+          send(parent, :done)
+        end)
         P.execute(conn, %Q{}, [:param])
       end, [timeout: 0])
     catch
       :throw, :oops ->
         :ok
     end
+
+    assert_receive :done
 
     assert P.execute(pool, %Q{}, [:param]) == {:ok, %R{}}
 
