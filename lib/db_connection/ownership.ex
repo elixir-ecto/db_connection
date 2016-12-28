@@ -134,11 +134,12 @@ defmodule DBConnection.Ownership do
             cannot find ownership process for #{inspect self()}.
 
             When using ownership, you must manage connections in one
-            of the three ways:
+            of the four ways:
 
               * By explicitly checking out a connection
               * By explicitly allowing a spawned process
               * By running the pool in shared mode
+              * By using :caller option with allowed process
 
             The first two options require every new process to explicitly
             check a connection out or be allowed by calling checkout or
@@ -147,6 +148,10 @@ defmodule DBConnection.Ownership do
             The third option requires a {:shared, pid} mode to be set.
             If using shared mode in tests, make sure your tests are not
             async.
+
+            The fourth option requires [caller: pid] to be used when
+            checking out a connection from the pool. The caller process
+            should already be allowed on a connection.
 
             If you are reading this error, it means you have not done one
             of the steps above or that the owner process has crashed.
