@@ -35,9 +35,8 @@ defmodule DBConnection.Sojourn do
 
   @behaviour  DBConnection.Pool
 
-  @broker    DBConnection.Sojourn.Broker
-  @regulator DBConnection.Sojourn.Regulator
-  @timeout   15_000
+  @broker DBConnection.Sojourn.Broker
+  @timeout 15_000
 
   import Supervisor.Spec
 
