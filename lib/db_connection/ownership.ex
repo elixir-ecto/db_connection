@@ -6,7 +6,7 @@ end
 
 defmodule DBConnection.Ownership do
   @moduledoc """
-  A `DBConnection.Pool` that requires explicit checkout and checking
+  A `DBConnection.Pool` that requires explicit checkout and checkin
   as a mechanism to coordinate between processes.
 
   ### Options
@@ -62,7 +62,7 @@ defmodule DBConnection.Ownership do
   end
 
   @doc """
-  Changes the ownwership mode.
+  Changes the ownership mode.
 
   `mode` may be `:auto`, `:manual` or `{:shared, owner}`.
 
