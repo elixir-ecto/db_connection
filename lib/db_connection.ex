@@ -101,7 +101,7 @@ defmodule DBConnection do
 
   @doc """
   Checkouts the state from the connection process. Return `{:ok, state}`
-  to allow the checkout or `{:disconnect, exception} to disconnect.
+  to allow the checkout or `{:disconnect, exception}` to disconnect.
 
   This callback is called when the control of the state is passed to
   another process. `checkin/1` is called with the new state when control
