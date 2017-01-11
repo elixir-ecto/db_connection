@@ -214,7 +214,7 @@ defmodule DBConnection do
   Close a query prepared by `handle_prepare/3` with the database. Return
   `{:ok, result, state}` on success and to continue,
   `{:error, exception, state}` to return an error and continue, or
-  `{:disconnect, exception, state}` to return an errior and disconnect.
+  `{:disconnect, exception, state}` to return an error and disconnect.
 
   This callback is called in the client process.
   """
@@ -224,7 +224,7 @@ defmodule DBConnection do
 
   @doc """
   Declare a cursor using a query prepared by `handle_prepare/3`. Return
-  `{:ok, cursor, state}' to start a cursor for a stream and continue,
+  `{:ok, cursor, state}` to start a cursor for a stream and continue,
   `{:error, exception, state}` to return an error and continue or
   `{:disconnect, exception, state}` to return an error and disconnect.
 
@@ -264,7 +264,7 @@ defmodule DBConnection do
   Deallocate a cursor declared by `handle_declare/4' with the database. Return
   `{:ok, result, state}` on success and to continue,
   `{:error, exception, state}` to return an error and continue, or
-  `{:disconnect, exception, state}` to return an errior and disconnect.
+  `{:disconnect, exception, state}` to return an error and disconnect.
 
   This callback is called in the client process.
   """
