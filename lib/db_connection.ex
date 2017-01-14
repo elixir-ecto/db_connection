@@ -101,7 +101,7 @@ defmodule DBConnection do
 
   @doc """
   Checkouts the state from the connection process. Return `{:ok, state}`
-  to allow the checkout or `{:disconnect, exception}` to disconnect.
+  to allow the checkout or `{:disconnect, exception, state}` to disconnect.
 
   This callback is called when the control of the state is passed to
   another process. `checkin/1` is called with the new state when control
@@ -117,7 +117,7 @@ defmodule DBConnection do
 
   @doc """
   Checks in the state to the connection process. Return `{:ok, state}`
-  to allow the checkin or `{:disconnect, exception}` to disconnect.
+  to allow the checkin or `{:disconnect, exception, state}` to disconnect.
 
   This callback is called when the control of the state is passed back
   to the connection process. It should reverse any changes made in
@@ -130,7 +130,7 @@ defmodule DBConnection do
 
   @doc """
   Called when the connection has been idle for a period of time. Return
-  `{:ok, state}` to continue or `{:disconnect, exception}` to
+  `{:ok, state}` to continue or `{:disconnect, exception, state}` to
   disconnect.
 
   This callback is called if no callbacks have been called after the
