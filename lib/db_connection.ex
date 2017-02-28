@@ -702,8 +702,9 @@ defmodule DBConnection do
   end
 
   @doc """
-  Acquire a lock on a connection and run a series of requests on it. The
-  result of the fun is return inside an `:ok` tuple: `{:ok, result}`.
+  Acquire a lock on a connection and run a series of requests on it.
+
+  The return value of this function is the return value of `fun`.
 
   To use the locked connection call the request with the connection
   reference passed as the single argument to the `fun`. If the
