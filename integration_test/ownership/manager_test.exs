@@ -111,8 +111,22 @@ defmodule ManagerTest do
       assert_checked_out pool, [caller: parent]
       send parent, :checkin
     end
-
     assert_receive :checkin
+
+    assert Ownership.ownership_mode(pool, :auto, [])
+    Task.start_link fn ->
+      assert_checked_out pool, [caller: parent]
+      send parent, :checkin
+    end
+    assert_receive :checkin
+
+    assert Ownership.ownership_mode(pool, {:shared, parent}, [])
+    Task.start_link fn ->
+      assert_checked_out pool, [caller: parent]
+      send parent, :checkin
+    end
+    assert_receive :checkin
+
     assert_checked_out pool, [caller: parent]
   end
 

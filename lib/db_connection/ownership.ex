@@ -128,39 +128,33 @@ defmodule DBConnection.Ownership do
       {:ok, proxy} ->
         Proxy.checkout(proxy, opts)
       :not_found ->
-        case Keyword.pop(opts, :caller) do
-          {nil, _} ->
-            msg = """
-            cannot find ownership process for #{inspect self()}.
+        msg = """
+        cannot find ownership process for #{inspect self()}.
 
-            When using ownership, you must manage connections in one
-            of the four ways:
+        When using ownership, you must manage connections in one
+        of the four ways:
 
-              * By explicitly checking out a connection
-              * By explicitly allowing a spawned process
-              * By running the pool in shared mode
-              * By using :caller option with allowed process
+        * By explicitly checking out a connection
+        * By explicitly allowing a spawned process
+        * By running the pool in shared mode
+        * By using :caller option with allowed process
 
-            The first two options require every new process to explicitly
-            check a connection out or be allowed by calling checkout or
-            allow respectively.
-            
-            The third option requires a {:shared, pid} mode to be set.
-            If using shared mode in tests, make sure your tests are not
-            async.
+        The first two options require every new process to explicitly
+        check a connection out or be allowed by calling checkout or
+        allow respectively.
 
-            The fourth option requires [caller: pid] to be used when
-            checking out a connection from the pool. The caller process
-            should already be allowed on a connection.
+        The third option requires a {:shared, pid} mode to be set.
+        If using shared mode in tests, make sure your tests are not
+        async.
 
-            If you are reading this error, it means you have not done one
-            of the steps above or that the owner process has crashed.
-            """
-            {:error, DBConnection.OwnershipError.exception(msg)}
-          {owner, opts} ->
-            ownership_allow(manager, owner, self(), opts)
-            checkout(manager, [pool_timeout: :infinity] ++ opts)
-        end
+        The fourth option requires [caller: pid] to be used when
+        checking out a connection from the pool. The caller process
+        should already be allowed on a connection.
+
+        If you are reading this error, it means you have not done one
+        of the steps above or that the owner process has crashed.
+        """
+        {:error, DBConnection.OwnershipError.exception(msg)}
     end
   end
 
