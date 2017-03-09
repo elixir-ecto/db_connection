@@ -102,13 +102,16 @@ defmodule DBConnection.Ownership.Manager do
     {:reply, :ok, %{state | mode: mode, mode_ref: nil}}
   end
 
-  def handle_call({:lookup, opts}, {caller, _},
+  def handle_call({:lookup, opts}, {pid, _},
                   %{checkouts: checkouts, mode: mode} = state) do
+    caller = Keyword.get(opts, :caller, pid)
     case Map.get(checkouts, caller, :not_found) do
       {:owner, _, proxy} ->
         {:reply, {:ok, proxy}, state}
       {:allowed, _, proxy} ->
         {:reply, {:ok, proxy}, state}
+      :not_found when caller != pid ->
+        {:reply, :not_found, state}
       :not_found when mode == :manual ->
         {:reply, :not_found, state}
       :not_found when mode == :auto ->
