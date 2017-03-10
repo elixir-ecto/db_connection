@@ -32,7 +32,7 @@ defmodule BackoffTest do
     stack = [
       fn(opts) ->
         send(opts[:parent], {:hi1, self()})
-        send(self, :hello)
+        send(self(), :hello)
         {:ok, :state}
       end,
       {:disconnect, err, :discon},
