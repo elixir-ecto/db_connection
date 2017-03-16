@@ -63,6 +63,10 @@ defmodule TestConnection do
         DBConnection.close!(pool, query, opts2 ++ unquote(opts))
       end
 
+      def ping(pool, opts2 \\ []) do
+        DBConnection.ping(pool, opts2 ++ unquote(opts))
+      end
+
       defoverridable [start_link: 1]
     end
   end

@@ -138,7 +138,8 @@ defmodule DBConnection do
   timeout can be configured by the `:idle_timeout` option. This function
   can be called whether the connection is checked in or checked out.
 
-  This callback is called in the connection process.
+  This callback is called in either the connection process or the client
+  process.
   """
   @callback ping(state :: any) ::
     {:ok, new_state :: any} | {:disconnect, Exception.t, new_state :: any}
@@ -899,6 +900,35 @@ defmodule DBConnection do
     %DBConnection.Stream{conn: conn, query: query, params: params, opts: opts}
   end
 
+  @doc """
+  Ping the database on the connection.
+
+  Returns `:ping` on success or `:pang` on failure.
+
+  ### Options
+
+    * `:pool_timeout` - The maximum time to wait for a reply when making a
+    synchronous call to the pool (default: `5_000`)
+    * `:queue` - Whether to block waiting in an internal queue for the
+    connection's state (boolean, default: `true`)
+    * `:timeout` - The maximum time that the caller is allowed the
+    to hold the connection's state (default: `15_000`)
+    * `:log` - A function to log information about begin, commit and rollback
+    calls made as part of the transaction, either a 1-arity fun,
+    `{module, function, args}` with `DBConnection.LogEntry.t` prepended to
+    `args` or `nil`. See `DBConnection.LogEntry` (default: `nil`)
+  """
+  @spec ping(conn, opts :: Keyword.t) :: :pong | :pang
+  def ping(conn, opts \\ []) do
+    case run_ping(conn, opts) do
+      {{:ok, _} = ok, meter} ->
+        {:ok, result} = log(:ping, nil, nil, meter, ok)
+        result
+      {error, meter} ->
+        log(:ping, nil, nil, meter, error)
+    end
+  end
+
   @doc false
   def reduce(%DBConnection.PrepareStream{} = stream, acc, fun) do
     %DBConnection.PrepareStream{conn: conn, query: query, params: params,
@@ -1510,6 +1540,38 @@ defmodule DBConnection do
     next = fn(state) -> next.(conn, state, opts) end
     stop = fn(state) -> stop.(conn, state, opts) end
     Stream.resource(start, next, stop)
+  end
+
+  defp run_ping(conn, opts) do
+    run_meter(conn, fn(conn2) -> handle_ping(conn2, opts) end, opts)
+  end
+
+  defp handle_ping(%DBConnection{conn_mod: conn_mod} = conn, opts) do
+    {status, conn_state} = fetch_info(conn)
+    try do
+      apply(conn_mod, :ping, [conn_state])
+    else
+      {:ok, conn_state} ->
+        put_info(conn, status, conn_state)
+        {:ok, :pong}
+      {:disconnect, err, conn_state} ->
+        delete_disconnect(conn, conn_state, err, opts)
+        {:ok, :pang}
+      other ->
+        try do
+          raise DBConnection.ConnectionError, "bad return value: #{inspect other}"
+        catch
+          :error, reason ->
+            stack = System.stacktrace()
+            delete_stop(conn, conn_state, :error, reason, stack, opts)
+            {:error, reason, stack}
+        end
+    catch
+      kind, reason ->
+        stack = System.stacktrace()
+        delete_stop(conn, conn_state, kind, reason, stack, opts)
+        {kind, reason, stack}
+    end
   end
 
   defp put_info(conn, status, conn_state) do
