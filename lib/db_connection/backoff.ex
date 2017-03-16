@@ -105,7 +105,7 @@ defmodule DBConnection.Backoff do
   defp random_seed() do
     {_, sec, micro} = :os.timestamp()
     hash = :erlang.phash2({self(), make_ref()})
-    case :random.seed(hash, sec, micro) do
+    case :rand.seed(hash, {sec, micro}) do
       :undefined -> Process.delete(:random_seed)
       prev       -> Process.put(:random_seed, prev)
     end
