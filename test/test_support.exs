@@ -70,8 +70,6 @@ defmodule TestConnection do
   def start_link(opts), do: DBConnection.start_link(__MODULE__, opts)
 
   def connect(opts) do
-    agent = Keyword.fetch!(opts, :agent)
-    _ = Process.put(:agent, agent)
     TestAgent.eval(:connect, [opts])
   end
 
@@ -136,7 +134,6 @@ defmodule TestConnection do
   end
 end
 
-
 defmodule TestQuery do
   defstruct [:state]
 end
@@ -179,7 +176,11 @@ defmodule TestAgent do
     ok
   end
 
-  def eval(agent \\ Process.get(:agent), fun, args) do
+  def eval(fun, args) do
+    eval(get_agent(args), fun, args)
+  end
+
+  def eval(agent, fun, args) do
     action = {fun, args}
     case Agent.get_and_update(agent, &get_and_update(&1, action)) do
       fun when is_function(fun) ->
@@ -188,6 +189,23 @@ defmodule TestAgent do
         result
     end
   end
+
+  defp get_agent(args) do
+    case Process.get(:agent) do
+      agent when is_pid(agent) ->
+        agent
+      nil ->
+        opts = get_opts(args)
+        agent = Keyword.fetch!(opts, :agent)
+        _ = Process.put(:agent, agent)
+        agent
+    end
+  end
+
+  defp get_opts([opts]),    do: opts
+  defp get_opts([opts, _]), do: opts
+  defp get_opts([_, opts, _]), do: opts
+  defp get_opts([_, _, opts, _]), do: opts
 
   def record(agent) do
     Enum.reverse(Agent.get(agent, &elem(&1, 1)))

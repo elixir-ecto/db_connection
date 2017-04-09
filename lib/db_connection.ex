@@ -913,6 +913,72 @@ defmodule DBConnection do
     resource(conn, start, &fetch/3, &deallocate/3, opts).(acc, fun)
   end
 
+  ## Stage Transaction
+
+  @doc false
+  @spec stage_begin(pool :: GenServer.server, opts :: Keyword.t) :: t
+  def stage_begin(pool, opts) do
+    {result, log_info} = stage_begin_meter(pool, opts)
+    transaction_log(log_info)
+    case result do
+      {:ok, conn} ->
+        conn
+      {:raise, err} ->
+        raise err
+      {kind, reason, stack} ->
+        :erlang.raise(kind, reason, stack)
+    end
+  end
+
+  @doc false
+  @spec stage_transaction(t, (t -> result), opts :: Keyword.t) ::
+    {:ok, result} | {:error, reason :: any} | :closed when result: var
+  def stage_transaction(conn, fun, opts) do
+    case get_info(conn) do
+      {:failed, _} ->
+        stage_rollback(conn, opts)
+      {:idle, _} ->
+        raise "not inside transaction"
+      {:transaction, _} ->
+        stage_nested(conn, fun, opts)
+      :closed ->
+        :closed
+    end
+  end
+
+  @doc false
+  @spec stage_commit(t, Keyword.t) :: :ok | {:error, :rollback}
+  def stage_commit(conn, opts) do
+    log = Keyword.get(opts, :log)
+    {result, log_info} = stage_conclude(conn, &commit/4, log, opts, :ok)
+    transaction_log(log_info)
+    case result do
+      {:raise, err} ->
+        raise err
+      {kind, reason, stack} ->
+        :erlang.raise(kind, reason, stack)
+      other ->
+        other
+    end
+  end
+
+  @doc false
+  @spec stage_rollback(t, Keyword.t) :: {:error, :rollback}
+  def stage_rollback(conn, opts) do
+    log = Keyword.get(opts, :log)
+    result = {:error, :rollback}
+    {result, log_info} = stage_conclude(conn, &rollback/4, log, opts, result)
+    transaction_log(log_info)
+    case result do
+      {:raise, err} ->
+        raise err
+      {kind, reason, stack} ->
+        :erlang.raise(kind, reason, stack)
+      other ->
+        other
+    end
+  end
+
   ## Helpers
 
   defp checkout(pool, opts) do
@@ -1510,6 +1576,84 @@ defmodule DBConnection do
     next = fn(state) -> next.(conn, state, opts) end
     stop = fn(state) -> stop.(conn, state, opts) end
     Stream.resource(start, next, stop)
+  end
+
+  defp stage_begin_meter(pool, opts) do
+    case Keyword.get(opts, :log) do
+      nil ->
+        stage_begin_meter(pool, nil, [], opts)
+      log ->
+        times = [checkout: time()]
+        stage_begin_meter(pool, log, times, opts)
+    end
+  end
+
+  defp stage_begin_meter(pool, log, times, opts) do
+    {conn, conn_state} = checkout(pool, opts)
+    put_info(conn, :idle, conn_state)
+    stage_begin_meter(conn, conn_state, log, times, opts)
+  end
+
+  defp stage_begin_meter(conn, conn_state, nil, [], opts) do
+    case handle(conn, conn_state, :handle_begin, opts, :transaction) do
+      {:ok, _} ->
+        {{:ok, conn}, nil}
+      error ->
+        run_end(conn, opts)
+        {error, nil}
+    end
+  end
+  defp stage_begin_meter(conn, conn_state, log, times, opts) do
+    start = time()
+    result = handle(conn, conn_state, :handle_begin, opts, :transaction)
+    times = [stop: time(), start: start] ++ times
+    log_info = {log, times, :handle_begin, result}
+    case result do
+      {:ok, _} ->
+        stage_begin_log(conn, log_info, opts)
+      error ->
+        run_end(conn, opts)
+        {error, log_info}
+    end
+  end
+
+  defp stage_begin_log(conn, {log, _, _, _} = log_info, opts) do
+    try do
+      transaction_log(log_info)
+    catch
+      kind, reason ->
+        result = {kind, reason, System.stacktrace()}
+        stage_conclude(conn, &rollback/4, log, opts, result)
+    else
+      _ ->
+        {{:ok, conn}, nil}
+    end
+  end
+
+  defp stage_nested(conn, fun, opts) do
+    %DBConnection{conn_ref: conn_ref} = conn
+    try do
+      fun.(conn)
+    catch
+      :throw, {:rollback, ^conn_ref, reason} ->
+         stage_rollback(conn, opts)
+         {:error, reason}
+      kind, reason ->
+        stack = System.stacktrace()
+        stage_rollback(conn, opts)
+        :erlang.raise(kind, reason, stack)
+    else
+      result ->
+        {:ok, result}
+    end
+  end
+
+  defp stage_conclude(conn, fun, log, opts, result) do
+    try do
+      fun.(conn, log, opts, result)
+    after
+      run_end(conn, opts)
+    end
   end
 
   defp put_info(conn, status, conn_state) do
