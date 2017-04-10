@@ -188,11 +188,20 @@ defmodule DBConnection.Stage do
   end
 
   @doc false
-  def handle_subscribe(:producer, _, {pid, ref}, stage) do
-    %Stage{producers: producers, active: active} = stage
-    stage = %Stage{stage | producers: Map.put(producers, ref, pid),
-                        active: [ref | active]}
-    {:automatic, stage}
+  def handle_subscribe(:producer, _, {pid, ref} = from, stage) do
+    case stage do
+      %Stage{done?: true, type: :consumer, producers: producers} ->
+        GenStage.cancel(from, :normal, [:noconnect])
+        stage = %Stage{stage | producers: Map.put(producers, ref, pid)}
+        {:manual, stage}
+      %Stage{done?: true, type: :producer_consumer, producers: producers} ->
+        stage = %Stage{stage | producers: Map.put(producers, ref, pid)}
+        {:manual, stage}
+      %Stage{done?: false, producers: producers, active: active} ->
+        stage = %Stage{stage | producers: Map.put(producers, ref, pid),
+                               active: [ref | active]}
+        {:automatic, stage}
+    end
   end
   def handle_subscribe(:consumer, _, {_, ref}, stage) do
     %Stage{consumers: consumers} = stage
@@ -329,6 +338,7 @@ defmodule DBConnection.Stage do
     end
   end
   defp stream_next(_, _, state) when state in [:halted, :done] do
+    GenStage.async_notify(self(), {:producer, state})
     {[], state}
   end
 

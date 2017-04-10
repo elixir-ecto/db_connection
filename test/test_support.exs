@@ -63,6 +63,11 @@ defmodule TestConnection do
         DBConnection.close!(pool, query, opts2 ++ unquote(opts))
       end
 
+      def stage(pool, type, start, handle, stop, opts2 \\ []) do
+        opts3 = opts2 ++ unquote(opts)
+        DBConnection.Stage.start_link(pool, type, start, handle, stop, opts3)
+      end
+
       def stream_stage(pool, query, params, opts2 \\ []) do
         DBConnection.Stage.stream(pool, query, params, opts2 ++ unquote(opts))
       end
