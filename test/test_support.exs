@@ -63,6 +63,14 @@ defmodule TestConnection do
         DBConnection.close!(pool, query, opts2 ++ unquote(opts))
       end
 
+      def stream_stage(pool, query, params, opts2 \\ []) do
+        DBConnection.Stage.stream(pool, query, params, opts2 ++ unquote(opts))
+      end
+
+      def prepare_stream_stage(pool, query, params, opts2 \\ []) do
+        DBConnection.Stage.prepare_stream(pool, query, params, opts2 ++ unquote(opts))
+      end
+
       defoverridable [start_link: 1]
     end
   end
