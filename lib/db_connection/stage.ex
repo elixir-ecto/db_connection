@@ -40,8 +40,8 @@ defmodule DBConnection.Stage do
 
   ### Example
 
-      query  = %Query{statement: "SELECT id FROM table"}
-      {:ok, stage} = DBConnection.StreamStage.prepare_stream_link(conn, query, [])
+      query = %Query{statement: "SELECT id FROM table"}
+      {:ok, stage} = DBConnection.Stage.prepare_stream(pool, query, [])
       stage |> Flow.from_stage() |> Enum.to_list()
       end)
   """
@@ -76,8 +76,8 @@ defmodule DBConnection.Stage do
 
   ### Example
 
-      query  = %Query{statement: "SELECT id FROM table"}
-      {:ok, stage} = DBConnection.StreamStage.stream_link(conn, query, [])
+      query = DBConnection.prepare!(pool, %Query{statement: "SELECT id FROM table"})
+      {:ok, stage} = DBConnection.Stage.stream(pool, query, [])
       stage |> Flow.from_stage() |> Enum.to_list()
       end)
   """
@@ -119,8 +119,10 @@ defmodule DBConnection.Stage do
     * It will stop with reason `:normal` when the last consumer cancels
     * It will notify consumers that it is done when all producers have cancelled
     or notified that they are done or halted
-    * It will cancel all remaining producers when all producers have notified
-    that they are done or halted
+    * It will cancel new and remaining producers when all producers have
+    notified that they are done or halted and it is a `:consumer`
+    * It will not send demand to new producers when all producers have notified
+    that they are done or halted and it is a `:consumer_producer`
 
   ### Options
 
@@ -143,12 +145,18 @@ defmodule DBConnection.Stage do
 
   ### Example
 
-      start = &DBConnection.prepare!(&1, %2, opts)
+      start =
+        fn(conn) ->
+          DBConnection.prepare!(conn, query, opts)
+        end
       handle =
         fn(conn, param, query) ->
           {[DBConection.execute!(conn, param, query, opts)], query}
         end
-      stop = %DBConnection.close(&1, &2, opts)
+      stop =
+        fn(conn, _, query) ->
+          DBConnection.close!(conn, query, opts)
+        end
       DBConnection.Stage.start_link(pool, :producer_consumer,
                                     start, handle, stop, opts)
   """
