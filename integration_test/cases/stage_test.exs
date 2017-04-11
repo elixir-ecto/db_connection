@@ -115,7 +115,7 @@ defmodule StageTest do
       ] = A.record(agent)
   end
 
-  test "producer does not stop or commit on nested rollback" do
+  test "producer does not stop or commit on handle nested rollback" do
     stack = [
       {:ok, :state},
       {:ok, :began, :new_state},
@@ -148,7 +148,7 @@ defmodule StageTest do
       ] = A.record(agent)
   end
 
-  test "producer exits but does not stop or commit after nested rollback" do
+  test "producer exits but does not commit on start nested rollback" do
     stack = [
       {:ok, :state},
       {:ok, :began, :new_state},
@@ -342,6 +342,61 @@ defmodule StageTest do
     assert_receive {:DOWN, ^mon, :process, ^stage, :normal}
     assert_received {:"$gen_producer", ^sub1, {:ask, 1}}
     refute_received {:"$gen_producer", _, _}
+
+    assert [
+      connect: [_],
+      handle_begin: [_, :state],
+      handle_prepare: [%Q{}, _, :new_state],
+      handle_execute: [%Q{}, [:param], _, :newer_state],
+      handle_close: [%Q{}, _, :newest_state],
+      handle_commit: [_, :state2]
+      ] = A.record(agent)
+  end
+
+  test "producer_consumer does notifies new consumers after done" do
+    stack = [
+      {:ok, :state},
+      {:ok, :began, :new_state},
+      {:ok, %Q{}, :newer_state},
+      {:ok, %R{}, :newest_state},
+      {:ok, :closed, :state2},
+      {:ok, :commited, :new_state2}
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    parent = self()
+    opts = [agent: agent, parent: parent]
+    {:ok, pool} = P.start_link(opts)
+    start = &DBConnection.prepare!(&1, %Q{})
+    handle = fn(conn, events, query) ->
+      {[DBConnection.execute!(conn, query, events)], query}
+    end
+    stop = fn(conn, _, query) -> DBConnection.close!(conn, query) end
+    {:ok, stage} = P.producer_consumer(pool, start, handle, stop, opts)
+
+    mon = Process.monitor(stage)
+
+    {:ok, coord} = [:param] |> Flow.from_enumerable() |> Flow.into_stages([stage])
+
+    send(stage, {:"$gen_producer", {self(), mon}, {:subscribe, nil, []}})
+    send(stage, {:"$gen_producer", {self(), mon}, {:ask, 1000}})
+
+    sub1 = {stage, mon}
+
+    assert_receive {:"$gen_consumer", ^sub1, [%R{}]}
+    assert_receive {:"$gen_consumer", ^sub1, {:notification, {:producer, :done}}}
+
+    task = Task.async(fn() ->
+      [stage] |> Flow.from_stages() |> Enum.to_list()
+    end)
+
+    :timer.sleep(100)
+
+    GenStage.cancel(sub1, :normal)
+
+    assert Task.await(task) == []
+
+    assert_receive {:DOWN, ^mon, _, _, :normal}
 
     assert [
       connect: [_],

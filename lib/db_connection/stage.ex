@@ -292,8 +292,9 @@ defmodule DBConnection.Stage do
         {:automatic, stage}
     end
   end
-  def handle_subscribe(:consumer, _, {_, ref}, stage) do
-    %Stage{consumers: consumers} = stage
+  def handle_subscribe(:consumer, _, {pid, ref}, stage) do
+    %Stage{done?: done?, consumers: consumers} = stage
+    if done?, do: send(pid, {{self(), ref}, {:producer, :done}})
     {:automatic, %Stage{stage | consumers: [ref | consumers]}}
   end
 
