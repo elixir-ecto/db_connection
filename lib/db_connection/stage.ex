@@ -1,6 +1,22 @@
 defmodule DBConnection.Stage do
   @moduledoc """
   A `GenStage` process that encapsulates a transaction.
+
+  ### Options
+
+    * `:pool_timeout` - The maximum time to wait for a reply when making a
+    synchronous call to the pool (default: `5_000`)
+    * `:queue` - Whether to block waiting in an internal queue for the
+    connection's state (boolean, default: `true`)
+    * `:timeout` - The maximum time that the caller is allowed the
+    to hold the connection's state (ignored when using a run/transaction
+    connection, default: `15_000`)
+    * `:log` - A function to log information about a call, either
+    a 1-arity fun, `{module, function, args}` with `DBConnection.LogEntry.t`
+    prepended to `args` or `nil`. See `DBConnection.LogEntry` (default: `nil`)
+
+  The pool and connection module may support other options. All options
+  are passed to `handle_begin/2`, `handle_commit/2` and `handle_rollback/2`.
   """
   alias __MODULE__, as: Stage
 
@@ -20,23 +36,8 @@ defmodule DBConnection.Stage do
   The transaction is rolled back if the process terminates with a reason other
   than `:normal`.
 
-  ### Options
-
-    * `:pool_timeout` - The maximum time to wait for a reply when making a
-    synchronous call to the pool (default: `5_000`)
-    * `:queue` - Whether to block waiting in an internal queue for the
-    connection's state (boolean, default: `true`)
-    * `:timeout` - The maximum time that the caller is allowed the
-    to hold the connection's state (ignored when using a run/transaction
-    connection, default: `15_000`)
-    * `:log` - A function to log information about a call, either
-    a 1-arity fun, `{module, function, args}` with `DBConnection.LogEntry.t`
-    prepended to `args` or `nil`. See `DBConnection.LogEntry` (default: `nil`)
-
-  The pool and connection module may support other options. All options
-  are passed to `handle_begin/2`, `handle_prepare/3, `handle_close/3,
-  `handle_declare/4`, `handle_first/4`, `handle_next/4`, `handle_deallocate/4`,
-  `handle_commit/2` and `handle_rollback/2`.
+  All options are passed to `DBConnection.prepare_stream/4`. For options see
+  "Options" in the module documentation.
 
   ### Example
 
@@ -56,23 +57,8 @@ defmodule DBConnection.Stage do
   The transaction is rolled back if the process terminates with a reason other
   than `:normal`.
 
-  ### Options
-
-    * `:pool_timeout` - The maximum time to wait for a reply when making a
-    synchronous call to the pool (default: `5_000`)
-    * `:queue` - Whether to block waiting in an internal queue for the
-    connection's state (boolean, default: `true`)
-    * `:timeout` - The maximum time that the caller is allowed the
-    to hold the connection's state (ignored when using a run/transaction
-    connection, default: `15_000`)
-    * `:log` - A function to log information about a call, either
-    a 1-arity fun, `{module, function, args}` with `DBConnection.LogEntry.t`
-    prepended to `args` or `nil`. See `DBConnection.LogEntry` (default: `nil`)
-
-  The pool and connection module may support other options. All options
-  are passed to `handle_begin/2`, `handle_declare/4`, `handle_first/4`,
-  `handle_next/4`, `handle_deallocate/4`, `handle_commit/2` and
-  `handle_rollback/2`.
+  All options are passed to `DBConnection.stream/4`. For options see "Options"
+  in the module documentation
 
   ### Example
 
@@ -86,62 +72,106 @@ defmodule DBConnection.Stage do
   end
 
   @doc """
-  Start link a `GenStage` process that will run a transaction for its duration.
+  Start link a `GenStage` producer that will run a transaction for its duration.
 
-  The first argument is the pool, the second argument is the `GenStage` type,
-  the third argument is the start function, the fourth argument is the handle
-  function, the fifth argument is the stop function and the optional sixth
-  argument are the options.
+  The first argument is the pool, the second argument is the start function,
+  the third argument is the handle demand function, the fourth argument is the
+  stop function and the optional fiftth argument are the options.
 
   The start function is a 1-arity anonymous function with argument
   `DBConnection.t`. This is called after the transaction begins but before
-  `start_link/6` returns. It should return the `state` or call
+  `producer/5` returns. It should return the accumulator or call
   `DBConnection.rollback/2` to stop the `GenStage`.
 
-  The handle function is a 3-arity anonymous function. The first argument is the
-  `DBConnection.t` for the transaction and the third argument is the state.
-  If the `GenStage` type is a `:producer`, then the second argument is the
-  `demand` from a `GenStage` `handle_demand` callback. Otherwise the second
-  argument is the events from a `GenStage` `handle_events` callback. This
-  function returns a 2-tuple, with first element as events (empty list for
-  `:consumer`) and second element as the `state`. This function can roll back
-  and stop the `GenStage` using `DBConnection.rollback/2`.
+  The handle demand function is a 3-arity anonymous function. The first argument
+  is the `DBConnection.t` for the transaction, the second argument is the
+  `demand`, and the third argument is the accumulator. This function returns a
+  2-tuple, with first element as list of events to fulfil the demand and second
+  element as the accumulator. If the producer has emitted all events (and so
+  not fulfilled demand) it should call
+  `GenStage.async_notify(self(), {:producer, :done | :halted}` to signal to
+  consumers that it has finished. Also this function can rollback and stop the
+  `GenStage` using `DBConnection.rollback/2`.
 
   The stop function is a 3-arity anonymous function. The first argument is the
   `DBConnection.t` for the transaction, the second argument is the terminate
-  reason and the third argument is the `state`. This function will only be
+  reason and the third argument is the accumulator. This function will only be
   called if connection is alive and the transaction has not been rolled back. If
-  this function returns the transaction is commited. This function can roll back
+  this function returns the transaction is committed. This function can rollback
   and stop the `GenStage` using `DBConnection.rollback/2`.
+
+  For options see "Options" in the module documentation.
+
+  The `GenStage` process will behave like a `Flow` stage:
+
+    * It will stop with reason `:normal` when the last consumer cancels
+
+  ### Example
+
+      start =
+        fn(conn) ->
+          {ids, DBConnection.prepare!(conn, query, opts)}
+        end
+      handle_demand =
+        fn(conn, demand, {ids, query}) ->
+          {param, rem} = Enum.split(ids, demand)
+          %{rows: rows} = DBConection.execute!(conn, query, [param])
+          if rem == [], do: GenStage.async_notify(self(), {:producer, :done})
+          {rows, {rem, query}}
+        end
+      stop =
+        fn(conn, reason, {rem, query}) ->
+          DBConnection.close!(conn, query, opts)
+          if reason != :normal or rem != [] do
+            DBConnection.rollback(conn, reason)
+          end
+        end
+      DBConnection.Stage.producer(pool, start, handle_demand, stop)
+  """
+  @spec producer(GenServer.server, ((DBConnection.t) -> acc),
+    ((DBConnection.t, demand :: pos_integer, acc) -> {[any], acc}),
+    ((DBConnection.t, reason :: any, acc) -> any), Keyword.t) ::
+    GenServer.on_start when acc: var
+  def producer(pool, start, handle_demand, stop, opts \\ []) do
+    start_link(pool, :producer, start, handle_demand, stop, opts)
+  end
+
+  @doc """
+  Start link a `GenStage` producer consumer that will run a transaction for its
+  duration.
+
+  The first argument is the pool, the second argument is the start function,
+  the third argument is the handle events function, the fourth argument is the
+  stop function and the optional fiftth argument are the options.
+
+  The start function is a 1-arity anonymous function with argument
+  `DBConnection.t`. This is called after the transaction begins but before
+  `producer_consumer/5` returns. It should return the accumulator or call
+  `DBConnection.rollback/2` to stop the `GenStage`.
+
+  The handle events function is a 3-arity anonymous function. The first argument
+  is the `DBConnection.t` for the transaction, the second argument is a list of
+  incoming events, and the third argument is the accumulator. This function
+  returns a 2-tuple, with first element as list of outgoing events and second
+  element as the accumulator. Also this function can rollback and stop the
+  `GenStage` using `DBConnection.rollback/2`.
+
+  The stop function is a 3-arity anonymous function. The first argument is the
+  `DBConnection.t` for the transaction, the second argument is the terminate
+  reason and the third argument is the accumulator. This function will only be
+  called if connection is alive and the transaction has not been rolled back. If
+  this function returns the transaction is committed. This function can rollback
+  and stop the `GenStage` using `DBConnection.rollback/2`.
+
+  For options see "Options" in the module documentation.
 
   The `GenStage` process will behave like a `Flow` stage:
 
     * It will stop with reason `:normal` when the last consumer cancels
     * It will notify consumers that it is done when all producers have cancelled
     or notified that they are done or halted
-    * It will cancel new and remaining producers when all producers have
-    notified that they are done or halted and it is a `:consumer`
     * It will not send demand to new producers when all producers have notified
-    that they are done or halted and it is a `:consumer_producer`
-
-  ### Options
-
-    * `:name` - A name to register the started process (see the `:name` option
-    in `GenServer.start_link/3`)
-    * `:pool_timeout` - The maximum time to wait for a reply when making a
-    synchronous call to the pool (default: `5_000`)
-    * `:queue` - Whether to block waiting in an internal queue for the
-    connection's state (boolean, default: `true`)
-    * `:timeout` - The maximum time that the caller is allowed the
-    to hold the connection's state (ignored when using a run/transaction
-    connection, default: `15_000`)
-    * `:log` - A function to log information about a call, either
-    a 1-arity fun, `{module, function, args}` with `DBConnection.LogEntry.t`
-    prepended to `args` or `nil`. See `DBConnection.LogEntry` (default: `nil`)
-
-  The pool and connection module may support other options. All options
-  are passed to `handle_begin/2`, `handle_commit/2` and `handle_rollback/2`.
-  All options are passed to the `GenStage` on init.
+    that they are done or halted
 
   ### Example
 
@@ -149,36 +179,87 @@ defmodule DBConnection.Stage do
         fn(conn) ->
           DBConnection.prepare!(conn, query, opts)
         end
-      handle =
-        fn(conn, param, query) ->
-          {[DBConection.execute!(conn, param, query, opts)], query}
+      handle_events =
+        fn(conn, ids, query) ->
+          %{rows: rows} = DBConection.execute!(conn, query, [ids])
+          {rows, query}
         end
       stop =
-        fn(conn, _, query) ->
+        fn(conn, reason, query) ->
           DBConnection.close!(conn, query, opts)
+          if reason != :normal do
+            DBConnection.rollback(conn, reason)
+          end
         end
-      DBConnection.Stage.start_link(pool, :producer_consumer,
-                                    start, handle, stop, opts)
+      DBConnection.Stage.consumer_producer(pool, start, handle_events, stop)
   """
-  @spec start_link(GenServer.server, :producer,
-    ((DBConnection.t) -> state),
-    ((DBConnection.t, demand :: pos_integer, state) -> {[any], state}),
-    ((DBConnection.t, reason :: any, state) -> any), Keyword.t) ::
-    GenServer.on_start when state: var
-  @spec start_link(GenServer.server, :producer_consumer,
-    ((DBConnection.t) -> state),
-    ((DBConnection.t, [any], state) -> {[any], state}),
-    ((DBConnection.t, reason :: any, state) -> any), Keyword.t) ::
-    GenServer.on_start when state: var
-  @spec start_link(GenServer.server, :consumer,
-    ((DBConnection.t) -> state),
-    ((DBConnection.t, [any], state) -> {[], state}),
-    ((DBConnection.t, reason :: any, state) -> any), Keyword.t) ::
-    GenServer.on_start when state: var
-  def start_link(pool, type, start, handle, stop, opts \\ []) do
-    start_opts = Keyword.take(opts, @start_opts)
-    args = {pool, type, start, handle, stop, opts}
-    GenStage.start_link(__MODULE__, args, start_opts)
+  @spec producer_consumer(GenServer.server, ((DBConnection.t) -> acc),
+    ((DBConnection.t, events_in :: [any], acc) -> {events_out :: [any], acc}),
+    ((DBConnection.t, reason :: any, acc) -> any), Keyword.t) ::
+    GenServer.on_start when acc: var
+  def producer_consumer(pool, start, handle_events, stop, opts \\ []) do
+    start_link(pool, :producer_consumer, start, handle_events, stop, opts)
+  end
+
+  @doc """
+  Start link a `GenStage` consumer that will run a transaction for its duration.
+
+  The first argument is the pool, the second argument is the start function,
+  the third argument is the handle events function, the fourth argument is the
+  stop function and the optional fiftth argument are the options.
+
+  The start function is a 1-arity anonymous function with argument
+  `DBConnection.t`. This is called after the transaction begins but before
+  `consumer/5` returns. It should return the accumulator or call
+  `DBConnection.rollback/2` to stop the `GenStage`.
+
+  The handle events function is a 3-arity anonymous function. The first argument
+  is the `DBConnection.t` for the transaction, the second argument is the
+  events, and the third argument is the accumulator. This function returns a
+  2-tuple, with first element is an empty list (as no outgoing events) and
+  second element as the accumulator. Also this function can rollback and stop
+  the `GenStage` using `DBConnection.rollback/2`.
+
+  The stop function is a 3-arity anonymous function. The first argument is the
+  `DBConnection.t` for the transaction, the second argument is the terminate
+  reason and the third argument is the accumulator. This function will only be
+  called if connection is alive and the transaction has not been rolled back. If
+  this function returns the transaction is committed. This function can rollback
+  and stop the `GenStage` using `DBConnection.rollback/2`.
+
+  For options see "Options" in the module documentation.
+
+  The `GenStage` process will behave like a `Flow` stage:
+
+    * It will cancel new and remaining producers when all producers have
+    notified that they are done or halted and it is a `:consumer`
+
+  ### Example
+
+      start =
+        fn(conn) ->
+          DBConnection.prepare!(conn, query, opts)
+        end
+      handle_events =
+        fn(conn, ids, query) ->
+          DBConection.execute!(conn, query, [ids])
+          {[], query}
+        end
+      stop =
+        fn(conn, reason, query) ->
+          DBConnection.close!(conn, query, opts)
+          if reason != :normal do
+            DBConnection.rollback(conn, reason)
+          end
+        end
+      DBConnection.Stage.consumer(pool, start, handle_events, stop)
+  """
+  @spec consumer(GenServer.server, ((DBConnection.t) -> acc),
+    ((DBConnection.t, events_in :: [any], acc) -> {[], acc}),
+    ((DBConnection.t, reason :: any, acc) -> any), Keyword.t) ::
+    GenServer.on_start when acc: var
+  def consumer(pool, start, handle_events, stop, opts \\ []) do
+    start_link(pool, :consumer, start, handle_events, stop, opts)
   end
 
   @doc false
@@ -245,6 +326,7 @@ defmodule DBConnection.Stage do
     end
   end
 
+  @doc false
   def handle_info({{_, ref}, {:producer, state}}, stage) when state in [:halted, :done] do
     %Stage{type: type, producers: producers, active: active,
            done?: done?} = stage
@@ -320,7 +402,13 @@ defmodule DBConnection.Stage do
 
   defp stream(pool, stream_fun, query, params, opts) do
     start = &stream_start(&1, stream_fun, query, params, opts)
-    start_link(pool, :producer, start, &stream_next/3, &stream_stop/3, opts)
+    producer(pool, start, &stream_next/3, &stream_stop/3, opts)
+  end
+
+  defp start_link(pool, type, start, handle, stop, opts) do
+    start_opts = Keyword.take(opts, @start_opts)
+    args = {pool, type, start, handle, stop, opts}
+    GenStage.start_link(__MODULE__, args, start_opts)
   end
 
   defp stream_start(conn, stream_fun, query, params, opts) do

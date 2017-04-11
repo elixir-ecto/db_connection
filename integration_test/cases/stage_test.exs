@@ -26,7 +26,7 @@ defmodule StageTest do
       {[DBConnection.execute!(conn, query, [demand])], query}
     end
     stop = fn(conn, _, query) -> DBConnection.close!(conn, query) end
-    {:ok, stage} = P.stage(pool, :producer, start, handle, stop, opts)
+    {:ok, stage} = P.producer(pool, start, handle, stop, opts)
     mon = Process.monitor(stage)
     assert stage |> Flow.from_stage() |> Enum.to_list() == [%R{}]
 
@@ -62,7 +62,7 @@ defmodule StageTest do
       {[DBConnection.execute!(conn, query, [demand])], query}
     end
     stop = fn(conn, _, query) -> DBConnection.close!(conn, query) end
-    {:ok, stage} = P.stage(pool, :producer, start, handle, stop, opts)
+    {:ok, stage} = P.producer(pool, start, handle, stop, opts)
 
     ref = make_ref()
     sub_opts = [cancel: :temporary]
@@ -101,7 +101,7 @@ defmodule StageTest do
       DBConnection.rollback(conn, :normal)
     end
     stop = fn(conn, _, query) -> DBConnection.close!(conn, query) end
-    {:ok, stage} = P.stage(pool, :producer, start, handle, stop, opts)
+    {:ok, stage} = P.producer(pool, start, handle, stop, opts)
     mon = Process.monitor(stage)
     catch_exit(stage |> Flow.from_stage() |> Enum.to_list())
 
@@ -134,7 +134,7 @@ defmodule StageTest do
       {[:oops], query}
     end
     stop = fn(conn, _, query) -> DBConnection.close!(conn, query) end
-    {:ok, stage} = P.stage(pool, :producer, start, handle, stop, opts)
+    {:ok, stage} = P.producer(pool, start, handle, stop, opts)
     mon = Process.monitor(stage)
     assert stage |> Flow.from_stage() |> Enum.take(1) == [:oops]
 
@@ -165,7 +165,7 @@ defmodule StageTest do
       :oops
     end
     fail = fn(_, _, _) -> flunk "should not run" end
-    {:ok, stage} = P.stage(pool, :producer, start, fail, fail, opts)
+    {:ok, stage} = P.producer(pool, start, fail, fail, opts)
 
     Process.flag(:trap_exit, true)
     catch_exit(stage |> Flow.from_stage() |> Enum.to_list())
@@ -197,7 +197,7 @@ defmodule StageTest do
       {[], query}
     end
     stop = fn(conn, _, query) -> DBConnection.close!(conn, query) end
-    {:ok, stage} = P.stage(pool, :consumer, start, handle, stop, opts)
+    {:ok, stage} = P.consumer(pool, start, handle, stop, opts)
     mon = Process.monitor(stage)
     flow = Flow.from_enumerable([:param])
     {:ok, _} = Flow.into_stages(flow, [stage])
@@ -234,7 +234,7 @@ defmodule StageTest do
       {[], query}
     end
     stop = fn(conn, _, query) -> DBConnection.close!(conn, query) end
-    {:ok, stage} = P.stage(pool, :consumer, start, handle, stop, opts)
+    {:ok, stage} = P.consumer(pool, start, handle, stop, opts)
 
     :ok = GenStage.async_subscribe(stage, [to: self(), cancel: :temporary, max_demand: 1])
 
@@ -281,7 +281,7 @@ defmodule StageTest do
       {[DBConnection.execute!(conn, query, events)], query}
     end
     stop = fn(conn, _, query) -> DBConnection.close!(conn, query) end
-    {:ok, stage} = P.stage(pool, :producer_consumer, start, handle, stop, opts)
+    {:ok, stage} = P.producer_consumer(pool, start, handle, stop, opts)
     mon = Process.monitor(stage)
     {:ok, _} = Flow.from_enumerable([:param]) |> Flow.into_stages([stage])
     assert Flow.from_stage(stage) |> Enum.to_list() == [%R{}]
@@ -317,7 +317,7 @@ defmodule StageTest do
       {[DBConnection.execute!(conn, query, events)], query}
     end
     stop = fn(conn, _, query) -> DBConnection.close!(conn, query) end
-    {:ok, stage} = P.stage(pool, :producer_consumer, start, handle, stop, opts)
+    {:ok, stage} = P.producer_consumer(pool, start, handle, stop, opts)
 
     :ok = GenStage.async_subscribe(stage, [to: self(), cancel: :temporary, max_demand: 1])
 
