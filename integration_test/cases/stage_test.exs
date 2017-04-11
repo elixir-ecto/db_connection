@@ -376,7 +376,7 @@ defmodule StageTest do
 
     mon = Process.monitor(stage)
 
-    {:ok, coord} = [:param] |> Flow.from_enumerable() |> Flow.into_stages([stage])
+    {:ok, _} = [:param] |> Flow.from_enumerable() |> Flow.into_stages([stage])
 
     send(stage, {:"$gen_producer", {self(), mon}, {:subscribe, nil, []}})
     send(stage, {:"$gen_producer", {self(), mon}, {:ask, 1000}})
