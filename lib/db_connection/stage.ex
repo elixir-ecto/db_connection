@@ -24,7 +24,7 @@ defmodule DBConnection.Stage do
 
   @enforce_keys [:conn, :handle, :stop, :state, :opts, :type]
   defstruct [:conn, :handle, :stop, :state, :opts, :type,
-             consumers: [], producers: %{}, active: [], done?: false]
+             producers: %{}, done?: false]
 
   @start_opts [:name, :spawn_opt, :debug]
   @stage_opts [:demand, :buffer_size, :buffer_keep, :dispatcher, :subscribe_to]
@@ -279,73 +279,34 @@ defmodule DBConnection.Stage do
   @doc false
   def handle_subscribe(:producer, _, {pid, ref} = from, stage) do
     case stage do
-      %Stage{done?: true, type: :consumer, producers: producers} ->
+      %Stage{done?: true} ->
         GenStage.cancel(from, :normal, [:noconnect])
-        stage = %Stage{stage | producers: Map.put(producers, ref, pid)}
         {:manual, stage}
-      %Stage{done?: true, type: :producer_consumer, producers: producers} ->
-        stage = %Stage{stage | producers: Map.put(producers, ref, pid)}
-        {:manual, stage}
-      %Stage{done?: false, producers: producers, active: active} ->
-        stage = %Stage{stage | producers: Map.put(producers, ref, pid),
-                               active: [ref | active]}
-        {:automatic, stage}
+      %Stage{done?: false, producers: producers} ->
+        {:automatic, %Stage{stage | producers: Map.put(producers, ref, pid)}}
     end
   end
-  def handle_subscribe(:consumer, _, {_, ref}, stage) do
-    %Stage{done?: done?, consumers: consumers} = stage
-    if done?, do: GenStage.async_notify(self(), {:producer, :done})
-    {:automatic, %Stage{stage | consumers: [ref | consumers]}}
+  def handle_subscribe(:consumer, _, _, stage) do
+    {:automatic, stage} 
   end
 
   @doc false
-  def handle_cancel(_, {_, ref}, stage) do
-    %Stage{type: type, consumers: consumers, producers: producers,
-           active: active, done?: done?} = stage
-    case producers do
-      %{^ref => _} when active != [ref] or done? ->
-        producers = Map.delete(producers, ref)
-        active = List.delete(active, ref)
-        {:noreply, [], %Stage{stage | active: active, producers: producers}}
-      %{^ref => _} when type == :consumer ->
-        producers = Map.delete(producers, ref)
-        for {ref, pid} <- producers do
-          GenStage.cancel({pid, ref}, :normal, [:noconnect])
-        end
-        stage = %Stage{stage | active: [], done?: true, producers: producers}
-        {:noreply, [], stage}
-      %{^ref => _} when type == :producer_consumer ->
-        producers = Map.delete(producers, ref)
-        GenStage.async_notify(self(), {:producer, :done})
-        stage = %Stage{stage | active: [], done?: true, producers: producers}
-        {:noreply, [], stage}
-      %{} when consumers == [ref] ->
-        {:stop, :normal, %Stage{stage | consumers: []}}
-      %{} ->
-        consumers = List.delete(consumers, ref)
-        {:noreply, [], %Stage{stage | consumers: consumers}}
+  def handle_cancel(_, _, %Stage{done?: true} = stage) do
+    {:noreply, stage}
+  end
+  def handle_cancel(_, {_, ref}, %Stage{done?: false, producers: producers} = stage) do
+    case Map.delete(producers, ref) do
+      new_producers when new_producers == %{} and producers != %{} ->
+        GenStage.async_info(self(), :stop)
+        {:noreply, [], %Stage{stage | done?: true, producers: %{}}}
+      new_producers ->
+        {:noreply, [], %Stage{stage | producers: new_producers}}
     end
   end
 
   @doc false
-  def handle_info({{_, ref}, {:producer, state}}, stage) when state in [:halted, :done] do
-    %Stage{type: type, producers: producers, active: active,
-           done?: done?} = stage
-    case producers do
-      %{^ref => _} when active != [ref] or done? ->
-        active = List.delete(active, ref)
-        {:noreply, [], %Stage{stage | active: active}}
-      %{^ref => _} when type == :consumer ->
-        for {ref, pid} <- producers do
-          GenStage.cancel({pid, ref}, :normal, [:noconnect])
-        end
-        {:noreply, [], %Stage{stage | active: [], done?: true}}
-      %{^ref => _} when type == :producer_consumer ->
-        GenStage.async_notify(self(), {:producer, :done})
-        {:noreply, [], %Stage{stage | active: [], done?: true}}
-      %{} ->
-        {:noreply, [], stage}
-    end
+  def handle_info(:stop, stage) do
+    {:stop, :normal, stage}
   end
   def handle_info(_, stage) do
     {:noreply, [], stage}
@@ -430,12 +391,12 @@ defmodule DBConnection.Stage do
       {:suspended, {0, acc}, cont} ->
         {Enum.reverse(acc), {:cont, cont}}
       {state, {_, acc}} when state in [:halted, :done] ->
-        GenStage.async_notify(self(), {:producer, state})
+        GenStage.async_info(self(), :stop)
         {Enum.reverse(acc), state}
     end
   end
   defp stream_next(_, _, state) when state in [:halted, :done] do
-    GenStage.async_notify(self(), {:producer, state})
+    GenStage.async_info(self(), :stop)
     {[], state}
   end
 

@@ -22,7 +22,7 @@ defmodule StageTest do
     {:ok, pool} = P.start_link(opts)
     start = &DBConnection.prepare!(&1, %Q{})
     handle = fn(conn, demand, query) ->
-      GenStage.async_notify(self(), {:producer, :done})
+      GenStage.async_info(self(), :stop)
       {[DBConnection.execute!(conn, query, [demand])], query}
     end
     stop = fn(conn, _, query) -> DBConnection.close!(conn, query) end
@@ -58,22 +58,20 @@ defmodule StageTest do
     {:ok, pool} = P.start_link(opts)
     start = &DBConnection.prepare!(&1, %Q{})
     handle = fn(conn, demand, query) ->
-      GenStage.async_notify(self(), {:producer, :done})
+      GenStage.async_info(self(), :stop)
       {[DBConnection.execute!(conn, query, [demand])], query}
     end
     stop = fn(conn, _, query) -> DBConnection.close!(conn, query) end
     {:ok, stage} = P.producer(pool, start, handle, stop, opts)
 
     ref = make_ref()
-    sub_opts = [cancel: :temporary]
+    sub_opts = [cancel: :transient]
     send(stage, {:"$gen_producer", {parent, ref}, {:subscribe, nil, sub_opts}})
     sub = {stage, ref}
     GenStage.ask(sub, 1)
     assert_receive {:"$gen_consumer", ^sub, [%R{}]}
     mon = Process.monitor(stage)
-    GenStage.cancel(sub, :normal)
     assert_receive {:DOWN, ^mon, :process, ^stage, :normal}
-    assert_received {:"$gen_consumer", ^sub, {:cancel, :normal}}
 
     assert [
       connect: [_],
@@ -103,7 +101,7 @@ defmodule StageTest do
     stop = fn(conn, _, query) -> DBConnection.close!(conn, query) end
     {:ok, stage} = P.producer(pool, start, handle, stop, opts)
     mon = Process.monitor(stage)
-    catch_exit(stage |> Flow.from_stage() |> Enum.to_list())
+    assert stage |> Flow.from_stage() |> Enum.to_list() == []
 
     assert_receive {:DOWN, ^mon, :process, ^stage, :normal}
 
@@ -135,10 +133,8 @@ defmodule StageTest do
     end
     stop = fn(conn, _, query) -> DBConnection.close!(conn, query) end
     {:ok, stage} = P.producer(pool, start, handle, stop, opts)
-    mon = Process.monitor(stage)
     assert stage |> Flow.from_stage() |> Enum.take(1) == [:oops]
-
-    assert_receive {:DOWN, ^mon, :process, ^stage, :normal}
+    GenStage.stop(stage)
 
     assert [
       connect: [_],
@@ -236,21 +232,22 @@ defmodule StageTest do
     stop = fn(conn, _, query) -> DBConnection.close!(conn, query) end
     {:ok, stage} = P.consumer(pool, start, handle, stop, opts)
 
-    :ok = GenStage.async_subscribe(stage, [to: self(), cancel: :temporary, max_demand: 1])
+    :ok = GenStage.async_subscribe(stage, [to: self(), cancel: :transient, max_demand: 1])
 
     assert_receive {:"$gen_producer", {^stage, ref1} = sub1, {:subscribe, _, _}}
     assert_receive {:"$gen_producer", ^sub1, {:ask, 1}}
 
+    :sys.suspend(stage)
     send(stage, {:"$gen_consumer", {self(), ref1}, [:param]})
-    send(stage, {{self(), ref1}, {:producer, :done}})
-    :ok = GenStage.async_subscribe(stage, [to: self(), cancel: :temporary, max_demand: 1])
+    send(stage, {:"$gen_consumer", {self(), ref1}, {:cancel, :normal}})
+    :ok = GenStage.async_subscribe(stage, [to: self(), cancel: :transient, max_demand: 1])
+    mon = Process.monitor(stage)
+    :sys.resume(stage)
 
     assert_receive {:"$gen_producer", {^stage, _} = sub2, {:subscribe, _, _}}
     assert_receive {:"$gen_producer", ^sub1, {:ask, 1}}
-    assert_receive {:"$gen_producer", ^sub1, {:cancel, :normal}}
     assert_receive {:"$gen_producer", ^sub2, {:cancel, :normal}}
-
-    GenStage.stop(stage)
+    assert_receive {:DOWN, ^mon, :process, ^stage, :normal}
     refute_received {:"$gen_producer", _, _}
 
     assert [
@@ -281,10 +278,16 @@ defmodule StageTest do
       {[DBConnection.execute!(conn, query, events)], query}
     end
     stop = fn(conn, _, query) -> DBConnection.close!(conn, query) end
+
     {:ok, stage} = P.producer_consumer(pool, start, handle, stop, opts)
     mon = Process.monitor(stage)
-    {:ok, _} = Flow.from_enumerable([:param]) |> Flow.into_stages([stage])
-    assert Flow.from_stage(stage) |> Enum.to_list() == [%R{}]
+    {:ok, flow} =
+      [:param]
+      |> Flow.from_enumerable()
+      #|> Flow.map(&(&1))
+      |> Flow.into_stages([stage], [demand: :accumulate])
+
+    assert GenStage.stream([{flow, [cancel: :transient]}]) |> Enum.to_list() == [%R{}]
 
     assert_receive {:DOWN, ^mon, :process, ^stage, :normal}
 
@@ -319,7 +322,7 @@ defmodule StageTest do
     stop = fn(conn, _, query) -> DBConnection.close!(conn, query) end
     {:ok, stage} = P.producer_consumer(pool, start, handle, stop, opts)
 
-    :ok = GenStage.async_subscribe(stage, [to: self(), cancel: :temporary, max_demand: 1])
+    :ok = GenStage.async_subscribe(stage, [to: self(), cancel: :transient, max_demand: 1])
 
     assert_receive {:"$gen_producer", {^stage, ref1} = sub1, {:subscribe, _, _}}
     assert_receive {:"$gen_producer", ^sub1, {:ask, 1}}
@@ -332,15 +335,16 @@ defmodule StageTest do
     assert_receive %R{}
 
     :sys.suspend(stage)
-    send(stage, {{self(), ref1}, {:producer, :done}})
-    :ok = GenStage.async_subscribe(stage, [to: self(), cancel: :temporary, max_demand: 1])
+    send(stage, {:"$gen_consumer", {self(), ref1}, {:cancel, :normal}})
+    :ok = GenStage.async_subscribe(stage, [to: self(), cancel: :transient, max_demand: 1])
     mon = Process.monitor(stage)
     :sys.resume(stage)
 
     assert Task.await(task) == [%R{}]
-    assert_receive {:"$gen_producer", {^stage, _}, {:subscribe, _, _}}
+    assert_receive {:"$gen_producer", {^stage, _} = sub2, {:subscribe, _, _}}
+    assert_receive {:"$gen_producer", ^sub1, {:ask, 1}}
+    assert_receive {:"$gen_producer", ^sub2, {:cancel, :normal}}
     assert_receive {:DOWN, ^mon, :process, ^stage, :normal}
-    assert_received {:"$gen_producer", ^sub1, {:ask, 1}}
     refute_received {:"$gen_producer", _, _}
 
     assert [
@@ -376,26 +380,24 @@ defmodule StageTest do
 
     mon = Process.monitor(stage)
 
-    {:ok, _} = [:param] |> Flow.from_enumerable() |> Flow.into_stages([stage])
+    {:ok, flow} =
+      [:param]
+      |> Flow.from_enumerable()
+      |> Flow.into_stages([stage], [demand: :accumulate])
 
     send(stage, {:"$gen_producer", {self(), mon}, {:subscribe, nil, []}})
     send(stage, {:"$gen_producer", {self(), mon}, {:ask, 1000}})
-
-    sub1 = {stage, mon}
-
-    assert_receive {:"$gen_consumer", ^sub1, [%R{}]}
-    assert_receive {:"$gen_consumer", ^sub1, {:notification, {:producer, :done}}}
-
+ 
     task = Task.async(fn() ->
       [stage] |> Flow.from_stages() |> Enum.to_list()
     end)
 
-    :timer.sleep(100)
+    GenStage.demand(flow, :forward)
+    sub1 = {stage, mon}
+    assert_receive {:"$gen_consumer", ^sub1, [%R{}]}
 
     GenStage.cancel(sub1, :normal)
-
     assert Task.await(task) == []
-
     assert_receive {:DOWN, ^mon, _, _, :normal}
 
     assert [
@@ -472,7 +474,7 @@ defmodule StageTest do
       ] = A.record(agent)
   end
 
-  test "stream notifies new consumers that it's done" do
+  test "stream stops normally after it's done" do
     stack = [
       {:ok, :state},
       {:ok, :began, :new_state},
@@ -488,20 +490,15 @@ defmodule StageTest do
     {:ok, pool} = P.start_link(opts)
     {:ok, stage} = P.stream_stage(pool, %Q{}, [:param], opts)
 
-    ref = make_ref()
-    send(stage, {:"$gen_producer", {parent, ref}, {:subscribe, nil, []}})
+    ref = Process.monitor(stage)
+    send(stage, {:"$gen_producer", {parent, ref}, {:subscribe, nil, [cancel: :transient]}})
     sub = {stage, ref}
     GenStage.ask(sub, 1000)
 
     assert_receive {:"$gen_consumer", ^sub, [%R{}]}
-    assert_receive {:"$gen_consumer", ^sub, {:notification, {:producer, :halted}}}
 
-    assert stage |> Flow.from_stage() |> Enum.to_list() == []
-
-    mon = Process.monitor(stage)
-    GenStage.cancel(sub, :normal)
-    assert_receive {:DOWN, ^mon, :process, ^stage, :normal}
-    assert_received {:"$gen_consumer", ^sub, {:cancel, :normal}}
+    assert_receive {:DOWN, ^ref, :process, ^stage, :normal}
+    refute_received {:"$gen_producer", ^sub, _}
 
     assert [
       connect: [_],
@@ -528,13 +525,13 @@ defmodule StageTest do
     {:ok, pool} = P.start_link(opts)
     {:ok, stage} = P.stream_stage(pool, %Q{}, [:param], opts)
 
-    ref = make_ref()
+    ref = Process.monitor(stage)
     send(stage, {:"$gen_producer", {parent, ref}, {:subscribe, nil, []}})
     sub = {stage, ref}
 
-    mon = Process.monitor(stage)
     GenStage.cancel(sub, :normal)
-    assert_receive {:DOWN, ^mon, :process, ^stage, :normal}
+    assert_receive {:DOWN, ^ref, :process, ^stage, :normal}
+    assert_receive {:"$gen_consumer", ^sub, {:cancel, :normal}}
 
     assert [
       connect: [_],
