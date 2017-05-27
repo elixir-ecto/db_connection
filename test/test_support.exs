@@ -67,6 +67,22 @@ defmodule TestConnection do
         DBConnection.Stage.start_link(pool, query, params, opts2 ++ unquote(opts))
       end
 
+      def resource_begin(pool, opts2 \\ []) do
+        DBConnection.resource_begin(pool, opts2 ++ unquote(opts))
+      end
+
+      def resource_transaction(conn, fun, opts2 \\ []) do
+        DBConnection.resource_transaction(conn, fun, opts2 ++ unquote(opts))
+      end
+
+      def resource_commit(conn, opts2 \\ []) do
+        DBConnection.resource_commit(conn, opts2 ++ unquote(opts))
+      end
+
+      def resource_rollback(conn, reason, opts2 \\ []) do
+        DBConnection.resource_rollback(conn, reason, opts2 ++ unquote(opts))
+      end
+
       defoverridable [start_link: 1]
     end
   end

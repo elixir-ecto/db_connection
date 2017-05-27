@@ -8,7 +8,7 @@ defmodule DBConnection.Stage do
     * `:stream_map` - A function to flat map the results of the query, either a
     2-arity fun, `{module, function, args}` with `DBConnection.t` and the result
     prepended to `args` or `nil` (default: `nil`)
-    * `:prepare` - Whether the consumer should prepare the query before
+    * `:stage_prepare` - Whether the consumer should prepare the query before
     streaming it (default: `false`)
     * `:pool_timeout` - The maximum time to wait for a reply when making a
     synchronous call to the pool (default: `5_000`)
@@ -62,9 +62,9 @@ defmodule DBConnection.Stage do
   @doc false
   def init({pool, query, params, opts}) do
     stage_opts = Keyword.take(opts, @stage_opts)
-    conn = DBConnection.stage_begin(pool, opts)
+    conn = DBConnection.resource_begin(pool, opts)
     declare = &declare(&1, query, params, opts)
-    case DBConnection.stage_transaction(conn, declare, opts) do
+    case DBConnection.resource_transaction(conn, declare, opts) do
       {:ok, state} ->
         {:producer, %Stage{conn: conn, state: state, opts: opts}, stage_opts}
       {:error, reason} ->
@@ -87,7 +87,7 @@ defmodule DBConnection.Stage do
   def handle_demand(demand, stage) do
     %Stage{conn: conn, state: state, opts: opts} = stage
     fetch = &fetch(&1, demand, state, opts)
-    case DBConnection.stage_transaction(conn, fetch, opts) do
+    case DBConnection.resource_transaction(conn, fetch, opts) do
       {:ok, {:halt, state}} ->
         GenStage.async_info(self(), :stop)
         {:noreply, [], %Stage{stage | state: state}}
@@ -107,21 +107,13 @@ defmodule DBConnection.Stage do
   @doc false
   def terminate(reason, stage) do
     %Stage{conn: conn, state: state, opts: opts} = stage
-    deallocate = &DBConnection.deallocate(&1, state, opts)
-    case DBConnection.stage_transaction(conn, deallocate, opts) do
-      {:ok, _} when reason == :normal ->
-        case DBConnection.stage_commit(conn, opts) do
-          :ok ->
-            :ok
-          {:error, :rollback} ->
-            exit(:rollback)
-        end
-      {:ok, _} ->
-        DBConnection.stage_rollback(conn, opts)
-      {:error, new_reason} ->
-        DBConnection.stage_rollback(conn, opts)
-        if new_reason !== reason, do: exit(reason)
-      :closed ->
+    deallocate = &deallocate(&1, reason, state, opts)
+    case DBConnection.resource_transaction(conn, deallocate, opts) do
+      {:ok, :normal} ->
+        DBConnection.resource_commit(conn, opts)
+      {:ok, reason} ->
+        DBConnection.resource_rollback(conn, reason, opts)
+      {:error, :rollback} ->
         :ok
     end
   end
@@ -129,7 +121,7 @@ defmodule DBConnection.Stage do
   ## Helpers
 
   defp declare(conn, query, params, opts) do
-    case Keyword.get(opts, :prepare, false) do
+    case Keyword.get(opts, :stage_prepare, false) do
       true ->
         DBConnection.prepare_declare(conn, query, params, opts)
       false ->
@@ -146,5 +138,10 @@ defmodule DBConnection.Stage do
         DBConnection.deallocate(conn, state, opts)
         :erlang.raise(kind, reason, stack)
     end
+  end
+
+  defp deallocate(conn, reason, state, opts) do
+    :ok = DBConnection.deallocate(conn, state, opts)
+    reason
   end
 end

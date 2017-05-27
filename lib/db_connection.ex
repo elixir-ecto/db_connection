@@ -817,12 +817,10 @@ defmodule DBConnection do
     case get_info(conn) do
       {transaction, _} when transaction in [:transaction, :failed] ->
         throw({:rollback, conn_ref, err})
-      {transaction, _, _} when transaction in [:transaction, :failed] ->
-        throw({:rollback, conn_ref, err})
       {:idle, _} ->
         raise "not inside transaction"
-      {:idle, _, _} ->
-        raise "not inside transaction"
+      {:resource, _} ->
+        raise "not inside resource transaction"
       :closed ->
         raise DBConnection.ConnectionError, "connection is closed"
     end
@@ -920,13 +918,46 @@ defmodule DBConnection do
     resource(conn, start, &fetch/3, &deallocate/3, opts).(acc, fun)
   end
 
-  ## Stage Transaction
+  @doc """
+  Acquire a lock on a connection and return the connection struct for use with
+  `resource_transaction/3` calls.
 
-  @doc false
-  @spec stage_begin(pool :: GenServer.server, opts :: Keyword.t) :: t
-  def stage_begin(pool, opts) do
-    {result, log_info} = stage_begin_meter(pool, opts)
-    transaction_log(log_info)
+  To use the locked connection call `resource_transaction/3` and run requests
+  and/or nested run/transactions inside it. If the transaction is rolled back
+  the connection is checked in. Any calls inside a failed transaction (except
+  `rollback/2`) will raise until the transaction call returns. All running
+  `transaction/3` or `resource_transaction/3` calls will return
+  `{:error, :rollback}` if the transaction failed or connection closed and
+  `rollback/2` is not called for that `transaction/3` or
+  `resource_transaction/3`.
+
+  ### Options
+
+    * `:pool_timeout` - The maximum time to wait for a reply when making a
+    synchronous call to the pool (default: `5_000`)
+    * `:queue` - Whether to block waiting in an internal queue for the
+    connection's state (boolean, default: `true`)
+    * `:timeout` - The maximum time that the caller is allowed the
+    to hold the connection's state (default: `15_000`)
+    * `:log` - A function to log information about begin, commit and rollback
+    calls made as part of the transaction, either a 1-arity fun,
+    `{module, function, args}` with `DBConnection.LogEntry.t` prepended to
+    `args` or `nil`. See `DBConnection.LogEntry` (default: `nil`)
+
+  The pool and connection module may support other options. All options
+  are passed to `handle_begin/2`, and `handle_rollback/2`.
+
+  ### Example
+
+      conn = DBConnection.resource_begin(pool, opts)
+      {:ok, res} = DBConnection.resource_transaction(conn, fn(conn) ->
+        DBConnection.execute!(conn, "SELECT id FROM table", [])
+      end)
+  """
+  @spec resource_begin(pool :: GenServer.server, opts :: Keyword.t) :: t
+  def resource_begin(pool, opts \\ []) do
+    {result, log_info} = resource_begin_meter(pool, opts)
+    transaction_log(log_info, :resource_begin)
     case result do
       {:ok, conn} ->
         conn
@@ -937,28 +968,90 @@ defmodule DBConnection do
     end
   end
 
-  @doc false
-  @spec stage_transaction(t, (t -> result), opts :: Keyword.t) ::
-    {:ok, result} | {:error, reason :: any} | :closed when result: var
-  def stage_transaction(conn, fun, opts) do
+  @doc """
+  Run a series of requests using a connection checked out with
+  `resource_begin/3`, inside a transaction.
+
+  The result of the transaction fun is return inside an `:ok` tuple:
+  `{:ok, result}`. If rollback returns `{:error, reason}` or if connection
+  not available `{:error, :rollback}`.
+
+  To use the locked connection call the request with the connection
+  reference passed as the single argument to the `fun`. If the
+  connection disconnects all future calls using that connection
+  reference will fail.
+
+  `run/3`, `transaction/3` and `resource_transaction/3` can be nested inside
+  `resource_transaction/3`. If a resource transaction is rolled back or `fun`
+  raises the transaction is rolled back and the connection is checked in. If
+  `resource_transaction/3` is nested in a `resource_transaction/3` or
+  `transaction/3` it behaves like `transaction/3`.
+
+  ### Options
+
+    * `:log` - A function to log information about begin, commit and rollback
+    calls made as part of the transaction, either a 1-arity fun,
+    `{module, function, args}` with `DBConnection.LogEntry.t` prepended to
+    `args` or `nil`. See `DBConnection.LogEntry` (default: `nil`)
+
+  The pool and connection module may support other options. All options
+  are passed to `handle_rollback/2`.
+
+  ### Example
+
+      conn = DBConnection.resource_begin(pool, opts)
+      {:ok, res} = DBConnection.resource_transaction(conn, fn(conn) ->
+        DBConnection.execute!(conn, "SELECT id FROM table", [])
+      end)
+      DBConnection.resource_commit(conn, opts)
+
+  """
+  @spec resource_transaction(t, (t -> result), opts :: Keyword.t) ::
+    {:ok, result} | {:error, reason :: any | :rollback} when result: var
+  def resource_transaction(conn, fun, opts \\ []) do
     case get_info(conn) do
       {:failed, _} ->
-        stage_rollback(conn, opts)
+        {:error, :rollback}
       {:idle, _} ->
         raise "not inside transaction"
       {:transaction, _} ->
-        stage_nested(conn, fun, opts)
+        transaction_nested(conn, fun)
+      {:resource, conn_state} ->
+        resource_nested(conn, conn_state, fun, opts)
       :closed ->
-        :closed
+        {:error, :rollback}
     end
   end
 
-  @doc false
-  @spec stage_commit(t, Keyword.t) :: :ok | {:error, :rollback}
-  def stage_commit(conn, opts) do
+  @doc """
+  Commit transaction and release the lock on a connection.
+
+  Returns `:ok` on sucess, otherwise `{:error, :rollback}` if the
+  transaction failed and was rolled back or the connection is not available.
+
+  Can only be called for a connection checked out with `resource_begin/2` when
+  outside of `resource_transaction/3`.
+
+  ### Options
+
+    * `:log` - A function to log information about begin, commit and rollback
+    calls made as part of the transaction, either a 1-arity fun,
+    `{module, function, args}` with `DBConnection.LogEntry.t` prepended to
+    `args` or `nil`. See `DBConnection.LogEntry` (default: `nil`)
+
+  The pool and connection module may support other options. All options
+  are passed to `handle_commit/2`.
+
+  ### Example
+
+      conn = DBConnection.resource_begin(pool, opts)
+      DBConnection.resource_commit(conn, opts)
+  """
+  @spec resource_commit(t, Keyword.t) :: :ok | {:error, :rollback}
+  def resource_commit(conn, opts \\ []) do
     log = Keyword.get(opts, :log)
-    {result, log_info} = stage_conclude(conn, &commit/4, log, opts, :ok)
-    transaction_log(log_info)
+    {result, log_info} = resource_conclude(conn, &commit/4, log, opts, :ok)
+    transaction_log(log_info, :resource_commit)
     case result do
       {:raise, err} ->
         raise err
@@ -969,13 +1062,34 @@ defmodule DBConnection do
     end
   end
 
-  @doc false
-  @spec stage_rollback(t, Keyword.t) :: {:error, :rollback}
-  def stage_rollback(conn, opts) do
-    log = Keyword.get(opts, :log)
-    result = {:error, :rollback}
-    {result, log_info} = stage_conclude(conn, &rollback/4, log, opts, result)
-    transaction_log(log_info)
+  @doc """
+  Rollback transaction and release the lock on a connection.
+
+  Returns `{:error, reason}` if rolls back or connection not available.
+
+  Can only be called for a connection checked out with `resource_begin/2` when
+  outside of `resource_transaction/3`.
+
+  ### Options
+
+    * `:log` - A function to log information about begin, commit and rollback
+    calls made as part of the transaction, either a 1-arity fun,
+    `{module, function, args}` with `DBConnection.LogEntry.t` prepended to
+    `args` or `nil`. See `DBConnection.LogEntry` (default: `nil`)
+
+  The pool and connection module may support other options. All options
+  are passed to `handle_rollback/2`.
+
+  ### Example
+
+      conn = DBConnection.resource_begin(pool, opts)
+      DBConnection.resource_rollback(conn, reason, opts)
+  """
+  @spec resource_rollback(t, reason, Keyword.t) ::
+    {:error, reason} when reason: var
+  def resource_rollback(conn, reason, opts \\ []) do
+    {result, log_info} = run_resource_rollback(conn, reason, opts)
+    transaction_log(log_info, :resource_rollback)
     case result do
       {:raise, err} ->
         raise err
@@ -1225,11 +1339,13 @@ defmodule DBConnection do
    log(call, query, params, log, [decode: time()] ++ times, result)
   end
 
-  defp transaction_log(nil), do: :ok
-  defp transaction_log({log, times, callback, result}) do
+  defp transaction_log(log, fun \\ :transaction)
+
+  defp transaction_log(nil, _fun), do: :ok
+  defp transaction_log({log, times, callback, result}, fun) do
     call = transaction_call(callback)
     result = transaction_result(result)
-    _ = log(:transaction, call, nil, log, times, result)
+    _ = log(fun, call, nil, log, times, result)
     :ok
   end
 
@@ -1362,7 +1478,7 @@ defmodule DBConnection do
 
   defp commit(conn, log, opts, result) do
     case get_info(conn) do
-      {:transaction, conn_state} ->
+      {trans, conn_state} when trans in [:transaction, :resource] ->
         conclude_meter(conn, conn_state, log, :handle_commit, opts, result)
       {:failed, conn_state} ->
         result = {:error, :rollback}
@@ -1374,7 +1490,7 @@ defmodule DBConnection do
 
   defp rollback(conn, log, opts, result) do
     case get_info(conn) do
-      {trans, conn_state} when trans in [:transaction, :failed] ->
+      {trans, conn_state} when trans in [:transaction, :failed, :resource] ->
         conclude_meter(conn, conn_state, log, :handle_rollback, opts, result)
       :closed ->
         {result, nil}
@@ -1556,7 +1672,7 @@ defmodule DBConnection do
     {:halt, state}
   end
 
-  def run_fetch(conn, fun, call, query, cursor, opts) do
+  defp run_fetch(conn, fun, call, query, cursor, opts) do
     fetch = &handle(&1, fun, [query, cursor], opts)
     case run_meter(conn, fetch, opts) do
       {{:ok, result}, meter} ->
@@ -1609,24 +1725,24 @@ defmodule DBConnection do
     Stream.resource(start, next, stop)
   end
 
-  defp stage_begin_meter(pool, opts) do
+  defp resource_begin_meter(pool, opts) do
     case Keyword.get(opts, :log) do
       nil ->
-        stage_begin_meter(pool, nil, [], opts)
+        resource_begin_meter(pool, nil, [], opts)
       log ->
         times = [checkout: time()]
-        stage_begin_meter(pool, log, times, opts)
+        resource_begin_meter(pool, log, times, opts)
     end
   end
 
-  defp stage_begin_meter(pool, log, times, opts) do
+  defp resource_begin_meter(pool, log, times, opts) do
     {conn, conn_state} = checkout(pool, opts)
     put_info(conn, :idle, conn_state)
-    stage_begin_meter(conn, conn_state, log, times, opts)
+    resource_begin_meter(conn, conn_state, log, times, opts)
   end
 
-  defp stage_begin_meter(conn, conn_state, nil, [], opts) do
-    case handle(conn, conn_state, :handle_begin, opts, :transaction) do
+  defp resource_begin_meter(conn, conn_state, nil, [], opts) do
+    case handle(conn, conn_state, :handle_begin, opts, :resource) do
       {:ok, _} ->
         {{:ok, conn}, nil}
       error ->
@@ -1634,56 +1750,105 @@ defmodule DBConnection do
         {error, nil}
     end
   end
-  defp stage_begin_meter(conn, conn_state, log, times, opts) do
+  defp resource_begin_meter(conn, conn_state, log, times, opts) do
     start = time()
-    result = handle(conn, conn_state, :handle_begin, opts, :transaction)
+    result = handle(conn, conn_state, :handle_begin, opts, :resource)
     times = [stop: time(), start: start] ++ times
     log_info = {log, times, :handle_begin, result}
     case result do
       {:ok, _} ->
-        stage_begin_log(conn, log_info, opts)
+        resource_begin_log(conn, log_info, opts)
       error ->
         run_end(conn, opts)
         {error, log_info}
     end
   end
 
-  defp stage_begin_log(conn, {log, _, _, _} = log_info, opts) do
+  defp resource_begin_log(conn, {log, _, _, _} = log_info, opts) do
     try do
-      transaction_log(log_info)
+      transaction_log(log_info, :resource_begin)
     catch
       kind, reason ->
         result = {kind, reason, System.stacktrace()}
-        stage_conclude(conn, &rollback/4, log, opts, result)
+        resource_conclude(conn, &rollback/4, log, opts, result)
     else
       _ ->
         {{:ok, conn}, nil}
     end
   end
 
-  defp stage_nested(conn, fun, opts) do
+  defp resource_nested(conn, state, fun, opts) do
     %DBConnection{conn_ref: conn_ref} = conn
     try do
+      put_info(conn, :transaction, state)
       fun.(conn)
     catch
       :throw, {:rollback, ^conn_ref, reason} ->
-         stage_rollback(conn, opts)
-         {:error, reason}
+        resource_failed(conn, reason, opts)
       kind, reason ->
         stack = System.stacktrace()
-        stage_rollback(conn, opts)
+        resource_failed(conn, :raise, opts)
         :erlang.raise(kind, reason, stack)
     else
       result ->
-        {:ok, result}
+        resource_ok(conn, result, opts)
     end
   end
 
-  defp stage_conclude(conn, fun, log, opts, result) do
-    try do
-      fun.(conn, log, opts, result)
-    after
-      run_end(conn, opts)
+  defp resource_ok(conn, result, opts) do
+    case get_info(conn) do
+      {:transaction, conn_state} ->
+        put_info(conn, :resource, conn_state)
+        {:ok, result}
+      {:failed, conn_state} ->
+        put_info(conn, :resource, conn_state)
+        resource_nested_rollback(conn, :rollback, opts)
+      _ ->
+        {:error, :rollback}
+    end
+  end
+
+  defp resource_failed(conn, reason, opts) do
+    case get_info(conn) do
+      {trans, conn_state} when trans in [:transaction, :failed] ->
+        put_info(conn, :resource, conn_state)
+        resource_nested_rollback(conn, reason, opts)
+      :closed ->
+        {:error, reason}
+    end
+  end
+
+  defp resource_nested_rollback(conn, reason, opts) do
+    {result, log_info} = run_resource_rollback(conn, reason, opts)
+    transaction_log(log_info, :resource_transaction)
+    case result do
+      {:raise, err} ->
+        raise err
+      {kind, reason, stack} ->
+        :erlang.raise(kind, reason, stack)
+      other ->
+        other
+    end
+  end
+
+  defp run_resource_rollback(conn, reason, opts) do
+    log = Keyword.get(opts, :log)
+    result = {:error, reason}
+    resource_conclude(conn, &rollback/4, log, opts, result, result)
+  end
+
+  defp resource_conclude(conn, fun, log, opts, result, closed \\ {:error, :rollback}) do
+    case get_info(conn) do
+      {:resource, _} ->
+        try do
+          fun.(conn, log, opts, result)
+        after
+          run_end(conn, opts)
+        end
+      {trans, _} when trans in [:transaction, :failed] ->
+        raise "inside transaction"
+      :closed ->
+        {closed, nil}
     end
   end
 
@@ -1696,6 +1861,8 @@ defmodule DBConnection do
     case get_info(conn) do
       {:failed, _} ->
         raise DBConnection.ConnectionError, "transaction rolling back"
+      {:resource, _} ->
+        raise "not inside resource transaction"
       {_, _} = info ->
         info
       :closed ->

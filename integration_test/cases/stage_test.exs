@@ -7,7 +7,7 @@ defmodule StageTest do
   alias TestCursor, as: C
   alias TestResult, as: R
 
-  test "start_link with GenStage.stream returns result" do
+  test "start_link produces result" do
     stack = [
       {:ok, :state},
       {:ok, :began, :new_state},
@@ -38,7 +38,7 @@ defmodule StageTest do
       ] = A.record(agent)
   end
 
-  test "start_link with prepare: true returns result" do
+  test "start_link with prepare: true produces result" do
     stack = [
       {:ok, :state},
       {:ok, :began, :new_state},
@@ -53,7 +53,7 @@ defmodule StageTest do
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
-    {:ok, stage} = P.stream_stage(pool, %Q{}, [:param], [prepare: true] ++ opts)
+    {:ok, stage} = P.stream_stage(pool, %Q{}, [:param], [stage_prepare: true] ++ opts)
     mon = Process.monitor(stage)
     assert [{stage, [cancel: :transient]}] |> GenStage.stream() |> Enum.to_list() == [%R{}, %R{}]
 
@@ -71,7 +71,7 @@ defmodule StageTest do
       ] = A.record(agent)
   end
 
-  test "stream stops normally after it's done" do
+  test "stage stops normally after it's done" do
     stack = [
       {:ok, :state},
       {:ok, :began, :new_state},
@@ -107,7 +107,7 @@ defmodule StageTest do
       ] = A.record(agent)
   end
 
-  test "stream rolls back on abnormal exit" do
+  test "stage rolls back on abnormal exit" do
     stack = [
       {:ok, :state},
       {:ok, :began, :new_state},
@@ -136,7 +136,7 @@ defmodule StageTest do
       ] = A.record(agent)
   end
 
-  test "stream declare disconnects" do
+  test "stage declare disconnects" do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
@@ -167,7 +167,7 @@ defmodule StageTest do
       ] = A.record(agent)
   end
 
-  test "stream declare bad return raises and stops" do
+  test "stage declare bad return raises and stops" do
     stack = [
       fn(opts) ->
         send(opts[:parent], {:hi, self()})
@@ -203,7 +203,7 @@ defmodule StageTest do
       {:handle_declare, [%Q{}, [:param], _, :new_state]} | _] = A.record(agent)
   end
 
-  test "stream rolls back if first errors" do
+  test "stage rolls back if first errors" do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
@@ -233,7 +233,7 @@ defmodule StageTest do
       ] = A.record(agent)
   end
 
-  test "stream first disconnects" do
+  test "stage first disconnects" do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
@@ -268,7 +268,7 @@ defmodule StageTest do
       ] = A.record(agent)
   end
 
-  test "stream rolls back if deallocate errors" do
+  test "stage rolls back if deallocate errors" do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
@@ -298,7 +298,7 @@ defmodule StageTest do
       ] = A.record(agent)
   end
 
-  test "stream deallocate disconnects" do
+  test "stage deallocate disconnects" do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
