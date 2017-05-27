@@ -23,7 +23,7 @@ defmodule StageTest do
     {:ok, pool} = P.start_link(opts)
     {:ok, stage} = P.stream_stage(pool, %Q{}, [:param], opts)
     mon = Process.monitor(stage)
-    assert [stage] |> GenStage.stream([cancel: :transient]) |> Enum.to_list() == [%R{}, %R{}]
+    assert [{stage, [cancel: :transient]}] |> GenStage.stream() |> Enum.to_list() == [%R{}, %R{}]
 
     assert_receive {:DOWN, ^mon, :process, ^stage, :normal}
 
@@ -55,7 +55,7 @@ defmodule StageTest do
     {:ok, pool} = P.start_link(opts)
     {:ok, stage} = P.stream_stage(pool, %Q{}, [:param], [prepare: true] ++ opts)
     mon = Process.monitor(stage)
-    assert [stage] |> GenStage.stream([cancel: :transient]) |> Enum.to_list() == [%R{}, %R{}]
+    assert [{stage, [cancel: :transient]}] |> GenStage.stream() |> Enum.to_list() == [%R{}, %R{}]
 
     assert_receive {:DOWN, ^mon, :process, ^stage, :normal}
 
@@ -220,7 +220,7 @@ defmodule StageTest do
     {:ok, pool} = P.start_link(opts)
     Process.flag(:trap_exit, true)
     {:ok, stage} = P.stream_stage(pool, %Q{}, [:param], opts)
-    catch_exit([stage] |> GenStage.stream([cancel: :transient]) |> Enum.to_list())
+    catch_exit([{stage, [cancel: :transient]}] |> GenStage.stream() |> Enum.to_list())
     assert_receive {:EXIT, ^stage, {^err, _}}
 
     assert [
@@ -253,7 +253,7 @@ defmodule StageTest do
     {:ok, pool} = P.start_link(opts)
     Process.flag(:trap_exit, true)
     {:ok, stage} = P.stream_stage(pool, %Q{}, [:param], opts)
-    catch_exit([stage] |> GenStage.stream([cancel: :transient]) |> Enum.to_list())
+    catch_exit([{stage, [cancel: :transient]}] |> GenStage.stream() |> Enum.to_list())
     assert_receive {:EXIT, ^stage, {^err, _}}
 
     assert_receive :reconnected
@@ -285,7 +285,7 @@ defmodule StageTest do
     {:ok, pool} = P.start_link(opts)
     Process.flag(:trap_exit, true)
     {:ok, stage} = P.stream_stage(pool, %Q{}, [:param], opts)
-    catch_exit([stage] |> GenStage.stream([cancel: :transient]) |> Enum.to_list())
+    catch_exit([{stage, [cancel: :transient]}] |> GenStage.stream() |> Enum.to_list())
     assert_receive {:EXIT, ^stage, {^err, _}}
 
     assert [
@@ -319,7 +319,7 @@ defmodule StageTest do
     {:ok, pool} = P.start_link(opts)
     Process.flag(:trap_exit, true)
     {:ok, stage} = P.stream_stage(pool, %Q{}, [:param], opts)
-    catch_exit([stage] |> GenStage.stream([cancel: :transient]) |> Enum.to_list())
+    catch_exit([{stage, [cancel: :transient]}] |> GenStage.stream() |> Enum.to_list())
     assert_receive {:EXIT, ^stage, {^err, _}}
 
     assert_receive :reconnected
