@@ -63,28 +63,8 @@ defmodule TestConnection do
         DBConnection.close!(pool, query, opts2 ++ unquote(opts))
       end
 
-      def producer(pool, start, handle, stop, opts2 \\ []) do
-        opts3 = opts2 ++ unquote(opts)
-        DBConnection.Stage.producer(pool, start, handle, stop, opts3)
-      end
-
-      def producer_consumer(pool, start, handle, stop, opts2 \\ []) do
-        opts3 = opts2 ++ unquote(opts)
-        DBConnection.Stage.producer_consumer(pool, start, handle, stop, opts3)
-      end
-
-      def consumer(pool, start, handle, stop, opts2 \\ []) do
-        opts3 = opts2 ++ unquote(opts)
-        DBConnection.Stage.consumer(pool, start, handle, stop, opts3)
-      end
-
       def stream_stage(pool, query, params, opts2 \\ []) do
-        DBConnection.Stage.stream(pool, query, params, opts2 ++ unquote(opts))
-      end
-
-      def prepare_stream_stage(pool, query, params, opts2 \\ []) do
-        opts3 = opts2 ++ unquote(opts)
-        DBConnection.Stage.prepare_stream(pool, query, params, opts3)
+        DBConnection.Stage.start_link(pool, query, params, opts2 ++ unquote(opts))
       end
 
       defoverridable [start_link: 1]

@@ -834,6 +834,9 @@ defmodule DBConnection do
 
   ### Options
 
+    * `:stream_map` - A function to flat map the results of the query, either a
+    2-arity fun, `{module, function, args}` with `DBConnection.t` and the result
+    prepended to `args` or `nil` (default: `nil`
     * `:pool_timeout` - The maximum time to wait for a reply when making a
     synchronous call to the pool (default: `5_000`)
     * `:queue` - Whether to block waiting in an internal queue for the
@@ -870,6 +873,9 @@ defmodule DBConnection do
 
   ### Options
 
+    * `:stream_map` - A function to flat map the results of the query, either a
+    2-arity fun, `{module, function, args}` with `DBConnection.t` and the result
+    prepended to `args` or `nil` (default: `nil`)
     * `:pool_timeout` - The maximum time to wait for a reply when making a
     synchronous call to the pool (default: `5_000`)
     * `:queue` - Whether to block waiting in an internal queue for the
@@ -890,7 +896,8 @@ defmodule DBConnection do
       {:ok, results} = DBConnection.transaction(conn, fn(conn) ->
         query  = %Query{statement: "SELECT id FROM table"}
         query  = DBConnection.prepare!(conn, query)
-        stream = DBConnection.stream(conn, query, [])
+        opts = [stream_map: &Map.fetch!(&1, :rows)]
+        stream = DBConnection.stream(conn, query, [], opts)
         Enum.to_list(stream)
       end)
   """
@@ -1462,7 +1469,8 @@ defmodule DBConnection do
     end
   end
 
-  defp prepare_declare(conn, query, params, opts) do
+  @doc false
+  def prepare_declare(conn, query, params, opts) do
     query = parse(:prepare_declare, query, params, opts)
     case run_prepare_declare(conn, query, params, opts) do
       {{:ok, query, cursor}, meter} ->
@@ -1498,7 +1506,8 @@ defmodule DBConnection do
     end
   end
 
-  defp declare(conn, query, params, opts) do
+  @doc false
+  def declare(conn, query, params, opts) do
     encoded = encode(:declare, query, params, opts)
     case run_declare(conn, query, encoded, opts) do
       {{:ok, cursor}, meter} ->
@@ -1527,17 +1536,27 @@ defmodule DBConnection do
     end
   end
 
-  defp fetch(conn, {:first, query, cursor}, opts) do
-    fetch(conn, :handle_first, :first, query, cursor, opts)
+  @doc false
+  def fetch(conn, state, opts) do
+    case run_fetch(conn, state, opts) do
+      {:ok, result, state} ->
+        {fetch_map(conn, result, opts), state}
+      {:halt, _} = halt ->
+        halt
+    end
   end
-  defp fetch(conn, {:next, query, cursor}, opts) do
-    fetch(conn, :handle_next, :next, query, cursor, opts)
+
+  defp run_fetch(conn, {:first, query, cursor}, opts) do
+    run_fetch(conn, :handle_first, :first, query, cursor, opts)
   end
-  defp fetch(_, {:deallocate, _,  _} = state, _) do
+  defp run_fetch(conn, {:next, query, cursor}, opts) do
+    run_fetch(conn, :handle_next, :next, query, cursor, opts)
+  end
+  defp run_fetch(_, {:deallocate, _,  _} = state, _) do
     {:halt, state}
   end
 
-  def fetch(conn, fun, call, query, cursor, opts) do
+  def run_fetch(conn, fun, call, query, cursor, opts) do
     fetch = &handle(&1, fun, [query, cursor], opts)
     case run_meter(conn, fetch, opts) do
       {{:ok, result}, meter} ->
@@ -1552,10 +1571,22 @@ defmodule DBConnection do
 
   defp fetch_decode(status, call, query, cursor, meter, result, opts) do
     {:ok, decoded} = decode(call, query, cursor, meter, result, opts)
-    {[decoded], {status, query, cursor}}
+    {:ok, decoded, {status, query, cursor}}
   end
 
-  defp deallocate(conn, {_, query, cursor}, opts) do
+  defp fetch_map(conn, result, opts) do
+    case Keyword.get(opts, :stream_map) do
+      map when is_function(map, 2) ->
+        map.(conn, result)
+      {mod, fun, args} ->
+        apply(mod, fun, [conn, result | args])
+      nil ->
+        [result]
+    end
+  end
+
+  @doc false
+  def deallocate(conn, {_, query, cursor}, opts) do
     case get_info(conn) do
       :closed -> :ok
       _       -> deallocate(conn, query, cursor, opts)
