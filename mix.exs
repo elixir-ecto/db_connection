@@ -32,8 +32,6 @@ defmodule DBConnection.Mixfile do
      {:sbroker, "~> 1.0", [optional: true]},
      {:gen_stage, "~> 0.11", [optional: true, github: "elixir-lang/gen_stage",
          branch: "jv-exit-signals"]},
-     {:flow, "~> 0.11", [optional: true, github: "elixir-lang/flow",
-         branch: "jv-exit-signals"]},
      {:ex_doc, "~> 0.12", only: :dev}]
   end
 
