@@ -135,8 +135,7 @@ defmodule TransactionTest do
         P.rollback(conn2, :oops)
       end) == {:error, :oops}
 
-      assert_raise DBConnection.ConnectionError, "transaction rolling back",
-        fn() -> P.transaction(conn, fn(_) -> nil end) end
+      assert P.transaction(conn, fn(_) -> nil end) == {:error, :rollback}
     end) == {:error, :rollback}
 
     assert P.transaction(pool, fn(_) -> :result end) == {:ok, :result}
@@ -197,8 +196,7 @@ defmodule TransactionTest do
       assert_raise RuntimeError, "oops",
        fn() -> P.transaction(conn, fn(_) -> raise "oops" end) end
 
-      assert_raise DBConnection.ConnectionError, "transaction rolling back",
-        fn() -> P.transaction(conn, fn(_) -> nil end) end
+      assert P.transaction(conn, fn(_) -> nil end) == {:error, :rollback}
     end) == {:error, :rollback}
 
     assert P.transaction(pool, fn(_) -> :result end) == {:ok, :result}

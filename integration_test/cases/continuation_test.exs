@@ -1,4 +1,4 @@
-defmodule ResourceTest do
+defmodule ContinuationTest do
   use ExUnit.Case, async: true
 
   alias TestPool, as: P
@@ -6,7 +6,7 @@ defmodule ResourceTest do
   alias TestQuery, as: Q
   alias TestResult, as: R
 
-  test "resource transaction commits after stream resource reduced" do
+  test "transaction commits after stream resource reduced" do
     stack = [
       {:ok, :state},
       {:ok, :began, :new_state},
@@ -18,14 +18,14 @@ defmodule ResourceTest do
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
 
-    start = fn() -> P.resource_begin(pool, opts) end
+    start = fn() -> P.checkout_begin(pool, opts) end
     next = fn(conn) ->
-      {:ok, res} = P.resource_transaction(conn, fn(conn2) ->
+      {:ok, res} = P.transaction(conn, fn(conn2) ->
         P.execute!(conn2, %Q{}, [:param], opts)
       end, opts)
       {[res], conn}
     end
-    stop = &P.resource_commit/1
+    stop = &P.commit_checkin/1
 
     assert Stream.resource(start, next, stop) |> Enum.take(1) == [%R{}]
 
@@ -37,7 +37,7 @@ defmodule ResourceTest do
       ] = A.record(agent)
   end
 
-  test "resource transaction commits per trigger inside Flow pipeline" do
+  test "transaction commits per trigger inside Flow pipeline" do
     stack = [
       {:ok, :state},
       {:ok, :began, :new_state},
@@ -52,15 +52,15 @@ defmodule ResourceTest do
     assert [[:param]]
       |> Flow.from_enumerable()
       |> Flow.partition(stages: 1)
-      |> Flow.reduce(fn() -> {[], P.resource_begin(pool, opts)} end,
+      |> Flow.reduce(fn() -> {[], P.checkout_begin(pool, opts)} end,
                      fn(params, {acc, conn}) ->
-                       {:ok, res} = P.resource_transaction(conn, fn(conn2) ->
+                       {:ok, res} = P.transaction(conn, fn(conn2) ->
                          P.execute!(conn2, %Q{}, params, opts)
                        end)
                        {[res | acc], conn}
                      end)
       |> Flow.map_state(fn({acc, conn}) ->
-        P.resource_commit(conn, opts)
+        P.commit_checkin(conn, opts)
         Enum.reverse(acc)
       end)
       |> Enum.to_list() == [%R{}]
@@ -73,27 +73,7 @@ defmodule ResourceTest do
       ] = A.record(agent)
   end
 
-  test "resource_transaction raises inside run" do
-    stack = [{:ok, :state}]
-    {:ok, agent} = A.start_link(stack)
-
-    opts = [agent: agent, parent: self()]
-    {:ok, pool} = P.start_link(opts)
-
-    assert P.run(pool, fn(conn) ->
-      assert_raise RuntimeError, "not inside transaction",
-        fn ->
-          P.resource_transaction(conn, fn(_) -> flunk "should not run" end, opts)
-        end
-      :hello
-    end, opts) == :hello
-
-    assert [
-      connect: [_]
-      ] = A.record(agent)
-  end
-
-  test "resource_begin raises on checkin" do
+  test "checkout_begin raises on checkin" do
     stack = [
       fn(opts) ->
         Process.link(opts[:parent])
@@ -108,12 +88,12 @@ defmodule ResourceTest do
     Process.flag(:trap_exit, true)
     {:ok, pool} = P.start_link(opts)
 
-    conn = P.resource_begin(pool, opts)
+    conn = P.checkout_begin(pool, opts)
 
     assert_raise RuntimeError, "inside transaction",
       fn() -> P.checkin(conn, opts) end
 
-    assert P.resource_commit(conn, opts) == {:error, :rollback}
+    assert P.commit_checkin(conn, opts) == {:error, :rollback}
 
     assert_receive {:EXIT, _, {%DBConnection.ConnectionError{}, [_|_]}}
 
@@ -122,7 +102,7 @@ defmodule ResourceTest do
       {:handle_begin, [_, :state]} | _] = A.record(agent)
   end
 
-  test "resource_transaction raises on checkin" do
+  test "transaction raises on checkin" do
     stack = [
       fn(opts) ->
         Process.link(opts[:parent])
@@ -137,27 +117,27 @@ defmodule ResourceTest do
     Process.flag(:trap_exit, true)
     {:ok, pool} = P.start_link(opts)
 
-    conn = P.resource_begin(pool, opts)
+    conn = P.checkout_begin(pool, opts)
 
     assert_raise RuntimeError, "inside transaction",
       fn() -> P.checkin(conn, opts) end
 
     assert_receive {:EXIT, _, {%DBConnection.ConnectionError{}, [_|_]}}
 
-    assert P.resource_transaction(conn, fn(conn2) ->
+    assert P.transaction(conn, fn(conn2) ->
       assert_raise RuntimeError, "inside transaction",
         fn() -> P.checkin(conn2, opts) end
       :hello
     end) == {:error, :rollback}
 
-    assert P.resource_commit(conn, opts) == {:error, :rollback}
+    assert P.commit_checkin(conn, opts) == {:error, :rollback}
 
     assert [
       {:connect, [_]},
       {:handle_begin, [_, :state]} | _] = A.record(agent)
   end
 
-  test "resource_transaction runs inside transaction" do
+  test "transaction runs inside transaction" do
     stack = [
       {:ok, :state},
       {:ok, :began, :new_state},
@@ -170,7 +150,7 @@ defmodule ResourceTest do
     {:ok, pool} = P.start_link(opts)
 
     assert P.transaction(pool, fn(conn) ->
-      assert P.resource_transaction(conn, &P.execute!(&1, %Q{}, [:param], opts),
+      assert P.transaction(conn, &P.execute!(&1, %Q{}, [:param], opts),
       opts) == {:ok, %R{}}
       :hello
     end) == {:ok, :hello}
@@ -183,7 +163,7 @@ defmodule ResourceTest do
       ] = A.record(agent)
   end
 
-  test "resource_transaction rolls back and returns error" do
+  test "transaction rolls back and returns error" do
     stack = [
       {:ok, :state},
       {:ok, :began, :new_state},
@@ -194,12 +174,12 @@ defmodule ResourceTest do
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
 
-    conn = P.resource_begin(pool, opts)
+    conn = P.checkout_begin(pool, opts)
 
-    assert P.resource_rollback(conn, :oops, opts) == {:error, :oops}
-    assert P.resource_commit(conn, opts) == {:error, :rollback}
-    assert P.resource_rollback(conn, :oops, opts) == {:error, :oops}
-    assert P.resource_transaction(conn, fn(_) ->
+    assert P.rollback_checkin(conn, :oops, opts) == {:error, :oops}
+    assert P.commit_checkin(conn, opts) == {:error, :rollback}
+    assert P.rollback_checkin(conn, :oops, opts) == {:error, :oops}
+    assert P.transaction(conn, fn(_) ->
       flunk "should not fun"
     end, opts) == {:error, :rollback}
 
@@ -210,7 +190,7 @@ defmodule ResourceTest do
       ] = A.record(agent)
   end
 
-  test "resource_transaction runs inside resource_transaction" do
+  test "transaction runs inside resource_transaction" do
     stack = [
       {:ok, :state},
       {:ok, :began, :new_state},
@@ -222,16 +202,16 @@ defmodule ResourceTest do
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
 
-    conn = P.resource_begin(pool, opts)
+    conn = P.checkout_begin(pool, opts)
 
-    assert P.resource_transaction(conn, fn(conn2) ->
-      assert P.resource_transaction(conn2, fn(conn3) ->
+    assert P.transaction(conn, fn(conn2) ->
+      assert P.transaction(conn2, fn(conn3) ->
           P.execute!(conn3, %Q{}, [:param], opts)
         end, opts) == {:ok, %R{}}
       :hello
     end) == {:ok, :hello}
 
-    assert P.resource_commit(conn, opts) == :ok
+    assert P.commit_checkin(conn, opts) == :ok
 
     assert [
       connect: [_],
@@ -241,7 +221,7 @@ defmodule ResourceTest do
       ] = A.record(agent)
   end
 
-  test "resource_begin logs error" do
+  test "checkout_begin logs error" do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
@@ -255,9 +235,9 @@ defmodule ResourceTest do
 
     log = &send(parent, &1)
     assert_raise RuntimeError, "oops",
-      fn() -> P.resource_begin(pool, [log: log]) end
+      fn() -> P.checkout_begin(pool, [log: log]) end
 
-    assert_received %DBConnection.LogEntry{call: :resource_begin} = entry
+    assert_received %DBConnection.LogEntry{call: :checkout_begin} = entry
     assert %{query: :begin, params: nil, result: {:error, ^err}} = entry
     assert is_integer(entry.pool_time)
     assert entry.pool_time >= 0
@@ -270,7 +250,7 @@ defmodule ResourceTest do
       handle_begin: [ _, :state]] = A.record(agent)
   end
 
-  test "resource_begin logs raises and rolls back" do
+  test "checkout_begin logs raises and rolls back" do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
@@ -289,9 +269,9 @@ defmodule ResourceTest do
     end
 
     assert_raise RuntimeError, "oops",
-      fn() -> P.resource_begin(pool, [log: log]) end
+      fn() -> P.checkout_begin(pool, [log: log]) end
 
-    assert_received %DBConnection.LogEntry{call: :resource_begin} = entry
+    assert_received %DBConnection.LogEntry{call: :checkout_begin} = entry
     assert %{query: :rollback, params: nil, result: {:ok, :rolledback}} = entry
     assert is_nil(entry.pool_time)
     assert is_integer(entry.connection_time)
@@ -305,7 +285,7 @@ defmodule ResourceTest do
       ] = A.record(agent)
   end
 
-  test "resource_transaction logs on rollback" do
+  test "transaction logs on rollback" do
     stack = [
       {:ok, :state},
       {:ok, :began, :new_state},
@@ -317,14 +297,14 @@ defmodule ResourceTest do
     opts = [agent: agent, parent: parent]
     {:ok, pool} = P.start_link(opts)
 
-    conn = P.resource_begin(pool, opts)
+    conn = P.checkout_begin(pool, opts)
 
     log = &send(parent, &1)
-    assert P.resource_transaction(conn, fn(conn2) ->
+    assert P.transaction(conn, fn(conn2) ->
       P.rollback(conn2, :oops)
     end, [log: log]) == {:error, :oops}
 
-    assert_received %DBConnection.LogEntry{call: :resource_transaction} = entry
+    assert_received %DBConnection.LogEntry{call: :transaction} = entry
     assert %{query: :rollback, params: nil, result: {:ok, :rolledback}} = entry
     assert is_nil(entry.pool_time)
     assert is_integer(entry.connection_time)
@@ -338,7 +318,7 @@ defmodule ResourceTest do
       ] = A.record(agent)
   end
 
-  test "resource_transaction rolls back on failed transaction" do
+  test "transaction rolls back on failed transaction" do
     stack = [
       {:ok, :state},
       {:ok, :began, :new_state},
@@ -350,13 +330,13 @@ defmodule ResourceTest do
     opts = [agent: agent, parent: parent]
     {:ok, pool} = P.start_link(opts)
 
-    conn = P.resource_begin(pool, opts)
+    conn = P.checkout_begin(pool, opts)
 
-    assert P.resource_transaction(conn, fn(conn2) ->
+    assert P.transaction(conn, fn(conn2) ->
       assert P.transaction(conn2, &P.rollback(&1, :oops), opts) == {:error, :oops}
     end, opts) == {:error, :rollback}
 
-    assert P.resource_transaction(conn, fn(_) ->
+    assert P.transaction(conn, fn(_) ->
       flunk "should not run"
     end, opts) == {:error, :rollback}
 
@@ -367,7 +347,7 @@ defmodule ResourceTest do
       ] = A.record(agent)
   end
 
-  test "resource_commit logs" do
+  test "commit_checkin logs" do
     stack = [
       {:ok, :state},
       {:ok, :began, :new_state},
@@ -379,12 +359,12 @@ defmodule ResourceTest do
     opts = [agent: agent, parent: parent]
     {:ok, pool} = P.start_link(opts)
 
-    conn = P.resource_begin(pool, opts)
+    conn = P.checkout_begin(pool, opts)
 
     log = &send(parent, &1)
-    assert P.resource_commit(conn, [log: log]) == :ok
+    assert P.commit_checkin(conn, [log: log]) == :ok
 
-    assert_received %DBConnection.LogEntry{call: :resource_commit} = entry
+    assert_received %DBConnection.LogEntry{call: :commit_checkin} = entry
     assert %{query: :commit, params: nil, result: {:ok, :committed}} = entry
     assert is_nil(entry.pool_time)
     assert is_integer(entry.connection_time)
@@ -398,7 +378,7 @@ defmodule ResourceTest do
       ] = A.record(agent)
   end
 
-  test "resource_rollback logs" do
+  test "rollback_checkin logs" do
     stack = [
       {:ok, :state},
       {:ok, :began, :new_state},
@@ -410,12 +390,12 @@ defmodule ResourceTest do
     opts = [agent: agent, parent: parent]
     {:ok, pool} = P.start_link(opts)
 
-    conn = P.resource_begin(pool, opts)
+    conn = P.checkout_begin(pool, opts)
 
     log = &send(parent, &1)
-    assert P.resource_rollback(conn, :oops, [log: log]) == {:error, :oops}
+    assert P.rollback_checkin(conn, :oops, [log: log]) == {:error, :oops}
 
-    assert_received %DBConnection.LogEntry{call: :resource_rollback} = entry
+    assert_received %DBConnection.LogEntry{call: :rollback_checkin} = entry
     assert %{query: :rollback, params: nil, result: {:ok, :rolledback}} = entry
     assert is_nil(entry.pool_time)
     assert is_integer(entry.connection_time)

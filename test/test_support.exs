@@ -67,20 +67,16 @@ defmodule TestConnection do
         DBConnection.Stage.start_link(pool, query, params, opts2 ++ unquote(opts))
       end
 
-      def resource_begin(pool, opts2 \\ []) do
-        DBConnection.resource_begin(pool, opts2 ++ unquote(opts))
+      def checkout_begin(pool, opts2 \\ []) do
+        DBConnection.checkout_begin(pool, opts2 ++ unquote(opts))
       end
 
-      def resource_transaction(conn, fun, opts2 \\ []) do
-        DBConnection.resource_transaction(conn, fun, opts2 ++ unquote(opts))
+      def commit_checkin(conn, opts2 \\ []) do
+        DBConnection.commit_checkin(conn, opts2 ++ unquote(opts))
       end
 
-      def resource_commit(conn, opts2 \\ []) do
-        DBConnection.resource_commit(conn, opts2 ++ unquote(opts))
-      end
-
-      def resource_rollback(conn, reason, opts2 \\ []) do
-        DBConnection.resource_rollback(conn, reason, opts2 ++ unquote(opts))
+      def rollback_checkin(conn, reason, opts2 \\ []) do
+        DBConnection.rollback_checkin(conn, reason, opts2 ++ unquote(opts))
       end
 
       def checkin(conn, opts2 \\ []) do

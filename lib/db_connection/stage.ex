@@ -100,11 +100,11 @@ defmodule DBConnection.Stage do
   def terminate(reason, %Stage{transaction?: true} = stage) do
     %Stage{conn: conn, state: state, opts: opts} = stage
     deallocate = &deallocate(&1, reason, state, opts)
-    case DBConnection.resource_transaction(conn, deallocate, opts) do
+    case DBConnection.transaction(conn, deallocate, opts) do
       {:ok, :normal} ->
-        DBConnection.resource_commit(conn, opts)
+        DBConnection.commit_checkin(conn, opts)
       {:ok, reason} ->
-        DBConnection.resource_rollback(conn, reason, opts)
+        DBConnection.rollback_checkin(conn, reason, opts)
       {:error, :rollback} ->
         :ok
     end
@@ -123,7 +123,7 @@ defmodule DBConnection.Stage do
   defp init(pool, opts) do
     case Keyword.get(opts, :stage_transaction, true) do
       true ->
-        conn = DBConnection.resource_begin(pool, opts)
+        conn = DBConnection.checkout_begin(pool, opts)
         %Stage{conn: conn, transaction?: true, state: :declare, opts: opts}
       false ->
         conn = DBConnection.checkout(pool, opts)
@@ -132,7 +132,7 @@ defmodule DBConnection.Stage do
   end
 
   defp run(fun, opts, %Stage{conn: conn, transaction?: true}) do
-    case DBConnection.resource_transaction(conn, fun, opts) do
+    case DBConnection.transaction(conn, fun, opts) do
       {:ok, result} ->
          result
       {:error, reason} ->
