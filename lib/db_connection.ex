@@ -1327,29 +1327,40 @@ defmodule DBConnection do
   defp run_meter(%DBConnection{} = conn, fun, opts) do
     case Keyword.get(opts, :log) do
       nil ->
-        {run(conn, fun, opts), nil}
+        {fun.(conn), nil}
       log ->
-        run_meter(conn, log, [], fun, opts)
-      end
+        start = time()
+        result = fun.(conn)
+        stop = time()
+        meter = {log, [stop: stop, start: start]}
+        {result, meter}
+    end
   end
   defp run_meter(pool, fun, opts) do
     case Keyword.get(opts, :log) do
       nil ->
         {run(pool, fun, opts), nil}
       log ->
-        run_meter(pool, log, [checkout: time()], fun, opts)
+        run_meter(pool, log, fun, opts)
     end
   end
 
-  defp run_meter(conn, log, times, fun, opts) do
-    fun = fn(conn2) ->
-      start = time()
-      result = fun.(conn2)
-      stop = time()
-      meter = {log, [stop: stop, start: start] ++ times}
-      {result, meter}
+  defp run_meter(pool, log, fun, opts) do
+    checkout = time()
+    case run_checkout(pool, opts) do
+      {:ok, conn, _} ->
+        try do
+          start = time()
+          result = fun.(conn)
+          stop = time()
+          meter = {log, [stop: stop, start: start, checkout: checkout]}
+          {result, meter}
+        after
+          checkin(conn, opts)
+        end
+      {:error, _} = error ->
+        {error, {log, [stop: time(), checkout: checkout]}}
     end
-    run(conn, fun, opts)
   end
 
   defp decode_log(_, _, _, nil, result), do: log_result(result)
@@ -1421,8 +1432,24 @@ defmodule DBConnection do
       nil ->
         run(pool, &begin(&1, nil, [], fun, opts), opts)
       log ->
-        times = [checkout: time()]
-        run(pool, &begin(&1, log, times, fun, opts), opts)
+        transaction_meter(pool, log, fun, opts)
+    end
+  end
+
+  defp transaction_meter(pool, log, fun, opts) do
+    checkout = time()
+    case run_checkout(pool, opts) do
+      {:ok, conn, conn_state} ->
+        try do
+          begin_meter(conn, conn_state, log, [checkout: checkout], fun, opts)
+        after
+          checkin(conn, opts)
+        end
+      {:error, err} ->
+        times = [stop: time(), checkout: checkout]
+        result = {:raise, err}
+        log_info = {log, times, :handle_begin, result}
+        {result, log_info}
     end
   end
 
