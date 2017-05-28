@@ -9,7 +9,9 @@ Code.require_file "cases/prepare_execute_test.exs", __DIR__
 Code.require_file "cases/prepare_stream_test.exs", __DIR__
 Code.require_file "cases/prepare_test.exs", __DIR__
 Code.require_file "cases/queue_test.exs", __DIR__
+Code.require_file "cases/resource_test.exs", __DIR__
 Code.require_file "cases/stage_test.exs", __DIR__
 Code.require_file "cases/stream_test.exs", __DIR__
 Code.require_file "cases/transaction_execute_test.exs", __DIR__
+Code.require_file "cases/transaction_stage_test.exs", __DIR__
 Code.require_file "cases/transaction_test.exs", __DIR__

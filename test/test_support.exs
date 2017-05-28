@@ -83,6 +83,10 @@ defmodule TestConnection do
         DBConnection.resource_rollback(conn, reason, opts2 ++ unquote(opts))
       end
 
+      def checkin(conn, opts2 \\ []) do
+        DBConnection.checkin(conn, opts2 ++ unquote(opts))
+      end
+
       defoverridable [start_link: 1]
     end
   end

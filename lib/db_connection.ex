@@ -739,9 +739,12 @@ defmodule DBConnection do
     fun.(conn)
   end
   def run(pool, fun, opts) do
-    {conn, conn_state} = checkout(pool, opts)
-    put_info(conn, :idle, conn_state)
-    run_begin(conn, fun, opts)
+    conn = checkout(pool, opts)
+    try do
+      fun.(conn)
+    after
+      checkin(conn, opts)
+    end
   end
 
   @doc """
@@ -916,6 +919,79 @@ defmodule DBConnection do
                          opts: opts} = stream
     start = &declare(&1, query, params, &2)
     resource(conn, start, &fetch/3, &deallocate/3, opts).(acc, fun)
+  end
+
+  @doc """
+  Acquire a lock on a connection and return the connection struct for use with
+  `run/3` and/or `transaction/3` calls.
+
+  `run/3` and `transaction/3` can be nested multiple times but a
+  `transaction/3` call inside another `transaction/3` will be treated
+  the same as `run/3`.
+
+  ### Options
+
+    * `:pool_timeout` - The maximum time to wait for a reply when making a
+    synchronous call to the pool (default: `5_000`)
+    * `:queue` - Whether to block waiting in an internal queue for the
+    connection's state (boolean, default: `true`)
+    * `:timeout` - The maximum time that the caller is allowed the
+    to hold the connection's state (default: `15_000`)
+
+  The pool may support other options.
+
+  ### Example
+
+      conn = DBConnection.checkout(pool)
+      try do
+        DBConnection.execute!(conn, "SELECT id FROM table", [])
+      after
+        DBConnection.checkin(conn)
+      end
+  """
+  @spec checkout(pool :: GenServer.server, opts :: Keyword.t) :: t
+  def checkout(pool, opts \\ []) do
+    case run_checkout(pool, opts) do
+      {:ok, conn, _} ->
+        conn
+      {:error, err} ->
+        raise err
+    end
+  end
+
+  @doc """
+  Release the lock on a connection.
+
+  Returns `:ok`.
+
+  The pool may support options.
+
+  ### Example
+
+      conn = DBConnection.checkout(pool)
+      try do
+        DBConnection.execute!(conn, "SELECT id FROM table", [])
+      after
+        DBConnection.checkin(conn)
+      end
+  """
+  @spec checkin(conn :: t, opts :: Keyword.t) :: :ok
+  def checkin(%DBConnection{} = conn, opts \\ []) do
+    case delete_info(conn) do
+      {:idle, conn_state} ->
+        run_checkin(conn, conn_state, opts)
+      {status, conn_state} when status in [:transaction, :failed, :resource] ->
+        try do
+          raise "inside transaction"
+        catch
+          :error, reason ->
+            stack = System.stacktrace()
+            delete_stop(conn, conn_state, :error, reason, stack, opts)
+            :erlang.raise(:error, reason, stack)
+        end
+      :closed ->
+        :ok
+    end
   end
 
   @doc """
@@ -1102,19 +1178,20 @@ defmodule DBConnection do
 
   ## Helpers
 
-  defp checkout(pool, opts) do
+  defp run_checkout(pool, opts) do
     pool_mod = Keyword.get(opts, :pool, DBConnection.Connection)
     case apply(pool_mod, :checkout, [pool, opts]) do
       {:ok, pool_ref, conn_mod, conn_state} ->
         conn = %DBConnection{pool_mod: pool_mod, pool_ref: pool_ref,
           conn_mod: conn_mod, conn_ref: make_ref()}
-        {conn, conn_state}
-      {:error, err} ->
-        raise err
+        put_info(conn, :idle, conn_state)
+        {:ok, conn, conn_state}
+      {:error, _} = error ->
+        error
     end
   end
 
-  defp checkin(conn, conn_state, opts) do
+  defp run_checkin(conn, conn_state, opts) do
     %DBConnection{pool_mod: pool_mod, pool_ref: pool_ref} = conn
     _ = apply(pool_mod, :checkin, [pool_ref, conn_state, opts])
     :ok
@@ -1382,32 +1459,6 @@ defmodule DBConnection do
     :erlang.raise(kind, reason, stack)
   end
   defp log_result(other), do: other
-
-  defp run_begin(conn, fun, opts) do
-    try do
-      fun.(conn)
-    after
-      run_end(conn, opts)
-    end
-  end
-
-  defp run_end(conn, opts) do
-    case delete_info(conn) do
-      {:idle, conn_state} ->
-        checkin(conn, conn_state, opts)
-      {status, conn_state} when status in [:transaction, :failed] ->
-        try do
-          raise "connection run ended in transaction"
-        catch
-          :error, reason ->
-            stack = System.stacktrace()
-            delete_stop(conn, conn_state, :error, reason, stack, opts)
-            :erlang.raise(:error, reason, stack)
-        end
-      :closed ->
-        :ok
-    end
-  end
 
   defp transaction_meter(%DBConnection{} = conn, fun, opts) do
     case fetch_info(conn) do
@@ -1736,9 +1787,12 @@ defmodule DBConnection do
   end
 
   defp resource_begin_meter(pool, log, times, opts) do
-    {conn, conn_state} = checkout(pool, opts)
-    put_info(conn, :idle, conn_state)
-    resource_begin_meter(conn, conn_state, log, times, opts)
+    case run_checkout(pool, opts) do
+      {:ok, conn, conn_state} ->
+        resource_begin_meter(conn, conn_state, log, times, opts)
+      {:error, err} ->
+        {:raise, err}
+    end
   end
 
   defp resource_begin_meter(conn, conn_state, nil, [], opts) do
@@ -1746,7 +1800,7 @@ defmodule DBConnection do
       {:ok, _} ->
         {{:ok, conn}, nil}
       error ->
-        run_end(conn, opts)
+        checkin(conn, opts)
         {error, nil}
     end
   end
@@ -1759,7 +1813,7 @@ defmodule DBConnection do
       {:ok, _} ->
         resource_begin_log(conn, log_info, opts)
       error ->
-        run_end(conn, opts)
+        checkin(conn, opts)
         {error, log_info}
     end
   end
@@ -1843,7 +1897,7 @@ defmodule DBConnection do
         try do
           fun.(conn, log, opts, result)
         after
-          run_end(conn, opts)
+          checkin(conn, opts)
         end
       {trans, _} when trans in [:transaction, :failed] ->
         raise "inside transaction"

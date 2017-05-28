@@ -1,15 +1,17 @@
 defmodule DBConnection.Stage do
   @moduledoc """
-  A `GenStage` producer that encapsulates a transaction and streams the
-  result of a query.
+  A `GenStage` producer that streams the result of a query, optionally
+  encapsulated in a transaction.
 
   ### Options
 
     * `:stream_map` - A function to flat map the results of the query, either a
     2-arity fun, `{module, function, args}` with `DBConnection.t` and the result
     prepended to `args` or `nil` (default: `nil`)
-    * `:stage_prepare` - Whether the consumer should prepare the query before
+    * `:stage_prepare` - Whether the producer should prepare the query before
     streaming it (default: `false`)
+    * `:stage_transaction` - Whether the producer should encapsulate the query
+    in a transaction (default: `true`)
     * `:pool_timeout` - The maximum time to wait for a reply when making a
     synchronous call to the pool (default: `5_000`)
     * `:queue` - Whether to block waiting in an internal queue for the
@@ -31,8 +33,8 @@ defmodule DBConnection.Stage do
 
   use GenStage
 
-  @enforce_keys [:conn, :state, :opts]
-  defstruct [:conn, :state, :opts]
+  @enforce_keys [:conn, :state, :transaction?, :opts]
+  defstruct [:conn, :state, :transaction?, :opts]
 
   @start_opts [:name, :spawn_opt, :debug]
   @stage_opts [:demand, :buffer_size, :buffer_keep, :dispatcher]
@@ -62,14 +64,9 @@ defmodule DBConnection.Stage do
   @doc false
   def init({pool, query, params, opts}) do
     stage_opts = Keyword.take(opts, @stage_opts)
-    conn = DBConnection.resource_begin(pool, opts)
-    declare = &declare(&1, query, params, opts)
-    case DBConnection.resource_transaction(conn, declare, opts) do
-      {:ok, state} ->
-        {:producer, %Stage{conn: conn, state: state, opts: opts}, stage_opts}
-      {:error, reason} ->
-        exit(reason)
-    end
+    stage = init(pool, opts)
+    state = run(&declare(&1, query, params, opts), opts, stage)
+    {:producer, %Stage{stage | state: state}, stage_opts}
   end
 
   @doc false
@@ -86,26 +83,21 @@ defmodule DBConnection.Stage do
   @doc false
   def handle_demand(demand, stage) do
     %Stage{conn: conn, state: state, opts: opts} = stage
-    fetch = &fetch(&1, demand, state, opts)
-    case DBConnection.resource_transaction(conn, fetch, opts) do
-      {:ok, {:halt, state}} ->
+    case run(&fetch(&1, demand, state, opts), opts, stage) do
+      {:halt, state} ->
         GenStage.async_info(self(), :stop)
         {:noreply, [], %Stage{stage | state: state}}
-      {:ok, {events, state}} ->
+      {events, state} ->
         # stream_map may produce the desired number of events, i.e. at the end
         # of the results so we can close the cursor as soon as possible.
         pending = demand - length(events)
         _ = if pending > 0, do: send(self(), {:fetch, conn, pending})
         {:noreply, events, %Stage{stage | state: state}}
-      {:error, reason} ->
-        exit(reason)
-      :closed ->
-        raise DBConnection.ConnectionError, "connection is closed"
     end
   end
 
   @doc false
-  def terminate(reason, stage) do
+  def terminate(reason, %Stage{transaction?: true} = stage) do
     %Stage{conn: conn, state: state, opts: opts} = stage
     deallocate = &deallocate(&1, reason, state, opts)
     case DBConnection.resource_transaction(conn, deallocate, opts) do
@@ -117,8 +109,46 @@ defmodule DBConnection.Stage do
         :ok
     end
   end
+  def terminate(reason, %Stage{transaction?: false} = stage) do
+    %Stage{conn: conn, state: state, opts: opts} = stage
+    try do
+      deallocate(conn, reason, state, opts)
+    after
+      DBConnection.checkin(conn, opts)
+    end
+  end
 
   ## Helpers
+
+  defp init(pool, opts) do
+    case Keyword.get(opts, :stage_transaction, true) do
+      true ->
+        conn = DBConnection.resource_begin(pool, opts)
+        %Stage{conn: conn, transaction?: true, state: :declare, opts: opts}
+      false ->
+        conn = DBConnection.checkout(pool, opts)
+        %Stage{conn: conn, transaction?: false, state: :declare, opts: opts}
+    end
+  end
+
+  defp run(fun, opts, %Stage{conn: conn, transaction?: true}) do
+    case DBConnection.resource_transaction(conn, fun, opts) do
+      {:ok, result} ->
+         result
+      {:error, reason} ->
+        exit(reason)
+    end
+  end
+  defp run(fun, opts, %Stage{conn: conn, transaction?: false}) do
+    try do
+      fun.(conn)
+    catch
+      kind, reason ->
+        stack = System.stacktrace()
+        DBConnection.checkin(conn, opts)
+        :erlang.raise(kind, reason, stack)
+    end
+  end
 
   defp declare(conn, query, params, opts) do
     case Keyword.get(opts, :stage_prepare, false) do

@@ -93,6 +93,70 @@ defmodule ResourceTest do
       ] = A.record(agent)
   end
 
+  test "resource_begin raises on checkin" do
+    stack = [
+      fn(opts) ->
+        Process.link(opts[:parent])
+        {:ok, :state}
+      end,
+      {:ok, :began, :new_state},
+      {:ok, :state2}
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self()]
+    Process.flag(:trap_exit, true)
+    {:ok, pool} = P.start_link(opts)
+
+    conn = P.resource_begin(pool, opts)
+
+    assert_raise RuntimeError, "inside transaction",
+      fn() -> P.checkin(conn, opts) end
+
+    assert P.resource_commit(conn, opts) == {:error, :rollback}
+
+    assert_receive {:EXIT, _, {%DBConnection.ConnectionError{}, [_|_]}}
+
+    assert [
+      {:connect, [_]},
+      {:handle_begin, [_, :state]} | _] = A.record(agent)
+  end
+
+  test "resource_transaction raises on checkin" do
+    stack = [
+      fn(opts) ->
+        Process.link(opts[:parent])
+        {:ok, :state}
+      end,
+      {:ok, :began, :new_state},
+      {:ok, :state2}
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self()]
+    Process.flag(:trap_exit, true)
+    {:ok, pool} = P.start_link(opts)
+
+    conn = P.resource_begin(pool, opts)
+
+    assert_raise RuntimeError, "inside transaction",
+      fn() -> P.checkin(conn, opts) end
+
+    assert_receive {:EXIT, _, {%DBConnection.ConnectionError{}, [_|_]}}
+
+    assert P.resource_transaction(conn, fn(conn2) ->
+      assert_raise RuntimeError, "inside transaction",
+        fn() -> P.checkin(conn2, opts) end
+      :hello
+    end) == {:error, :rollback}
+
+    assert P.resource_commit(conn, opts) == {:error, :rollback}
+
+    assert [
+      {:connect, [_]},
+      {:handle_begin, [_, :state]} | _] = A.record(agent)
+  end
+
   test "resource_transaction runs inside transaction" do
     stack = [
       {:ok, :state},
@@ -119,7 +183,7 @@ defmodule ResourceTest do
       ] = A.record(agent)
   end
 
-  test "resource_transaction rolls back and functions error" do
+  test "resource_transaction rolls back and returns error" do
     stack = [
       {:ok, :state},
       {:ok, :began, :new_state},
