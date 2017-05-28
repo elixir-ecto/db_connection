@@ -1808,23 +1808,22 @@ defmodule DBConnection do
   defp checkout_begin_meter(pool, opts) do
     case Keyword.get(opts, :log) do
       nil ->
-        checkout_begin_meter(pool, nil, [], opts)
+        run_checkout_begin(pool, opts)
       log ->
-        times = [checkout: time()]
-        checkout_begin_meter(pool, log, times, opts)
+        checkout_begin_meter(pool, log, opts)
     end
   end
 
-  defp checkout_begin_meter(pool, log, times, opts) do
+  defp run_checkout_begin(pool, opts) do
     case run_checkout(pool, opts) do
       {:ok, conn, conn_state} ->
-        checkout_begin_meter(conn, conn_state, log, times, opts)
+        run_checkout_begin(conn, conn_state, opts)
       {:error, err} ->
-        {:raise, err}
+        {{:raise, err}, nil}
     end
   end
 
-  defp checkout_begin_meter(conn, conn_state, nil, [], opts) do
+  defp run_checkout_begin(conn, conn_state, opts) do
     case handle(conn, conn_state, :handle_begin, opts, :continuation) do
       {:ok, _} ->
         {{:ok, conn}, nil}
@@ -1833,6 +1832,20 @@ defmodule DBConnection do
         {error, nil}
     end
   end
+
+  defp checkout_begin_meter(pool, log, opts) do
+    checkout = time()
+    case run_checkout(pool, opts) do
+      {:ok, conn, conn_state} ->
+        checkout_begin_meter(conn, conn_state, log, [checkout: checkout], opts)
+      {:error, err} ->
+        times = [stop: time(), checkout: checkout]
+        result = {:raise, err}
+        log_info = {log, times, :handle_begin, result}
+        {result, log_info}
+    end
+  end
+
   defp checkout_begin_meter(conn, conn_state, log, times, opts) do
     start = time()
     result = handle(conn, conn_state, :handle_begin, opts, :continuation)
