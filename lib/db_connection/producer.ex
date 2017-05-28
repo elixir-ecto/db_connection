@@ -1,4 +1,4 @@
-defmodule DBConnection.Stage do
+defmodule DBConnection.Producer do
   @moduledoc """
   A `GenStage` producer that streams the result of a query, optionally
   encapsulated in a transaction.
@@ -29,7 +29,7 @@ defmodule DBConnection.Stage do
   and `handle_rollback/2`. In addition, the demand will be passed to
   `handle_first/4` and `handle_next/4` by adding `fetch: demand` to the options.
   """
-  alias __MODULE__, as: Stage
+  alias __MODULE__, as: Producer
 
   use GenStage
 
@@ -52,7 +52,7 @@ defmodule DBConnection.Stage do
 
       query = %Query{statement: "SELECT id FROM table"}
       opts = [stream_mapper: &Map.fetch!(&1, :rows)]
-      {:ok, stage} = DBConnection.Stage.start_link(pool, query, [], opts)
+      {:ok, stage} = DBConnection.Producer.start_link(pool, query, [], opts)
       stage |> GenStage.stream() |> Enum.to_list()
   """
   def start_link(pool, query, params, opts \\ []) do
@@ -66,14 +66,14 @@ defmodule DBConnection.Stage do
     stage_opts = Keyword.take(opts, @stage_opts)
     stage = init(pool, opts)
     state = run(&declare(&1, query, params, opts), opts, stage)
-    {:producer, %Stage{stage | state: state}, stage_opts}
+    {:producer, %Producer{stage | state: state}, stage_opts}
   end
 
   @doc false
   def handle_info(:stop, stage) do
     {:stop, :normal, stage}
   end
-  def handle_info({:fetch, conn, pending}, %Stage{conn: conn} = stage) do
+  def handle_info({:fetch, conn, pending}, %Producer{conn: conn} = stage) do
     handle_demand(pending, stage)
   end
   def handle_info(_, stage) do
@@ -82,24 +82,24 @@ defmodule DBConnection.Stage do
 
   @doc false
   def handle_demand(demand, stage) do
-    %Stage{conn: conn, state: state, opts: opts} = stage
+    %Producer{conn: conn, state: state, opts: opts} = stage
     case run(&fetch(&1, demand, state, opts), opts, stage) do
       {:halt, state} ->
         GenStage.async_info(self(), :stop)
-        {:noreply, [], %Stage{stage | state: state}}
+        {:noreply, [], %Producer{stage | state: state}}
       {events, state} ->
         # stream_mapper may not produce the desired number of events, i.e. at
         # the end of the results, so we can close the cursor as soon as
         # possible.
         pending = demand - length(events)
         _ = if pending > 0, do: send(self(), {:fetch, conn, pending})
-        {:noreply, events, %Stage{stage | state: state}}
+        {:noreply, events, %Producer{stage | state: state}}
     end
   end
 
   @doc false
-  def terminate(reason, %Stage{transaction?: true} = stage) do
-    %Stage{conn: conn, state: state, opts: opts} = stage
+  def terminate(reason, %Producer{transaction?: true} = stage) do
+    %Producer{conn: conn, state: state, opts: opts} = stage
     deallocate = &deallocate(&1, reason, state, opts)
     case DBConnection.transaction(conn, deallocate, opts) do
       {:ok, :normal} ->
@@ -110,8 +110,8 @@ defmodule DBConnection.Stage do
         :ok
     end
   end
-  def terminate(reason, %Stage{transaction?: false} = stage) do
-    %Stage{conn: conn, state: state, opts: opts} = stage
+  def terminate(reason, %Producer{transaction?: false} = stage) do
+    %Producer{conn: conn, state: state, opts: opts} = stage
     try do
       deallocate(conn, reason, state, opts)
     after
@@ -125,14 +125,14 @@ defmodule DBConnection.Stage do
     case Keyword.get(opts, :stage_transaction, true) do
       true ->
         conn = DBConnection.checkout_begin(pool, opts)
-        %Stage{conn: conn, transaction?: true, state: :declare, opts: opts}
+        %Producer{conn: conn, transaction?: true, state: :declare, opts: opts}
       false ->
         conn = DBConnection.checkout(pool, opts)
-        %Stage{conn: conn, transaction?: false, state: :declare, opts: opts}
+        %Producer{conn: conn, transaction?: false, state: :declare, opts: opts}
     end
   end
 
-  defp run(fun, opts, %Stage{conn: conn, transaction?: true}) do
+  defp run(fun, opts, %Producer{conn: conn, transaction?: true}) do
     case DBConnection.transaction(conn, fun, opts) do
       {:ok, result} ->
          result
@@ -140,7 +140,7 @@ defmodule DBConnection.Stage do
         exit(reason)
     end
   end
-  defp run(fun, opts, %Stage{conn: conn, transaction?: false}) do
+  defp run(fun, opts, %Producer{conn: conn, transaction?: false}) do
     try do
       fun.(conn)
     catch
