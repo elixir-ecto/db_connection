@@ -107,6 +107,44 @@ defmodule TransactionStageTest do
       ] = A.record(agent)
   end
 
+  test "stage with execute in stream_mapper" do
+    stack = [
+      {:ok, :state},
+      {:ok, :began, :new_state},
+      {:ok, %C{}, :newer_state},
+      {:ok, %R{}, :newest_state},
+      {:ok, %R{}, :state2},
+      {:deallocate, %R{}, :new_state2},
+      {:ok, %R{}, :newer_state2},
+      {:ok, :deallocated, :newest_state2},
+      {:ok, :committed, :state3}
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self()]
+    {:ok, pool} = P.start_link(opts)
+
+    mapper = fn(conn, res) -> [P.execute!(conn, %Q{}, res, opts), :mapped] end
+    opts = [stream_mapper: mapper] ++ opts
+    {:ok, stage} = P.stream_stage(pool, %Q{}, [:param], opts)
+    mon = Process.monitor(stage)
+    assert [{stage, [cancel: :transient]}] |> GenStage.stream() |> Enum.to_list() == [%R{}, :mapped, %R{}, :mapped]
+
+    assert_receive {:DOWN, ^mon, :process, ^stage, :normal}
+
+    assert [
+      connect: [_],
+      handle_begin: [_, :state],
+      handle_declare: [%Q{}, [:param], _, :new_state],
+      handle_first: [%Q{}, %C{}, _, :newer_state],
+      handle_execute: [%Q{}, %R{}, _, :newest_state],
+      handle_next: [%Q{}, %C{}, _, :state2],
+      handle_execute: [%Q{}, %R{}, _, :new_state2],
+      handle_deallocate: [%Q{}, %C{}, _, :newer_state2],
+      handle_commit: [_, :newest_state2]
+      ] = A.record(agent)
+  end
+
   test "stage rolls back on abnormal exit" do
     stack = [
       {:ok, :state},

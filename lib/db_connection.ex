@@ -834,9 +834,9 @@ defmodule DBConnection do
 
   ### Options
 
-    * `:stream_map` - A function to flat map the results of the query, either a
-    2-arity fun, `{module, function, args}` with `DBConnection.t` and the result
-    prepended to `args` or `nil` (default: `nil`
+    * `:stream_mapper` - A function to flat map the results of the query, either
+    a 2-arity fun, `{module, function, args}` with `DBConnection.t` and the
+    result prepended to `args` or `nil` (default: `nil`)
     * `:pool_timeout` - The maximum time to wait for a reply when making a
     synchronous call to the pool (default: `5_000`)
     * `:queue` - Whether to block waiting in an internal queue for the
@@ -873,9 +873,9 @@ defmodule DBConnection do
 
   ### Options
 
-    * `:stream_map` - A function to flat map the results of the query, either a
-    2-arity fun, `{module, function, args}` with `DBConnection.t` and the result
-    prepended to `args` or `nil` (default: `nil`)
+    * `:stream_mapper` - A function to flat map the results of the query,
+    either a 2-arity fun, `{module, function, args}` with `DBConnection.t` and
+    the result prepended to `args` or `nil` (default: `nil`)
     * `:pool_timeout` - The maximum time to wait for a reply when making a
     synchronous call to the pool (default: `5_000`)
     * `:queue` - Whether to block waiting in an internal queue for the
@@ -896,7 +896,7 @@ defmodule DBConnection do
       {:ok, results} = DBConnection.transaction(conn, fn(conn) ->
         query  = %Query{statement: "SELECT id FROM table"}
         query  = DBConnection.prepare!(conn, query)
-        opts = [stream_map: &Map.fetch!(&1, :rows)]
+        opts = [stream_mapper: &Map.fetch!(&1, :rows)]
         stream = DBConnection.stream(conn, query, [], opts)
         Enum.to_list(stream)
       end)
@@ -1771,7 +1771,7 @@ defmodule DBConnection do
   end
 
   defp fetch_map(conn, result, opts) do
-    case Keyword.get(opts, :stream_map) do
+    case Keyword.get(opts, :stream_mapper) do
       map when is_function(map, 2) ->
         map.(conn, result)
       {mod, fun, args} ->

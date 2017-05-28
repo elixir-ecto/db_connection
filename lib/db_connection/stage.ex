@@ -5,9 +5,9 @@ defmodule DBConnection.Stage do
 
   ### Options
 
-    * `:stream_map` - A function to flat map the results of the query, either a
-    2-arity fun, `{module, function, args}` with `DBConnection.t` and the result
-    prepended to `args` or `nil` (default: `nil`)
+    * `:stream_mapper` - A function to flat map the results of the query, either
+    a 2-arity fun, `{module, function, args}` with `DBConnection.t` and the
+    result prepended to `args` or `nil` (default: `nil`)
     * `:stage_prepare` - Whether the producer should prepare the query before
     streaming it (default: `false`)
     * `:stage_transaction` - Whether the producer should encapsulate the query
@@ -51,7 +51,7 @@ defmodule DBConnection.Stage do
   ### Example
 
       query = %Query{statement: "SELECT id FROM table"}
-      opts = [stream_map: &Map.fetch!(&1, :rows)]
+      opts = [stream_mapper: &Map.fetch!(&1, :rows)]
       {:ok, stage} = DBConnection.Stage.start_link(pool, query, [], opts)
       stage |> GenStage.stream() |> Enum.to_list()
   """
@@ -88,8 +88,9 @@ defmodule DBConnection.Stage do
         GenStage.async_info(self(), :stop)
         {:noreply, [], %Stage{stage | state: state}}
       {events, state} ->
-        # stream_map may produce the desired number of events, i.e. at the end
-        # of the results so we can close the cursor as soon as possible.
+        # stream_mapper may not produce the desired number of events, i.e. at
+        # the end of the results, so we can close the cursor as soon as
+        # possible.
         pending = demand - length(events)
         _ = if pending > 0, do: send(self(), {:fetch, conn, pending})
         {:noreply, events, %Stage{stage | state: state}}
