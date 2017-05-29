@@ -739,9 +739,12 @@ defmodule DBConnection do
     fun.(conn)
   end
   def run(pool, fun, opts) do
-    {conn, conn_state} = checkout(pool, opts)
-    put_info(conn, :idle, conn_state)
-    run_begin(conn, fun, opts)
+    conn = checkout(pool, opts)
+    try do
+      fun.(conn)
+    after
+      checkin(conn, opts)
+    end
   end
 
   @doc """
@@ -756,10 +759,11 @@ defmodule DBConnection do
 
   `run/3` and `transaction/3` can be nested multiple times. If a transaction is
   rolled back or a nested transaction `fun` raises the transaction is marked as
-  failed. Any calls inside a failed transaction (except `rollback/2`) will raise
-  until the outer transaction call returns. All running `transaction/3` calls
-  will return `{:error, :rollback}` if the transaction failed or connection
-  closed and `rollback/2` is not called for that `transaction/3`.
+  failed. Any calls inside a failed transaction (except `rollback/2` and
+  `transaction/3`) will raise until the outer transaction call returns. All
+  running (and future) `transaction/3` calls will return `{:error, :rollback}`
+  if the transaction failed or connection closed and `rollback/2` is not
+  called for that `transaction/3`.
 
   ### Options
 
@@ -817,11 +821,7 @@ defmodule DBConnection do
     case get_info(conn) do
       {transaction, _} when transaction in [:transaction, :failed] ->
         throw({:rollback, conn_ref, err})
-      {transaction, _, _} when transaction in [:transaction, :failed] ->
-        throw({:rollback, conn_ref, err})
-      {:idle, _} ->
-        raise "not inside transaction"
-      {:idle, _, _} ->
+      {idle, _} when idle in [:idle, :continuation] ->
         raise "not inside transaction"
       :closed ->
         raise DBConnection.ConnectionError, "connection is closed"
@@ -834,6 +834,9 @@ defmodule DBConnection do
 
   ### Options
 
+    * `:stream_mapper` - A function to flat map the results of the query, either
+    a 2-arity fun, `{module, function, args}` with `DBConnection.t` and the
+    result prepended to `args` or `nil` (default: `nil`)
     * `:pool_timeout` - The maximum time to wait for a reply when making a
     synchronous call to the pool (default: `5_000`)
     * `:queue` - Whether to block waiting in an internal queue for the
@@ -870,6 +873,9 @@ defmodule DBConnection do
 
   ### Options
 
+    * `:stream_mapper` - A function to flat map the results of the query,
+    either a 2-arity fun, `{module, function, args}` with `DBConnection.t` and
+    the result prepended to `args` or `nil` (default: `nil`)
     * `:pool_timeout` - The maximum time to wait for a reply when making a
     synchronous call to the pool (default: `5_000`)
     * `:queue` - Whether to block waiting in an internal queue for the
@@ -890,7 +896,8 @@ defmodule DBConnection do
       {:ok, results} = DBConnection.transaction(conn, fn(conn) ->
         query  = %Query{statement: "SELECT id FROM table"}
         query  = DBConnection.prepare!(conn, query)
-        stream = DBConnection.stream(conn, query, [])
+        opts = [stream_mapper: &Map.fetch!(&1, :rows)]
+        stream = DBConnection.stream(conn, query, [], opts)
         Enum.to_list(stream)
       end)
   """
@@ -913,21 +920,219 @@ defmodule DBConnection do
     resource(conn, start, &fetch/3, &deallocate/3, opts).(acc, fun)
   end
 
-  ## Helpers
+  @doc """
+  Acquire a lock on a connection and return the connection struct for use with
+  `run/3` and/or `transaction/3` calls.
 
-  defp checkout(pool, opts) do
-    pool_mod = Keyword.get(opts, :pool, DBConnection.Connection)
-    case apply(pool_mod, :checkout, [pool, opts]) do
-      {:ok, pool_ref, conn_mod, conn_state} ->
-        conn = %DBConnection{pool_mod: pool_mod, pool_ref: pool_ref,
-          conn_mod: conn_mod, conn_ref: make_ref()}
-        {conn, conn_state}
+  `run/3` and `transaction/3` can be nested multiple times but a
+  `transaction/3` call inside another `transaction/3` will be treated
+  the same as `run/3`.
+
+  ### Options
+
+    * `:pool_timeout` - The maximum time to wait for a reply when making a
+    synchronous call to the pool (default: `5_000`)
+    * `:queue` - Whether to block waiting in an internal queue for the
+    connection's state (boolean, default: `true`)
+    * `:timeout` - The maximum time that the caller is allowed the
+    to hold the connection's state (default: `15_000`)
+
+  The pool may support other options.
+
+  ### Example
+
+      conn = DBConnection.checkout(pool)
+      try do
+        DBConnection.execute!(conn, "SELECT id FROM table", [])
+      after
+        DBConnection.checkin(conn)
+      end
+  """
+  @spec checkout(pool :: GenServer.server, opts :: Keyword.t) :: t
+  def checkout(pool, opts \\ []) do
+    case run_checkout(pool, opts) do
+      {:ok, conn, _} ->
+        conn
       {:error, err} ->
         raise err
     end
   end
 
-  defp checkin(conn, conn_state, opts) do
+  @doc """
+  Release the lock on a connection.
+
+  Returns `:ok`.
+
+  The pool may support options.
+
+  ### Example
+
+      conn = DBConnection.checkout(pool)
+      try do
+        DBConnection.execute!(conn, "SELECT id FROM table", [])
+      after
+        DBConnection.checkin(conn)
+      end
+  """
+  @spec checkin(conn :: t, opts :: Keyword.t) :: :ok
+  def checkin(%DBConnection{} = conn, opts \\ []) do
+    case delete_info(conn) do
+      {:idle, conn_state} ->
+        run_checkin(conn, conn_state, opts)
+      {status, conn_state}
+          when status in [:transaction, :failed, :continuation] ->
+        try do
+          raise "inside transaction"
+        catch
+          :error, reason ->
+            stack = System.stacktrace()
+            delete_stop(conn, conn_state, :error, reason, stack, opts)
+            :erlang.raise(:error, reason, stack)
+        end
+      :closed ->
+        :ok
+    end
+  end
+
+  @doc """
+  Acquire a lock on a connection and return the connection struct for use with
+  `transaction/3` calls.
+
+  To use the locked connection call `transaction/3`. If the transaction is
+  rolled back the connection is checked in. To release the lock the connection
+  call `commit_checkin/2` or `rollback_checkin/3`.
+
+  ### Options
+
+    * `:pool_timeout` - The maximum time to wait for a reply when making a
+    synchronous call to the pool (default: `5_000`)
+    * `:queue` - Whether to block waiting in an internal queue for the
+    connection's state (boolean, default: `true`)
+    * `:timeout` - The maximum time that the caller is allowed the
+    to hold the connection's state (default: `15_000`)
+    * `:log` - A function to log information about begin, commit and rollback
+    calls made as part of the transaction, either a 1-arity fun,
+    `{module, function, args}` with `DBConnection.LogEntry.t` prepended to
+    `args` or `nil`. See `DBConnection.LogEntry` (default: `nil`)
+
+  The pool and connection module may support other options. All options
+  are passed to `handle_begin/2`, and `handle_rollback/2`.
+
+  ### Example
+
+      conn = DBConnection.checkout_begin(pool)
+      {:ok, res} = DBConnection.transaction(conn, fn(conn) ->
+        DBConnection.execute!(conn, "SELECT id FROM table", [])
+      end)
+      DBConnection.commit_checkin(conn)
+  """
+  @spec checkout_begin(pool :: GenServer.server, opts :: Keyword.t) :: t
+  def checkout_begin(pool, opts \\ []) do
+    {result, log_info} = checkout_begin_meter(pool, opts)
+    transaction_log(log_info, :checkout_begin)
+    case result do
+      {:ok, conn} ->
+        conn
+      {:raise, err} ->
+        raise err
+      {kind, reason, stack} ->
+        :erlang.raise(kind, reason, stack)
+    end
+  end
+
+  @doc """
+  Commit transaction and release the lock on a connection.
+
+  Returns `:ok` on sucess, otherwise `{:error, :rollback}` if the
+  transaction failed and was rolled back or the connection is not available.
+
+  Can only be called for a connection checked out with `checkout_begin/2` when
+  outside of `transaction/3`.
+
+  ### Options
+
+    * `:log` - A function to log information about begin, commit and rollback
+    calls made as part of the transaction, either a 1-arity fun,
+    `{module, function, args}` with `DBConnection.LogEntry.t` prepended to
+    `args` or `nil`. See `DBConnection.LogEntry` (default: `nil`)
+
+  The pool and connection module may support other options. All options
+  are passed to `handle_commit/2`.
+
+  ### Example
+
+      conn = DBConnection.checkout_begin(pool)
+      DBConnection.commit_checkin(conn)
+  """
+  @spec commit_checkin(t, Keyword.t) :: :ok | {:error, :rollback}
+  def commit_checkin(conn, opts \\ []) do
+    log = Keyword.get(opts, :log)
+    {result, log_info} = continuation_conclude(conn, &commit/4, log, opts, :ok)
+    transaction_log(log_info, :commit_checkin)
+    case result do
+      {:raise, err} ->
+        raise err
+      {kind, reason, stack} ->
+        :erlang.raise(kind, reason, stack)
+      other ->
+        other
+    end
+  end
+
+  @doc """
+  Rollback transaction and release the lock on a connection.
+
+  Returns `{:error, reason}` if rolls back or connection not available.
+
+  Can only be called for a connection checked out with `checkout_begin/2` when
+  outside of `transaction/3`.
+
+  ### Options
+
+    * `:log` - A function to log information about begin, commit and rollback
+    calls made as part of the transaction, either a 1-arity fun,
+    `{module, function, args}` with `DBConnection.LogEntry.t` prepended to
+    `args` or `nil`. See `DBConnection.LogEntry` (default: `nil`)
+
+  The pool and connection module may support other options. All options
+  are passed to `handle_rollback/2`.
+
+  ### Example
+
+      conn = DBConnection.checkout_begin(pool)
+      DBConnection.rollback_checkin(conn, :oops)
+  """
+  @spec rollback_checkin(t, reason, Keyword.t) ::
+    {:error, reason} when reason: var
+  def rollback_checkin(conn, reason, opts \\ []) do
+    {result, log_info} = run_continuation_rollback(conn, reason, opts)
+    transaction_log(log_info, :rollback_checkin)
+    case result do
+      {:raise, err} ->
+        raise err
+      {kind, reason, stack} ->
+        :erlang.raise(kind, reason, stack)
+      other ->
+        other
+    end
+  end
+
+  ## Helpers
+
+  defp run_checkout(pool, opts) do
+    pool_mod = Keyword.get(opts, :pool, DBConnection.Connection)
+    case apply(pool_mod, :checkout, [pool, opts]) do
+      {:ok, pool_ref, conn_mod, conn_state} ->
+        conn = %DBConnection{pool_mod: pool_mod, pool_ref: pool_ref,
+          conn_mod: conn_mod, conn_ref: make_ref()}
+        put_info(conn, :idle, conn_state)
+        {:ok, conn, conn_state}
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  defp run_checkin(conn, conn_state, opts) do
     %DBConnection{pool_mod: pool_mod, pool_ref: pool_ref} = conn
     _ = apply(pool_mod, :checkin, [pool_ref, conn_state, opts])
     :ok
@@ -1122,29 +1327,40 @@ defmodule DBConnection do
   defp run_meter(%DBConnection{} = conn, fun, opts) do
     case Keyword.get(opts, :log) do
       nil ->
-        {run(conn, fun, opts), nil}
+        {fun.(conn), nil}
       log ->
-        run_meter(conn, log, [], fun, opts)
-      end
+        start = time()
+        result = fun.(conn)
+        stop = time()
+        meter = {log, [stop: stop, start: start]}
+        {result, meter}
+    end
   end
   defp run_meter(pool, fun, opts) do
     case Keyword.get(opts, :log) do
       nil ->
         {run(pool, fun, opts), nil}
       log ->
-        run_meter(pool, log, [checkout: time()], fun, opts)
+        run_meter(pool, log, fun, opts)
     end
   end
 
-  defp run_meter(conn, log, times, fun, opts) do
-    fun = fn(conn2) ->
-      start = time()
-      result = fun.(conn2)
-      stop = time()
-      meter = {log, [stop: stop, start: start] ++ times}
-      {result, meter}
+  defp run_meter(pool, log, fun, opts) do
+    checkout = time()
+    case run_checkout(pool, opts) do
+      {:ok, conn, _} ->
+        try do
+          start = time()
+          result = fun.(conn)
+          stop = time()
+          meter = {log, [stop: stop, start: start, checkout: checkout]}
+          {result, meter}
+        after
+          checkin(conn, opts)
+        end
+      {:error, _} = error ->
+        {error, {log, [stop: time(), checkout: checkout]}}
     end
-    run(conn, fun, opts)
   end
 
   defp decode_log(_, _, _, nil, result), do: log_result(result)
@@ -1152,11 +1368,13 @@ defmodule DBConnection do
    log(call, query, params, log, [decode: time()] ++ times, result)
   end
 
-  defp transaction_log(nil), do: :ok
-  defp transaction_log({log, times, callback, result}) do
+  defp transaction_log(log, fun \\ :transaction)
+
+  defp transaction_log(nil, _fun), do: :ok
+  defp transaction_log({log, times, callback, result}, fun) do
     call = transaction_call(callback)
     result = transaction_result(result)
-    _ = log(:transaction, call, nil, log, times, result)
+    _ = log(fun, call, nil, log, times, result)
     :ok
   end
 
@@ -1194,39 +1412,19 @@ defmodule DBConnection do
   end
   defp log_result(other), do: other
 
-  defp run_begin(conn, fun, opts) do
-    try do
-      fun.(conn)
-    after
-      run_end(conn, opts)
-    end
-  end
-
-  defp run_end(conn, opts) do
-    case delete_info(conn) do
-      {:idle, conn_state} ->
-        checkin(conn, conn_state, opts)
-      {status, conn_state} when status in [:transaction, :failed] ->
-        try do
-          raise "connection run ended in transaction"
-        catch
-          :error, reason ->
-            stack = System.stacktrace()
-            delete_stop(conn, conn_state, :error, reason, stack, opts)
-            :erlang.raise(:error, reason, stack)
-        end
-      :closed ->
-        :ok
-    end
-  end
-
   defp transaction_meter(%DBConnection{} = conn, fun, opts) do
-    case fetch_info(conn) do
+    case get_info(conn) do
       {:transaction, _} ->
         {transaction_nested(conn, fun), nil}
+      {:continuation, conn_state} ->
+        {transaction_continue(conn, conn_state, fun, opts), nil}
       {:idle, conn_state} ->
         log = Keyword.get(opts, :log)
         begin_meter(conn, conn_state, log, [], fun, opts)
+      {:failed, _} ->
+        {{:error, :rollback}, nil}
+      :closed ->
+        {{:error, :rollback}, nil}
     end
   end
   defp transaction_meter(pool, fun, opts) do
@@ -1234,8 +1432,24 @@ defmodule DBConnection do
       nil ->
         run(pool, &begin(&1, nil, [], fun, opts), opts)
       log ->
-        times = [checkout: time()]
-        run(pool, &begin(&1, log, times, fun, opts), opts)
+        transaction_meter(pool, log, fun, opts)
+    end
+  end
+
+  defp transaction_meter(pool, log, fun, opts) do
+    checkout = time()
+    case run_checkout(pool, opts) do
+      {:ok, conn, conn_state} ->
+        try do
+          begin_meter(conn, conn_state, log, [checkout: checkout], fun, opts)
+        after
+          checkin(conn, opts)
+        end
+      {:error, err} ->
+        times = [stop: time(), checkout: checkout]
+        result = {:raise, err}
+        log_info = {log, times, :handle_begin, result}
+        {result, log_info}
     end
   end
 
@@ -1289,7 +1503,7 @@ defmodule DBConnection do
 
   defp commit(conn, log, opts, result) do
     case get_info(conn) do
-      {:transaction, conn_state} ->
+      {trans, conn_state} when trans in [:transaction, :continuation] ->
         conclude_meter(conn, conn_state, log, :handle_commit, opts, result)
       {:failed, conn_state} ->
         result = {:error, :rollback}
@@ -1301,7 +1515,8 @@ defmodule DBConnection do
 
   defp rollback(conn, log, opts, result) do
     case get_info(conn) do
-      {trans, conn_state} when trans in [:transaction, :failed] ->
+      {trans, conn_state}
+          when trans in [:transaction, :failed, :continuation] ->
         conclude_meter(conn, conn_state, log, :handle_rollback, opts, result)
       :closed ->
         {result, nil}
@@ -1396,7 +1611,62 @@ defmodule DBConnection do
     end
   end
 
-  defp prepare_declare(conn, query, params, opts) do
+  defp transaction_continue(conn, state, fun, opts) do
+    %DBConnection{conn_ref: conn_ref} = conn
+    try do
+      put_info(conn, :transaction, state)
+      fun.(conn)
+    catch
+      :throw, {:rollback, ^conn_ref, reason} ->
+        continue_failed(conn, reason, opts)
+      kind, reason ->
+        stack = System.stacktrace()
+        continue_failed(conn, :raise, opts)
+        :erlang.raise(kind, reason, stack)
+    else
+      result ->
+        continue_ok(conn, result, opts)
+    end
+  end
+
+  defp continue_ok(conn, result, opts) do
+    case get_info(conn) do
+      {:transaction, conn_state} ->
+        put_info(conn, :continuation, conn_state)
+        {:ok, result}
+      {:failed, conn_state} ->
+        put_info(conn, :continuation, conn_state)
+        continue_rollback(conn, :rollback, opts)
+      _ ->
+        {:error, :rollback}
+    end
+  end
+
+  defp continue_failed(conn, reason, opts) do
+    case get_info(conn) do
+      {trans, conn_state} when trans in [:transaction, :failed] ->
+        put_info(conn, :continuation, conn_state)
+        continue_rollback(conn, reason, opts)
+      :closed ->
+        {:error, reason}
+    end
+  end
+
+  defp continue_rollback(conn, reason, opts) do
+    {result, log_info} = run_continuation_rollback(conn, reason, opts)
+    transaction_log(log_info)
+    case result do
+      {:raise, err} ->
+        raise err
+      {kind, reason, stack} ->
+        :erlang.raise(kind, reason, stack)
+      other ->
+        other
+    end
+  end
+
+  @doc false
+  def prepare_declare(conn, query, params, opts) do
     query = parse(:prepare_declare, query, params, opts)
     case run_prepare_declare(conn, query, params, opts) do
       {{:ok, query, cursor}, meter} ->
@@ -1432,7 +1702,8 @@ defmodule DBConnection do
     end
   end
 
-  defp declare(conn, query, params, opts) do
+  @doc false
+  def declare(conn, query, params, opts) do
     encoded = encode(:declare, query, params, opts)
     case run_declare(conn, query, encoded, opts) do
       {{:ok, cursor}, meter} ->
@@ -1461,17 +1732,27 @@ defmodule DBConnection do
     end
   end
 
-  defp fetch(conn, {:first, query, cursor}, opts) do
-    fetch(conn, :handle_first, :first, query, cursor, opts)
+  @doc false
+  def fetch(conn, state, opts) do
+    case run_fetch(conn, state, opts) do
+      {:ok, result, state} ->
+        {fetch_map(conn, result, opts), state}
+      {:halt, _} = halt ->
+        halt
+    end
   end
-  defp fetch(conn, {:next, query, cursor}, opts) do
-    fetch(conn, :handle_next, :next, query, cursor, opts)
+
+  defp run_fetch(conn, {:first, query, cursor}, opts) do
+    run_fetch(conn, :handle_first, :first, query, cursor, opts)
   end
-  defp fetch(_, {:deallocate, _,  _} = state, _) do
+  defp run_fetch(conn, {:next, query, cursor}, opts) do
+    run_fetch(conn, :handle_next, :next, query, cursor, opts)
+  end
+  defp run_fetch(_, {:deallocate, _,  _} = state, _) do
     {:halt, state}
   end
 
-  def fetch(conn, fun, call, query, cursor, opts) do
+  defp run_fetch(conn, fun, call, query, cursor, opts) do
     fetch = &handle(&1, fun, [query, cursor], opts)
     case run_meter(conn, fetch, opts) do
       {{:ok, result}, meter} ->
@@ -1486,10 +1767,22 @@ defmodule DBConnection do
 
   defp fetch_decode(status, call, query, cursor, meter, result, opts) do
     {:ok, decoded} = decode(call, query, cursor, meter, result, opts)
-    {[decoded], {status, query, cursor}}
+    {:ok, decoded, {status, query, cursor}}
   end
 
-  defp deallocate(conn, {_, query, cursor}, opts) do
+  defp fetch_map(conn, result, opts) do
+    case Keyword.get(opts, :stream_mapper) do
+      map when is_function(map, 2) ->
+        map.(conn, result)
+      {mod, fun, args} ->
+        apply(mod, fun, [conn, result | args])
+      nil ->
+        [result]
+    end
+  end
+
+  @doc false
+  def deallocate(conn, {_, query, cursor}, opts) do
     case get_info(conn) do
       :closed -> :ok
       _       -> deallocate(conn, query, cursor, opts)
@@ -1512,6 +1805,95 @@ defmodule DBConnection do
     Stream.resource(start, next, stop)
   end
 
+  defp checkout_begin_meter(pool, opts) do
+    case Keyword.get(opts, :log) do
+      nil ->
+        run_checkout_begin(pool, opts)
+      log ->
+        checkout_begin_meter(pool, log, opts)
+    end
+  end
+
+  defp run_checkout_begin(pool, opts) do
+    case run_checkout(pool, opts) do
+      {:ok, conn, conn_state} ->
+        run_checkout_begin(conn, conn_state, opts)
+      {:error, err} ->
+        {{:raise, err}, nil}
+    end
+  end
+
+  defp run_checkout_begin(conn, conn_state, opts) do
+    case handle(conn, conn_state, :handle_begin, opts, :continuation) do
+      {:ok, _} ->
+        {{:ok, conn}, nil}
+      error ->
+        checkin(conn, opts)
+        {error, nil}
+    end
+  end
+
+  defp checkout_begin_meter(pool, log, opts) do
+    checkout = time()
+    case run_checkout(pool, opts) do
+      {:ok, conn, conn_state} ->
+        checkout_begin_meter(conn, conn_state, log, [checkout: checkout], opts)
+      {:error, err} ->
+        times = [stop: time(), checkout: checkout]
+        result = {:raise, err}
+        log_info = {log, times, :handle_begin, result}
+        {result, log_info}
+    end
+  end
+
+  defp checkout_begin_meter(conn, conn_state, log, times, opts) do
+    start = time()
+    result = handle(conn, conn_state, :handle_begin, opts, :continuation)
+    times = [stop: time(), start: start] ++ times
+    log_info = {log, times, :handle_begin, result}
+    case result do
+      {:ok, _} ->
+        checkout_begin_log(conn, log_info, opts)
+      error ->
+        checkin(conn, opts)
+        {error, log_info}
+    end
+  end
+
+  defp checkout_begin_log(conn, {log, _, _, _} = log_info, opts) do
+    try do
+      transaction_log(log_info, :checkout_begin)
+    catch
+      kind, reason ->
+        result = {kind, reason, System.stacktrace()}
+        continuation_conclude(conn, &rollback/4, log, opts, result)
+    else
+      _ ->
+        {{:ok, conn}, nil}
+    end
+  end
+
+  defp run_continuation_rollback(conn, reason, opts) do
+    log = Keyword.get(opts, :log)
+    result = {:error, reason}
+    continuation_conclude(conn, &rollback/4, log, opts, result, result)
+  end
+
+  defp continuation_conclude(conn, fun, log, opts, result, closed \\ {:error, :rollback}) do
+    case get_info(conn) do
+      {:continuation, _} ->
+        try do
+          fun.(conn, log, opts, result)
+        after
+          checkin(conn, opts)
+        end
+      {trans, _} when trans in [:transaction, :failed] ->
+        raise "inside transaction"
+      :closed ->
+        {closed, nil}
+    end
+  end
+
   defp put_info(conn, status, conn_state) do
     _ = Process.put(key(conn), {status, conn_state})
     :ok
@@ -1521,6 +1903,8 @@ defmodule DBConnection do
     case get_info(conn) do
       {:failed, _} ->
         raise DBConnection.ConnectionError, "transaction rolling back"
+      {:continuation, _} ->
+        raise "not inside transaction"
       {_, _} = info ->
         info
       :closed ->

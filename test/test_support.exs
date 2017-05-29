@@ -63,6 +63,30 @@ defmodule TestConnection do
         DBConnection.close!(pool, query, opts2 ++ unquote(opts))
       end
 
+      def start_producer(pool, query, params, opts2 \\ []) do
+        DBConnection.Producer.start_link(pool, query, params, opts2 ++ unquote(opts))
+      end
+
+      def start_consumer(pool, fun, opts2 \\ []) do
+        DBConnection.Consumer.start_link(pool, fun, opts2 ++ unquote(opts))
+      end
+
+      def checkout_begin(pool, opts2 \\ []) do
+        DBConnection.checkout_begin(pool, opts2 ++ unquote(opts))
+      end
+
+      def commit_checkin(conn, opts2 \\ []) do
+        DBConnection.commit_checkin(conn, opts2 ++ unquote(opts))
+      end
+
+      def rollback_checkin(conn, reason, opts2 \\ []) do
+        DBConnection.rollback_checkin(conn, reason, opts2 ++ unquote(opts))
+      end
+
+      def checkin(conn, opts2 \\ []) do
+        DBConnection.checkin(conn, opts2 ++ unquote(opts))
+      end
+
       defoverridable [start_link: 1]
     end
   end
@@ -70,8 +94,6 @@ defmodule TestConnection do
   def start_link(opts), do: DBConnection.start_link(__MODULE__, opts)
 
   def connect(opts) do
-    agent = Keyword.fetch!(opts, :agent)
-    _ = Process.put(:agent, agent)
     TestAgent.eval(:connect, [opts])
   end
 
@@ -136,7 +158,6 @@ defmodule TestConnection do
   end
 end
 
-
 defmodule TestQuery do
   defstruct [:state]
 end
@@ -179,7 +200,11 @@ defmodule TestAgent do
     ok
   end
 
-  def eval(agent \\ Process.get(:agent), fun, args) do
+  def eval(fun, args) do
+    eval(get_agent(args), fun, args)
+  end
+
+  def eval(agent, fun, args) do
     action = {fun, args}
     case Agent.get_and_update(agent, &get_and_update(&1, action)) do
       fun when is_function(fun) ->
@@ -188,6 +213,23 @@ defmodule TestAgent do
         result
     end
   end
+
+  defp get_agent(args) do
+    case Process.get(:agent) do
+      agent when is_pid(agent) ->
+        agent
+      nil ->
+        opts = get_opts(args)
+        agent = Keyword.fetch!(opts, :agent)
+        _ = Process.put(:agent, agent)
+        agent
+    end
+  end
+
+  defp get_opts([opts]),    do: opts
+  defp get_opts([opts, _]), do: opts
+  defp get_opts([_, opts, _]), do: opts
+  defp get_opts([_, _, opts, _]), do: opts
 
   def record(agent) do
     Enum.reverse(Agent.get(agent, &elem(&1, 1)))

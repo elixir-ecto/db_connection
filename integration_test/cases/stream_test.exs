@@ -71,6 +71,43 @@ defmodule StreamTest do
       ] = A.record(agent)
   end
 
+  test "stream with execute in stream_mapper" do
+    stack = [
+      {:ok, :state},
+      {:ok, :began, :new_state},
+      {:ok, %C{}, :newer_state},
+      {:ok, %R{}, :newest_state},
+      {:ok, %R{}, :state2},
+      {:deallocate, %R{}, :new_state2},
+      {:ok, %R{}, :newer_state2},
+      {:ok, :deallocated, :newest_state2},
+      {:ok, :commited, :state3}
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self()]
+    {:ok, pool} = P.start_link(opts)
+    assert P.transaction(pool, fn(conn) ->
+      mapper = fn(conn, res) -> [P.execute!(conn, %Q{}, res, opts), :mapped] end
+      stream = P.stream(conn, %Q{}, [:param], [stream_mapper: mapper])
+      assert %DBConnection.Stream{} = stream
+      assert Enum.to_list(stream) == [%R{}, :mapped, %R{}, :mapped]
+      :hi
+    end) == {:ok, :hi}
+
+    assert [
+      connect: [_],
+      handle_begin: [_, :state],
+      handle_declare: [%Q{}, [:param], _, :new_state],
+      handle_first: [%Q{}, %C{}, _, :newer_state],
+      handle_execute: [%Q{}, %R{}, _, :newest_state],
+      handle_next: [%Q{}, %C{}, _, :state2],
+      handle_execute: [%Q{}, %R{}, _, :new_state2],
+      handle_deallocate: [%Q{}, %C{}, _, :newer_state2],
+      handle_commit: [_, :newest_state2]
+      ] = A.record(agent)
+  end
+
   test "stream logs result" do
     stack = [
       {:ok, :state},

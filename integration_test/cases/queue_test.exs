@@ -3,8 +3,9 @@ defmodule QueueTest do
 
   alias TestPool, as: P
   alias TestAgent, as: A
+  alias TestQuery, as: Q
 
-  test "queue: false raises on busy" do
+  test "run queue: false raises on busy" do
     stack = [{:ok, :state}]
     {:ok, agent} = A.start_link(stack)
 
@@ -20,6 +21,151 @@ defmodule QueueTest do
       end)
       assert queue_time <= 1_000_000, "request was queued"
     end)
+  end
+
+  test "execute queue: false raises on busy" do
+    stack = [{:ok, :state}]
+    {:ok, agent} = A.start_link(stack)
+
+    parent = self()
+    opts = [agent: agent, parent: parent]
+    {:ok, pool} = P.start_link(opts)
+
+    P.run(pool, fn(_) ->
+      {queue_time, _} = :timer.tc(fn() ->
+        opts = [queue: false] ++ opts
+        assert_raise DBConnection.ConnectionError,
+          "connection not available and queuing is disabled",
+          fn() -> P.execute!(pool, %Q{}, [:param], opts) end
+      end)
+      assert queue_time <= 1_000_000, "request was queued"
+    end)
+  end
+
+  test "execute queue: false raises on busy and logs" do
+    stack = [{:ok, :state}]
+    {:ok, agent} = A.start_link(stack)
+
+    parent = self()
+    opts = [agent: agent, parent: parent]
+    {:ok, pool} = P.start_link(opts)
+
+    P.run(pool, fn(_) ->
+      {queue_time, _} = :timer.tc(fn() ->
+        log = &send(parent, &1)
+        opts = [queue: false, log: log] ++ opts
+        assert_raise DBConnection.ConnectionError,
+          "connection not available and queuing is disabled",
+          fn() -> P.execute!(pool, %Q{}, [:param], opts) end
+      end)
+      assert queue_time <= 1_000_000, "request was queued"
+    end)
+
+    assert_received %DBConnection.LogEntry{call: :execute} = entry
+    assert %{query: %Q{}, params: [:param], result: result} = entry
+    assert {:error, %DBConnection.ConnectionError{}} = result
+    assert is_integer(entry.pool_time)
+    assert entry.pool_time >= 0
+    assert is_nil(entry.connection_time)
+    assert is_nil(entry.decode_time)
+  end
+
+  test "transaction queue: false raises on busy" do
+    stack = [{:ok, :state}]
+    {:ok, agent} = A.start_link(stack)
+
+    parent = self()
+    opts = [agent: agent, parent: parent]
+    {:ok, pool} = P.start_link(opts)
+
+    P.run(pool, fn(_) ->
+      {queue_time, _} = :timer.tc(fn() ->
+        opts = [queue: false] ++ opts
+        assert_raise DBConnection.ConnectionError,
+          "connection not available and queuing is disabled",
+          fn() ->
+            P.transaction(pool, fn() -> flunk("should not run") end, opts)
+          end
+      end)
+      assert queue_time <= 1_000_000, "request was queued"
+    end)
+  end
+
+  test "transaction queue: false raises on busy and logs" do
+    stack = [{:ok, :state}]
+    {:ok, agent} = A.start_link(stack)
+
+    parent = self()
+    opts = [agent: agent, parent: parent]
+    {:ok, pool} = P.start_link(opts)
+
+    P.run(pool, fn(_) ->
+      {queue_time, _} = :timer.tc(fn() ->
+        log = &send(parent, &1)
+        opts = [queue: false, log: log] ++ opts
+        assert_raise DBConnection.ConnectionError,
+          "connection not available and queuing is disabled",
+          fn() ->
+            P.transaction(pool, fn() -> flunk("should not run") end, opts)
+          end
+      end)
+      assert queue_time <= 1_000_000, "request was queued"
+    end)
+
+    assert_received %DBConnection.LogEntry{call: :transaction} = entry
+    assert %{query: :begin, params: nil, result: result} = entry
+    assert {:error, %DBConnection.ConnectionError{}} = result
+    assert is_integer(entry.pool_time)
+    assert entry.pool_time >= 0
+    assert is_nil(entry.connection_time)
+    assert is_nil(entry.decode_time)
+  end
+
+  test "checkout_begin queue: false raises on busy" do
+    stack = [{:ok, :state}]
+    {:ok, agent} = A.start_link(stack)
+
+    parent = self()
+    opts = [agent: agent, parent: parent]
+    {:ok, pool} = P.start_link(opts)
+
+    P.run(pool, fn(_) ->
+      {queue_time, _} = :timer.tc(fn() ->
+        opts = [queue: false] ++ opts
+        assert_raise DBConnection.ConnectionError,
+          "connection not available and queuing is disabled",
+          fn() -> P.checkout_begin(pool, opts) end
+      end)
+      assert queue_time <= 1_000_000, "request was queued"
+    end)
+  end
+
+  test "checkout_begin queue: false raises on busy and logs" do
+    stack = [{:ok, :state}]
+    {:ok, agent} = A.start_link(stack)
+
+    parent = self()
+    opts = [agent: agent, parent: parent]
+    {:ok, pool} = P.start_link(opts)
+
+    P.run(pool, fn(_) ->
+      {queue_time, _} = :timer.tc(fn() ->
+        log = &send(parent, &1)
+        opts = [queue: false, log: log] ++ opts
+        assert_raise DBConnection.ConnectionError,
+          "connection not available and queuing is disabled",
+          fn() -> P.checkout_begin(pool, opts) end
+      end)
+      assert queue_time <= 1_000_000, "request was queued"
+    end)
+
+    assert_received %DBConnection.LogEntry{call: :checkout_begin} = entry
+    assert %{query: :begin, params: nil, result: result} = entry
+    assert {:error, %DBConnection.ConnectionError{}} = result
+    assert is_integer(entry.pool_time)
+    assert entry.pool_time >= 0
+    assert is_nil(entry.connection_time)
+    assert is_nil(entry.decode_time)
   end
 
   test "queue many async" do

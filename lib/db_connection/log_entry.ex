@@ -62,4 +62,7 @@ defmodule DBConnection.LogEntry do
   defp parse_time({:checkout, checkout} = time, {{:start, start}, entry}) do
     {time, %{entry | pool_time: diff(start, checkout)}}
   end
+  defp parse_time({:checkout, checkout} = time, {{:stop, stop}, entry}) do
+    {time, %{entry | pool_time: diff(stop, checkout)}}
+  end
 end
