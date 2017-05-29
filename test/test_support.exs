@@ -67,6 +67,10 @@ defmodule TestConnection do
         DBConnection.Producer.start_link(pool, query, params, opts2 ++ unquote(opts))
       end
 
+      def start_consumer(pool, fun, opts2 \\ []) do
+        DBConnection.Consumer.start_link(pool, fun, opts2 ++ unquote(opts))
+      end
+
       def checkout_begin(pool, opts2 \\ []) do
         DBConnection.checkout_begin(pool, opts2 ++ unquote(opts))
       end
