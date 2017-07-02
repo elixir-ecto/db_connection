@@ -1,5 +1,6 @@
 defmodule StreamTest do
   use ExUnit.Case, async: true
+  import ExUnit.CaptureLog
 
   alias TestPool, as: P
   alias TestAgent, as: A
@@ -401,13 +402,14 @@ defmodule StreamTest do
       {:handle_declare, [%Q{}, [:param], _, :new_state]} | _] = A.record(agent)
   end
 
-  test "stream declare log raises and deallocates" do
+  test "stream declare log raises and continues" do
     stack = [
       {:ok, :state},
       {:ok, :began, :new_state},
       {:ok, %C{}, :newer_state},
-      {:ok, :deallocated, :newest_state},
-      {:ok, :commited, :state2}
+      {:deallocate, %R{}, :newest_state},
+      {:ok, :deallocated, :state2},
+      {:ok, :commited, :new_state2}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -415,11 +417,12 @@ defmodule StreamTest do
     opts = [agent: agent, parent: parent]
     {:ok, pool} = P.start_link(opts)
 
-    Process.flag(:trap_exit, true)
     assert P.transaction(pool, fn(conn) ->
-      opts2 = [log: fn(_) -> raise "oops" end]
+      opts2 = [log: fn(_) -> raise "logging oops" end]
       stream = P.stream(conn, %Q{}, [:param], opts2)
-      assert_raise RuntimeError, "oops", fn() -> Enum.to_list(stream) end
+      assert capture_log(fn() ->
+        assert Enum.to_list(stream) == [%R{}]
+      end) =~ "logging oops"
       :hi
     end) == {:ok, :hi}
 
@@ -427,8 +430,9 @@ defmodule StreamTest do
       connect: [_],
       handle_begin: [_, :state],
       handle_declare: [%Q{}, [:param], _, :new_state],
-      handle_deallocate: [%Q{}, %C{}, _, :newer_state],
-      handle_commit: [_, :newest_state]
+      handle_first: [%Q{}, %C{}, _, :newer_state],
+      handle_deallocate: [%Q{}, %C{}, _, :newest_state],
+      handle_commit: [_, :state2]
       ] = A.record(agent)
   end
 
