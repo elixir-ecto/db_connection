@@ -953,11 +953,6 @@ defmodule DBConnection do
     :ok
   end
 
-  defp cleanup(conn, fun, args, opts) do
-    {status, conn_state} = fetch_info(conn)
-    handle(conn, status, conn_state, fun, args, opts)
-  end
-
   defp handle(conn, fun, args, opts) do
     case fetch_info(conn) do
       {:failed, _} ->
@@ -1100,7 +1095,7 @@ defmodule DBConnection do
   end
 
   defp raised_close(conn, query, opts, raised) do
-    case cleanup(conn, :handle_close, [query], opts) do
+    case handle_close(conn, query, opts) do
       {:ok, _} ->
         raised
       {:error, _} ->
@@ -1122,8 +1117,12 @@ defmodule DBConnection do
   end
 
   defp run_close(conn, query, opts) do
-    fun = &cleanup(&1, :handle_close, [query], opts)
-    run_meter(conn, fun, opts)
+    run_meter(conn, &handle_close(&1, query, opts), opts)
+  end
+
+  defp handle_close(conn, query, opts) do
+    {status, conn_state} = fetch_info(conn)
+    handle(conn, status, conn_state, :handle_close, [query], opts)
   end
 
   defmacrop time() do
@@ -1505,14 +1504,21 @@ defmodule DBConnection do
   end
 
   defp deallocate(conn, {_, query, cursor}, opts) do
-    case get_info(conn) do
-      :closed -> :ok
-      _       -> deallocate(conn, query, cursor, opts)
-    end
+    deallocate(conn, query, cursor, opts)
   end
 
   defp deallocate(conn, query, cursor, opts) do
-    close = &cleanup(&1, :handle_deallocate, [query, cursor], opts)
+    case get_info(conn) do
+      {status, conn_state} ->
+        deallocate(conn, status, conn_state, query, cursor, opts)
+      :closed ->
+        :ok
+    end
+  end
+
+  defp deallocate(conn, status, conn_state, query, cursor, opts) do
+    args = [query, cursor]
+    close = &handle(&1, status, conn_state, :handle_deallocate, args, opts)
     {result, meter} = run_meter(conn, close, opts)
     case log(:deallocate, query, cursor, meter, result) do
       {:ok, _}      -> :ok
