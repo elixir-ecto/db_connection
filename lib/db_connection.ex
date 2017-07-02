@@ -952,8 +952,22 @@ defmodule DBConnection do
     :ok
   end
 
-  defp handle(%DBConnection{conn_mod: conn_mod} = conn, fun, args, opts) do
+  defp cleanup(conn, fun, args, opts) do
     {status, conn_state} = fetch_info(conn)
+    handle(conn, status, conn_state, fun, args, opts)
+  end
+
+  defp handle(conn, fun, args, opts) do
+    case fetch_info(conn) do
+      {:failed, _} ->
+        raise DBConnection.ConnectionError, "transaction rolling back"
+      {status, conn_state} ->
+        handle(conn, status, conn_state, fun, args, opts)
+    end
+  end
+
+  defp handle(conn, status, conn_state, fun, args, opts) do
+    %DBConnection{conn_mod: conn_mod} = conn
     try do
       apply(conn_mod, fun, args ++ [opts, conn_state])
     else
@@ -1085,7 +1099,7 @@ defmodule DBConnection do
   end
 
   defp raised_close(conn, query, opts, raised) do
-    case handle(conn, :handle_close, [query], opts) do
+    case cleanup(conn, :handle_close, [query], opts) do
       {:ok, _} ->
         raised
       {:error, _} ->
@@ -1107,7 +1121,7 @@ defmodule DBConnection do
   end
 
   defp run_close(conn, query, opts) do
-    fun = &handle(&1, :handle_close, [query], opts)
+    fun = &cleanup(&1, :handle_close, [query], opts)
     run_meter(conn, fun, opts)
   end
 
@@ -1222,7 +1236,7 @@ defmodule DBConnection do
 
   defp transaction_meter(%DBConnection{} = conn, fun, opts) do
     case fetch_info(conn) do
-      {:transaction, _} ->
+      {trans, _} when trans in [:transaction, :failed] ->
         {transaction_nested(conn, fun), nil}
       {:idle, conn_state} ->
         log = Keyword.get(opts, :log)
@@ -1497,7 +1511,7 @@ defmodule DBConnection do
   end
 
   defp deallocate(conn, query, cursor, opts) do
-    close = &handle(&1, :handle_deallocate, [query, cursor], opts)
+    close = &cleanup(&1, :handle_deallocate, [query, cursor], opts)
     {result, meter} = run_meter(conn, close, opts)
     case log(:deallocate, query, cursor, meter, result) do
       {:ok, _}      -> :ok
@@ -1519,8 +1533,6 @@ defmodule DBConnection do
 
   defp fetch_info(conn) do
     case get_info(conn) do
-      {:failed, _} ->
-        raise DBConnection.ConnectionError, "transaction rolling back"
       {_, _} = info ->
         info
       :closed ->
