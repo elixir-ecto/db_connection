@@ -357,38 +357,4 @@ defmodule PrepareStreamTest do
       handle_close: [%Q{}, _, :state2],
       handle_commit: [_, :new_state2]] = A.record(agent)
   end
-
-  test "prepare_stream declare log raises and deallocates" do
-    stack = [
-      {:ok, :state},
-      {:ok, :began, :new_state},
-      {:ok, %Q{}, :newer_state},
-      {:ok, %C{}, :newest_state},
-      {:ok, :deallocated, :state2},
-      {:ok, :commited, :new_state2}
-      ]
-    {:ok, agent} = A.start_link(stack)
-
-    parent = self()
-    opts = [agent: agent, parent: parent]
-    {:ok, pool} = P.start_link(opts)
-
-    Process.flag(:trap_exit, true)
-    assert P.transaction(pool, fn(conn) ->
-      opts2 = [log: fn(_) -> raise "oops" end]
-      stream = P.prepare_stream(conn, %Q{}, [:param], opts2)
-      assert_raise RuntimeError, "oops", fn() -> Enum.to_list(stream) end
-      :hi
-    end) == {:ok, :hi}
-
-    assert [
-      connect: [_],
-      handle_begin: [_, :state],
-      handle_prepare: [%Q{}, _, :new_state],
-      handle_declare: [%Q{}, [:param], _, :newer_state],
-      handle_deallocate: [%Q{}, %C{}, _, :newest_state],
-      handle_commit: [_, :state2]
-      ] = A.record(agent)
-  end
-
 end

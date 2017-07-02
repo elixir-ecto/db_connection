@@ -72,6 +72,8 @@ defmodule DBConnection do
   `run/3` or `transaction/3` fun and using the run/transaction
   connection reference (`t`).
   """
+  require Logger
+
   defstruct [:pool_mod, :pool_ref, :conn_mod, :conn_ref]
 
   @typedoc """
@@ -1189,7 +1191,13 @@ defmodule DBConnection do
 
   defp log(call, query, params, log, times, result) do
     entry = DBConnection.LogEntry.new(call, query, params, times, entry_result(result))
-    log(log, entry)
+    try do
+      log(log, entry)
+    catch
+      kind, reason ->
+        stack = System.stacktrace()
+        log_failed(entry, kind, reason, stack)
+    end
     log_result(result)
   end
 
@@ -1207,6 +1215,17 @@ defmodule DBConnection do
     :erlang.raise(kind, reason, stack)
   end
   defp log_result(other), do: other
+
+  defp log_failed(entry, kind, reason, stack) do
+    try do
+      Logger.error(fn() ->
+        "an exception was raised logging #{inspect entry}: " <> Exception.format(kind, reason, stack)
+      end)
+    catch
+      _, _ ->
+        :ok
+    end
+  end
 
   defp run_begin(conn, fun, opts) do
     try do
