@@ -756,10 +756,11 @@ defmodule DBConnection do
 
   `run/3` and `transaction/3` can be nested multiple times. If a transaction is
   rolled back or a nested transaction `fun` raises the transaction is marked as
-  failed. Any calls inside a failed transaction (except `rollback/2`) will raise
-  until the outer transaction call returns. All running `transaction/3` calls
-  will return `{:error, :rollback}` if the transaction failed or connection
-  closed and `rollback/2` is not called for that `transaction/3`.
+  failed. All calls except `run/3`, `transaction/3`, `rollback/2`, `close/3` and
+  `close!/3` will raise an exception inside a failed transaction until the outer
+  transaction call returns. All `transaction/3` calls will return
+  `{:error, :rollback}` if the transaction failed or connection closed and
+  `rollback/2` is not called for that `transaction/3`.
 
   ### Options
 
