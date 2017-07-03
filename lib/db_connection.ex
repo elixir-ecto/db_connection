@@ -756,10 +756,11 @@ defmodule DBConnection do
 
   `run/3` and `transaction/3` can be nested multiple times. If a transaction is
   rolled back or a nested transaction `fun` raises the transaction is marked as
-  failed. Any calls inside a failed transaction (except `rollback/2`) will raise
-  until the outer transaction call returns. All running `transaction/3` calls
-  will return `{:error, :rollback}` if the transaction failed or connection
-  closed and `rollback/2` is not called for that `transaction/3`.
+  failed. All calls except `run/3`, `transaction/3`, `rollback/2`, `close/3` and
+  `close!/3` will raise an exception inside a failed transaction until the outer
+  transaction call returns. All `transaction/3` calls will return
+  `{:error, :rollback}` if the transaction failed or connection closed and
+  `rollback/2` is not called for that `transaction/3`.
 
   ### Options
 
@@ -952,8 +953,17 @@ defmodule DBConnection do
     :ok
   end
 
-  defp handle(%DBConnection{conn_mod: conn_mod} = conn, fun, args, opts) do
-    {status, conn_state} = fetch_info(conn)
+  defp handle(conn, fun, args, opts) do
+    case fetch_info(conn) do
+      {:failed, _} ->
+        raise DBConnection.ConnectionError, "transaction rolling back"
+      {status, conn_state} ->
+        handle(conn, status, conn_state, fun, args, opts)
+    end
+  end
+
+  defp handle(conn, status, conn_state, fun, args, opts) do
+    %DBConnection{conn_mod: conn_mod} = conn
     try do
       apply(conn_mod, fun, args ++ [opts, conn_state])
     else
@@ -1085,7 +1095,7 @@ defmodule DBConnection do
   end
 
   defp raised_close(conn, query, opts, raised) do
-    case handle(conn, :handle_close, [query], opts) do
+    case handle_close(conn, query, opts) do
       {:ok, _} ->
         raised
       {:error, _} ->
@@ -1107,8 +1117,12 @@ defmodule DBConnection do
   end
 
   defp run_close(conn, query, opts) do
-    fun = &handle(&1, :handle_close, [query], opts)
-    run_meter(conn, fun, opts)
+    run_meter(conn, &handle_close(&1, query, opts), opts)
+  end
+
+  defp handle_close(conn, query, opts) do
+    {status, conn_state} = fetch_info(conn)
+    handle(conn, status, conn_state, :handle_close, [query], opts)
   end
 
   defmacrop time() do
@@ -1222,7 +1236,7 @@ defmodule DBConnection do
 
   defp transaction_meter(%DBConnection{} = conn, fun, opts) do
     case fetch_info(conn) do
-      {:transaction, _} ->
+      {trans, _} when trans in [:transaction, :failed] ->
         {transaction_nested(conn, fun), nil}
       {:idle, conn_state} ->
         log = Keyword.get(opts, :log)
@@ -1490,14 +1504,21 @@ defmodule DBConnection do
   end
 
   defp deallocate(conn, {_, query, cursor}, opts) do
-    case get_info(conn) do
-      :closed -> :ok
-      _       -> deallocate(conn, query, cursor, opts)
-    end
+    deallocate(conn, query, cursor, opts)
   end
 
   defp deallocate(conn, query, cursor, opts) do
-    close = &handle(&1, :handle_deallocate, [query, cursor], opts)
+    case get_info(conn) do
+      {status, conn_state} ->
+        deallocate(conn, status, conn_state, query, cursor, opts)
+      :closed ->
+        :ok
+    end
+  end
+
+  defp deallocate(conn, status, conn_state, query, cursor, opts) do
+    args = [query, cursor]
+    close = &handle(&1, status, conn_state, :handle_deallocate, args, opts)
     {result, meter} = run_meter(conn, close, opts)
     case log(:deallocate, query, cursor, meter, result) do
       {:ok, _}      -> :ok
@@ -1519,8 +1540,6 @@ defmodule DBConnection do
 
   defp fetch_info(conn) do
     case get_info(conn) do
-      {:failed, _} ->
-        raise DBConnection.ConnectionError, "transaction rolling back"
       {_, _} = info ->
         info
       :closed ->

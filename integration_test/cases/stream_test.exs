@@ -241,6 +241,39 @@ defmodule StreamTest do
       ] = A.record(agent)
   end
 
+ test "stream deallocates after transaction failed" do
+    stack = [
+      {:ok, :state},
+      {:ok, :began, :new_state},
+      {:ok, %C{}, :newer_state},
+      {:ok, %R{}, :newest_state},
+      {:ok, :deallocated, :state2},
+      {:ok, :rolledback, :new_state2}
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    parent = self()
+    opts = [agent: agent, parent: parent]
+    {:ok, pool} = P.start_link(opts)
+
+    assert P.transaction(pool, fn(conn) ->
+      stream = P.stream(conn, %Q{}, [:param], [log: &send(parent, &1)])
+      catch_throw(Enum.map(stream, fn(%R{}) ->
+        {:error, :oops} = P.transaction(conn, &P.rollback(&1, :oops))
+        throw(:escape)
+      end))
+    end) == {:error, :rollback}
+
+    assert [
+      connect: [_],
+      handle_begin: [_, :state],
+      handle_declare: [%Q{}, [:param], _, :new_state],
+      handle_first: [%Q{}, %C{}, _, :newer_state],
+      handle_deallocate: [%Q{}, %C{}, _, :newest_state],
+      handle_rollback: [_, :state2]
+      ] = A.record(agent)
+  end
+
   test "stream logs deallocate disconnect" do
     err = RuntimeError.exception("oops")
     stack = [
