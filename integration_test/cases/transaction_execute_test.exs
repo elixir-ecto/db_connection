@@ -264,7 +264,7 @@ defmodule TransactionExecuteTest do
       end) == {:error, :oops}
 
       assert_raise DBConnection.ConnectionError, "transaction rolling back",
-        fn() -> P.execute(conn, %Q{}, [:param]) end
+        fn() -> P.execute!(conn, %Q{}, [:param]) end
     end) == {:error, :rollback}
 
     assert [
