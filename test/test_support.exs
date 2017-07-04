@@ -15,11 +15,13 @@ defmodule TestConnection do
         DBConnection.run(pool, fun, opts2 ++ unquote(opts))
       end
 
-      def transaction(pool, fun, opts2 \\ []) do
-        DBConnection.transaction(pool, fun, opts2 ++ unquote(opts))
+      def checkout(pool, opts2 \\ []) do
+        DBConnection.checkout(pool, opts2 ++ unquote(opts))
       end
 
-      defdelegate rollback(conn, reason), to: DBConnection
+      def checkin(conn, opts2 \\ []) do
+        DBConnection.checkin(conn, opts2 ++ unquote(opts))
+      end
 
       def prepare(pool, query, opts2 \\ []) do
         DBConnection.prepare(pool, query, opts2 ++ unquote(opts))
@@ -61,6 +63,54 @@ defmodule TestConnection do
 
       def close!(pool, query, opts2 \\ []) do
         DBConnection.close!(pool, query, opts2 ++ unquote(opts))
+      end
+
+      def begin(pool, opts2 \\ []) do
+        DBConnection.begin(pool, opts2 ++ unquote(opts))
+      end
+
+      def begin!(pool, opts2 \\ []) do
+        DBConnection.begin!(pool, opts2 ++ unquote(opts))
+      end
+
+      def commit(pool, opts2 \\ []) do
+        DBConnection.commit(pool, opts2 ++ unquote(opts))
+      end
+
+      def commit!(pool, opts2 \\ []) do
+        DBConnection.commit!(pool, opts2 ++ unquote(opts))
+      end
+
+      def rollback(pool, opts2 \\ []) do
+        DBConnection.rollback(pool, opts2 ++ unquote(opts))
+      end
+
+      def rollback!(pool, opts2 \\ []) do
+        DBConnection.rollback!(pool, opts2 ++ unquote(opts))
+      end
+
+      def checkout_begin(pool, opts2 \\ []) do
+        DBConnection.checkout_begin(pool, opts2 ++ unquote(opts))
+      end
+
+      def checkout_begin!(pool, opts2 \\ []) do
+        DBConnection.checkout_begin!(pool, opts2 ++ unquote(opts))
+      end
+
+      def commit_checkin(pool, opts2 \\ []) do
+        DBConnection.commit_checkin(pool, opts2 ++ unquote(opts))
+      end
+
+      def commit_checkin!(pool, opts2 \\ []) do
+        DBConnection.commit_checkin!(pool, opts2 ++ unquote(opts))
+      end
+
+      def rollback_checkin(pool, opts2 \\ []) do
+        DBConnection.rollback_checkin(pool, opts2 ++ unquote(opts))
+      end
+
+      def rollback_checkin!(pool, opts2 \\ []) do
+        DBConnection.rollback_checkin!(pool, opts2 ++ unquote(opts))
       end
 
       defoverridable [start_link: 1]
