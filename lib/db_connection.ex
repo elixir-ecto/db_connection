@@ -751,15 +751,21 @@ defmodule DBConnection do
       checkin(conn, opts)
     end
   end
+
   @doc """
   Acquire a lock on a connection.
 
-  Returns `{:ok, conn}` on success or `{;error, exception}` if there is an
+  Returns `{:ok, conn}` on success or `{:error, exception}` if there is an
   error.
 
-  To use the locked connection call requests with the connection
-  reference returned. If the connection disconnects all future calls using that
-  connection reference will fail.
+  The `conn` is a connection reference that can be used as the first argument to
+  other requests (except `checkout/2` and `checkout_begin/2`). If the connection
+  disconnects all future calls using that connection reference will return (or
+  raise if bang(!) variant) a `%DBConnection.ConnectionError{}` error.
+
+  Multiple `checkout/2` (and `checkout_begin/2`) calls on the same pool will
+  checkout multiple connections. The caller is responsible for checking all
+  connections in.
 
   Use `checkin/2`, `commit_checkin/2` or `rollback_checkin/2` to release the
   lock and return the connection to the pool.
@@ -783,6 +789,10 @@ defmodule DBConnection do
       after
         DBConnection.checkin(conn)
       end
+
+      {:ok, conn1} = DBConnection.checkout(pool)
+      {:ok, conn2} = DBConnection.checkout(pool)
+      true = (conn1 != conn2)
   """
   @spec checkout(pool :: GenServer.t, opts :: Keyword.t) ::
     {:ok, t} | {:error, Exception.t}
@@ -819,7 +829,12 @@ defmodule DBConnection do
   @doc """
   Release a lock on a connection.
 
-  Returns `:ok` on success, otherwise `{:error, exception}` on error.
+  Returns `:ok` if the connection is still connected and was checked in,
+  otherwise if the connection is disconnected returns
+  `{:error, %DBConnection.ConnectionError{}}`. If a connection has already been
+  checked in, or previously disconnected, then the lock has been released and it
+  will be treated as disconnected to the caller. Other exceptions may be
+  returned in the error tuple in future.
 
   The pool may support options.
 
@@ -831,6 +846,7 @@ defmodule DBConnection do
       after
         DBConnection.checkin(conn)
       end
+      {:error, %DBConnection.ConnectionError{}} = DBConnection.checkin(conn)
   """
   @spec checkin(t, opts :: Keyword.t) :: :ok | {:error, Exception.t}
   def checkin(%DBConnection{} = conn, opts \\ []) do
@@ -845,7 +861,9 @@ defmodule DBConnection do
   @doc """
   Release a lock on a connection.
 
-  Returns `:ok` on sucess, otherwsie raises an exception on error.
+  Returns `:ok` if the connection is still connected and was checked in,
+  otherwise if the connection is disconnected raises a
+  `DBConnection.ConnectionError`. Other exceptions may be raised in future.
 
   See `checkin/2`.
   """
@@ -860,10 +878,14 @@ defmodule DBConnection do
   end
 
   @doc """
-  Begin a transaction.
+  Execute a begin request.
 
-  Return `{:ok, result}` on sucess or `{:error, exception}` if there was an
+  Return `{:ok, result}` on success or `{:error, exception}` if there was an
   error.
+
+  It is possible to issue multiple begin requests without a commit (`commit/2`
+  or `commit_checkin/2`) or rollback (`rollback/2` and `rollback_checkin/2`).
+  The semantics are left to the callback implementation
 
   ### Options
 
@@ -900,9 +922,9 @@ defmodule DBConnection do
   end
 
   @doc """
-  Begin a transaction.
+  Execute a begin request.
 
-  Returns `result` on success, otherwise raises an exception on error.
+  Returns the `result` on success, otherwise raises an exception on error.
 
   See `begin/2`.
   """
@@ -917,10 +939,26 @@ defmodule DBConnection do
   end
 
   @doc """
-  Acquire a lock on a connection and begin a transaction.
+  Acquire a lock on a connection and execute a begin request.
 
   Return `{:ok, conn, result}` on success or `{:error, exception}` if there was
-  an error. On error the connection is released back to the pool.
+  an error. If an error is returned the connection is released back to the pool.
+
+  The `conn` is a connection reference that can be used as the first argument to
+  other requests (except `checkout/2` and `checkout_begin/2`). If the connection
+  disconnects all future calls using that connection reference will return (or
+  raise if bang(!) variant) a `%DBConnection.ConnectionError{}` error.
+
+  Use `checkin/2`, `commit_checkin/2` or `rollback_checkin/2` to release the
+  lock and return the connection to the pool.
+
+  Multiple `checkout_begin/2` (and `checkout/2`) calls on the same pool will
+  checkout multiple connections. The caller is responsible for checking all
+  connections in.
+
+  It is possible to issue multiple begin requests without a commit (`commit/2`
+  or `commit_checkin/2`) or rollback (`rollback/2` and `rollback_checkin/2`).
+  The semantics are left to the callback implementation.
 
   ### Options
 
@@ -985,10 +1023,14 @@ defmodule DBConnection do
   end
 
   @doc """
-  Commit a transaction.
+  Execute a commit request.
 
-  Return `{:ok, result}` on sucess or `{:error, exception}` if there was an
+  Return `{:ok, result}` on success or `{:error, exception}` if there was an
   error.
+
+  It is possible to issue multiple commit requests without a begin (`begin/2`
+  or `checkout_begin/2`). The semantics are left to the callback
+  implementation.
 
   ### Options
 
@@ -1042,10 +1084,14 @@ defmodule DBConnection do
   end
 
   @doc """
-  Commit a transaction and release lock on a connection.
+  Execute a commit request, and if successful release the lock on connection.
 
   Return `{:ok, result}` on success or `{:error, exception}` if there was an
   error. On error the connection is not released back to the pool.
+
+  It is possible to issue multiple commit requests without a begin (`begin/2`
+  or `checkout_begin/2`). The semantics are left to the callback
+  implementation.
 
   ### Options
 
@@ -1080,10 +1126,14 @@ defmodule DBConnection do
   end
 
   @doc """
-  Commit a transaction and release lock on a connection.
+  Execute a commit request, and if successful release the lock on connection.
 
   Return `result` on success or raises an exception if there was an
   error. On error the connection is not released back to the pool.
+
+  It is possible to issue multiple commit requests without a begin (`begin/2`
+  or `checkout_begin/2`). The semantics are left to the callback
+  implementation.
 
   See `commit_checkin/2`.
   """
@@ -1098,10 +1148,14 @@ defmodule DBConnection do
   end
 
   @doc """
-  Rollback a transaction.
+  Execute a rollback request.
 
-  Return `{:ok, result}` on sucess or `{:error, exception}` if there was an
+  Return `{:ok, result}` on success or `{:error, exception}` if there was an
   error.
+
+  It is possible to issue multiple rollbacks requests without a begin (`begin/2`
+  or `checkout_begin/2`). The semantics are left to the callback
+  implementation.
 
   ### Options
 
@@ -1119,7 +1173,7 @@ defmodule DBConnection do
   The pool and connection module may support other options. All options
   are passed to `handle_rollback/2`.
 
-  See `begin/2` and `rollback/2`.
+  See `begin/2` and `commit/2`.
 
   ### Example
 
@@ -1143,7 +1197,7 @@ defmodule DBConnection do
 
   Returns `result` on success, otherwise raises an exception on error.
 
-  See `rollback/2`.
+  See `rollback2`.
   """
   @spec rollback!(conn, opts :: Keyword.t) :: result
   def rollback!(conn, opts \\ []) do
@@ -1156,10 +1210,14 @@ defmodule DBConnection do
   end
 
   @doc """
-  Rollback a transaction and release lock on a connection.
+  Execute a rollback request, and if successful release the lock on connection.
 
   Return `{:ok, result}` on success or `{:error, exception}` if there was an
   error. On error the connection is not released back to the pool.
+
+  It is possible to issue multiple rollback requests without a begin (`begin/2`
+  or `checkout_begin/2`). The semantics are left to the callback
+  implementation.
 
   ### Options
 
@@ -1194,10 +1252,14 @@ defmodule DBConnection do
   end
 
   @doc """
-  Rollback a transaction and release lock on a connection.
+  Execute a rollback request, and if successful release the lock on connection.
 
   Return `result` on success or raises an exception if there was an
   error. On error the connection is not released back to the pool.
+
+  It is possible to issue multiple rollback requests without a begin (`begin/2`
+  or `checkout_begin/2`). The semantics are left to the callback
+  implementation.
 
   See `rollback_checkin/2`.
   """
