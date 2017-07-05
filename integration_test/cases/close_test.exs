@@ -154,31 +154,4 @@ defmodule CloseTest do
       connect: [_],
       handle_close: [%Q{}, _, :state]] = A.record(agent)
   end
-
-  test "close in failed transaction" do
-    stack = [
-      {:ok, :state},
-      {:ok, :began, :new_state},
-      {:ok, :result, :newer_state},
-      {:ok, :rolledback, :newest_state}
-      ]
-    {:ok, agent} = A.start_link(stack)
-
-    opts = [agent: agent, parent: self()]
-    {:ok, pool} = P.start_link(opts)
-
-    assert P.transaction(pool, fn(conn) ->
-      assert P.transaction(conn, fn(conn2) ->
-        P.rollback(conn2, :oops)
-      end) == {:error, :oops}
-
-      assert P.close(conn, %Q{}, opts) == {:ok, :result}
-    end) == {:error, :rollback}
-
-    assert [
-      connect: [_],
-      handle_begin: [_, :state],
-      handle_close: [%Q{}, _, :new_state],
-      handle_rollback: [_, :newer_state]] = A.record(agent)
-  end
 end
