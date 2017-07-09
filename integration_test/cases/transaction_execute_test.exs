@@ -146,7 +146,7 @@ defmodule TransactionExecuteTest do
       assert P.execute(conn, %Q{}, [:param]) == {:error, err}
 
       assert_raise DBConnection.ConnectionError, "connection is closed",
-        fn() -> P.execute(conn, %Q{}, [:param]) end
+        fn() -> P.execute!(conn, %Q{}, [:param]) end
 
       :closed
     end) == {:error, :rollback}
@@ -185,7 +185,7 @@ defmodule TransactionExecuteTest do
         fn() -> P.execute(conn, %Q{}, [:param]) end
 
       assert_raise DBConnection.ConnectionError, "connection is closed",
-        fn() -> P.execute(conn, %Q{}, [:param]) end
+        fn() -> P.execute!(conn, %Q{}, [:param]) end
 
       :closed
     end) == {:error, :rollback}
@@ -229,7 +229,7 @@ defmodule TransactionExecuteTest do
         fn() -> P.execute(conn, %Q{}, [:param]) end
 
       assert_raise DBConnection.ConnectionError, "connection is closed",
-        fn() -> P.execute(conn, %Q{}, [:param]) end
+        fn() -> P.execute!(conn, %Q{}, [:param]) end
 
       :closed
     end) == {:error, :rollback}
