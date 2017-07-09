@@ -263,7 +263,8 @@ defmodule TransactionExecuteTest do
         P.rollback(conn2, :oops)
       end) == {:error, :oops}
 
-      assert_raise DBConnection.ConnectionError, "transaction rolling back",
+      assert_raise DBConnection.ConnectionError,
+        "legacy transaction rolling back",
         fn() -> P.execute!(conn, %Q{}, [:param]) end
     end) == {:error, :rollback}
 
@@ -273,7 +274,7 @@ defmodule TransactionExecuteTest do
       handle_rollback: [_, :new_state]] = A.record(agent)
   end
 
-  test "transaction does not log commit if closed" do
+  test "transaction logs rollback if closed" do
    stack = [
       {:ok, :state},
       {:ok, :began, :new_state},
@@ -290,13 +291,12 @@ defmodule TransactionExecuteTest do
     log = &send(parent, &1)
 
     P.transaction(pool, fn(conn) ->
-      assert_received %DBConnection.LogEntry{call: :transaction,
-        query: :begin}
+      assert_received %DBConnection.LogEntry{call: :begin, query: :begin}
       assert_raise DBConnection.ConnectionError,
         fn() -> P.execute(conn, %Q{}, [:param]) end
     end, [log: log])
 
-    refute_received %DBConnection.LogEntry{call: :transaction}
+    assert_received %DBConnection.LogEntry{call: :rollback, query: :rollback}
 
     assert [
       {:connect, [_]},
