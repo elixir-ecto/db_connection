@@ -63,6 +63,18 @@ defmodule TestConnection do
         DBConnection.close!(pool, query, opts2 ++ unquote(opts))
       end
 
+      def begin!(pool, opts2 \\ []) do
+        DBConnection.begin!(pool, opts2 ++ unquote(opts))
+      end
+
+      def rollback!(pool, opts2 \\ []) do
+        DBConnection.rollback!(pool, opts2 ++ unquote(opts))
+      end
+
+      def commit!(pool, opts2 \\ []) do
+        DBConnection.commit!(pool, opts2 ++ unquote(opts))
+      end
+
       defoverridable [start_link: 1]
     end
   end

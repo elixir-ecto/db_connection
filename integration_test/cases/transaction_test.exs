@@ -910,4 +910,47 @@ defmodule TransactionTest do
       handle_begin: [ _, :state],
       handle_rollback: [_, :new_state]] = A.record(agent)
   end
+
+  test "transaction with explicit begin/rollback/commit call causes rollback" do
+    stack = [
+      {:ok, :state},
+      {:ok, :began, :new_state},
+      {:ok, :rolledback, :newer_state},
+      {:ok, :began, :newest_state},
+      {:ok, :rolledback, :state2},
+      {:ok, :began, :new_state2},
+      {:ok, :rolledback, :newer_state2}
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self()]
+    {:ok, pool} = P.start_link(opts)
+
+    assert P.transaction(pool, fn(conn) ->
+      assert_raise DBConnection.ConnectionError,
+        "can not begin inside legacy transaction",
+        fn -> P.begin!(conn) end
+    end) == {:error, :rollback}
+
+    assert P.transaction(pool, fn(conn) ->
+      assert_raise DBConnection.ConnectionError,
+        "can not rollback inside legacy transaction",
+        fn -> P.rollback!(conn) end
+    end) == {:error, :rollback}
+
+    assert P.transaction(pool, fn(conn) ->
+      assert_raise DBConnection.ConnectionError,
+        "can not commit inside legacy transaction",
+        fn -> P.commit!(conn) end
+    end) == {:error, :rollback}
+
+    assert [
+      connect: [_],
+      handle_begin: [ _, :state],
+      handle_rollback: [_, :new_state],
+      handle_begin: [ _, :newer_state],
+      handle_rollback: [_, :newest_state],
+      handle_begin: [_, :state2],
+      handle_rollback: [_, :new_state2]] = A.record(agent)
+  end
 end

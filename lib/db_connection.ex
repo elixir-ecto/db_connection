@@ -997,7 +997,9 @@ defmodule DBConnection do
   """
   @spec rollback(conn, (opts :: Keyword.t) | reason :: term) ::
     {:ok, result} | {:error, Exception.t}
-  def rollback(conn, opts \\ [])
+  def rollback(conn) do
+    rollback(conn, &checkin/4, [])
+  end
   def rollback(%DBConnection{conn_mode: :transaction} = conn, reason) do
     %DBConnection{conn_ref: conn_ref}  = conn
     throw({__MODULE__, conn_ref, reason})
@@ -1018,7 +1020,7 @@ defmodule DBConnection do
   """
   @spec rollback!(conn, opts :: Keyword.t) :: result
   def rollback!(conn, opts \\ []) do
-    case rollback(conn, opts) do
+    case rollback(conn, &checkin/4, opts) do
       {:ok, result} ->
         result
       {:error, err} ->
@@ -1644,11 +1646,11 @@ defmodule DBConnection do
     run(conn, &run_transaction_error/5, query, meter(opts), opts)
   end
 
-  defp run_transaction_error(conn, conn_state, query, meter, opts) do
+  defp run_transaction_error(conn, _conn_state, query, meter, _opts) do
     meter = event(meter, query)
     msg = "can not #{query} inside legacy transaction"
     err = DBConnection.ConnectionError.exception(msg)
-    delete_disconnect(conn, conn_state, err, opts)
+    fail(conn)
     log(meter, query, query, nil, {:error, err})
   end
 
