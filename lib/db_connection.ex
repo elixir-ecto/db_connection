@@ -162,9 +162,8 @@ defmodule DBConnection do
   Return `{:ok, result, state}` to continue, `{:commit, state}` to notify caller
   to commit open transaction before continuing, `{:rollback, state}` to notify
   caller to rollback aborted transaction before continuing,
-  `{:error, exception, state}` to abort the transaction and
-  continue or `{:disconnect, exception, state}` to abort the transaction
-  and disconnect.
+  `{:error, exception, state}` to error without beginning the transaction, or
+  `{:disconnect, exception, state}` to error and disconnect.
 
   A callback implementation should only return `:commit` or `:rollback` if it
   can determine the database's transaction status without side effect.
@@ -177,11 +176,12 @@ defmodule DBConnection do
     {:error | :disconnect, Exception.t, new_state :: any}
 
   @doc """
-  Handle committing a transaction. Return `{:ok, result, state}` on success and
-  to continue, `{:begin, state}` to open transaction before continuing,
-  `{:rollback, state}` to rollback aborted transaction,
-  `{:error, exception, state}` to abort the transaction and continue or
-  `{:disconnect, exception, state}` to abort the transaction and disconnect.
+  Handle committing a transaction. Return `{:ok, result, state}` on successfully
+  committing transaction, `{:begin, state}` to notify caller to begin
+  transaction before continuing, `{:rollback, state}` to notify caller to
+  rollback aborted transaction before continuing, `{:error, exception, state}`
+  to error and no longer be inside transaction, or
+  `{:disconnect, exception, state}` to error and disconnect.
 
   A callback implementation should only return `:begin` or `:rollback` if it
   can determine the database's transaction status without side effect.
@@ -194,10 +194,11 @@ defmodule DBConnection do
     {:error | :disconnect, Exception.t, new_state :: any}
 
   @doc """
-  Handle rolling back a transaction. Return `{:ok, result, state}` on success
-  and to continue, `{:begin, state}` to open transaction before continuing,
-  `{:error, exception, state}` to abort the transaction and continue or
-  `{:disconnect, exception, state}` to abort the transaction and disconnect.
+  Handle committing a transaction. Return `{:ok, result, state}` on successfully
+  committing transaction, `{:begin, state}` to notify caller to begin
+  transaction before continuing, `{:error, exception, state}` to error and no
+  longer be inside transaction, or `{:disconnect, exception, state}` to error
+  and disconnect.
 
   A callback implementation should only return `:begin` if it
   can determine the database' transaction status without side effect.
@@ -544,11 +545,18 @@ defmodule DBConnection do
 
   ### Example
 
-      query         = %Query{statement: "SELECT id FROM table"}
-      {:ok, query}  = DBConnection.prepare(conn, query)
-      {:ok, result} = DBConnection.execute(conn, query, [])
-      :ok           = DBConnection.close(conn, query)
-
+      {conn, _} = DBConnection.begin!(pool)
+      try do
+        query = DBConnection.prepare!(conn)
+        try do
+          DBConnection.execute!(conn, "SELECT * FROM table", [])
+        after
+          DBConnection.close(conn, query)
+        end
+        DBConnection.commit!(conn)
+      after
+        DBConnection.rollback(conn)
+      end
   """
   @spec prepare(conn, query, opts :: Keyword.t) ::
     {:ok, query} | {:error, Exception.t}
@@ -873,6 +881,22 @@ defmodule DBConnection do
   Return `{:ok, conn, result}` on success or `{:error, exception}` if there was
   an error. If a new lock was acquired and there is an error, it is released.
 
+  It is possible to issue begin requests without a later `commit/2` or
+  `rollback/2` as transaction might be concluded by other actions. The semantics
+  are left to the callback implementation. However it is strongly advised to
+  ensure a matching `rollback/2` call always occur, even if `commit/2` should
+  occur beforehand. This ensures that on failure that the transaction is rolled
+  back and the lock on connection released. If the lock has been released before
+  a rollback call then `rollback/2` will return an error tuple.
+
+      {:ok, conn, _result} = DBConnection.begin(pool)
+      try do
+        # transaction goes here!
+        DBConnection.commit!(conn)
+      after
+        DBConnection.rollback(conn)
+      end
+
   The callback implementation should determine (using transaction status of the
   database) the state of a transaction. If a transaction is already started,
   according to the callback implementation, then an error tuple with a
@@ -892,8 +916,9 @@ defmodule DBConnection do
 
       {:ok, conn, result} = DBConnection.begin(pool)
       try do
-        DBConnection.execute!(conn, "SELECT * FROM table", [])
+        res =DBConnection.execute!(conn, "SELECT * FROM table", [])
         DBConnection.commit(conn)
+        res
       after
         DBConnection.rollback(conn)
       end
@@ -931,8 +956,8 @@ defmodule DBConnection do
   `{:error, exception}` if there was an error. The lock on the connection is
   always released.
 
-  It is possible to issue multiple rollbacks requests without a begin (`begin/2`
-  or `checkout_begin/2`). The semantics are left to the callback
+  It is possible to issue rollbacks requests without a `begin/2` as transaction
+  might be started by other actions. The semantics are left to the callback
   implementation.
 
   The callback implementation should determine (using transaction status of the
@@ -955,10 +980,11 @@ defmodule DBConnection do
 
   ### Example
 
-      {:ok, result} = DBConnection.begin(conn)
+      {:ok, conn, result} = DBConnection.begin(pool)
       try do
-        DBConnection.execute!(conn, "SELECT * FROM table", [])
-        DBConnection.commit!(conn)
+        res = DBConnection.execute!(conn, "SELECT * FROM table", [])
+        DBConnection.commit(conn)
+        res
       after
         DBConnection.rollback(conn)
       end
@@ -1006,6 +1032,10 @@ defmodule DBConnection do
   Return `{:ok, result}` on success or `{:error, exception}` if there was an
   error.
 
+  It is possible to issue commit requests without a `begin/2` as transaction
+  might be started by other actions. The semantics are left to the callback
+  implementation.
+
   The callback implementation should determine (using transaction status of the
   database) the state of a transaction  If the transaction is aborted or not
   started, according to callback implmentation, then an error tuple with a
@@ -1024,11 +1054,13 @@ defmodule DBConnection do
 
   ### Example
 
-      {:ok, conn, result} = DBConnection.begin(conn)
+      {:ok, conn, result} = DBConnection.begin(pool)
       try do
         res = DBConnection.execute!(conn, "SELECT * FROM table", [])
-      after
         DBConnection.commit(conn)
+        res
+      after
+        DBConnection.rollback(conn)
       end
   """
   @spec commit(conn, opts :: Keyword.t) :: {:ok, result} | {:error, Exception.t}
@@ -1115,12 +1147,25 @@ defmodule DBConnection do
 
   ### Example
 
-      {:ok, results} = DBConnection.transaction(conn, fn(conn) ->
-        query  = %Query{statement: "SELECT id FROM table"}
-        query  = DBConnection.prepare!(conn, query)
-        stream = DBConnection.stream(conn, query, [])
-        Enum.to_list(stream)
-      end)
+      {conn, _} = DBConnection.begin!(pool)
+      try do
+
+        query = %Query{statement: "SELECT id FROM table"}
+        query = DBConnection.prepare!(conn, query)
+        try do
+          stream = DBConnection.stream(conn, query, [])
+          res = Enum.to_list(stream)
+          DBConnection.commit!(conn)
+          res
+        after
+          # Make sure query is closed!
+          DBConnection.close(conn, query)
+        end
+
+      after
+        # Make sure transaction is rolled back if anything goes wrong!
+        DBConnection.rollback(coon)
+      end
   """
   @spec stream(t, query, params, opts :: Keyword.t) :: DBConnection.Stream.t
   def stream(%DBConnection{} = conn, query, params, opts \\ []) do
