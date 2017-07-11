@@ -1220,7 +1220,7 @@ defmodule DBConnection do
   """
   @spec prepare_stream(t, query, params, opts :: Keyword.t) ::
     DBConnection.PrepareStream.t
-  def prepare_stream(%DBConnection{} = conn, query, params, opts) do
+  def prepare_stream(%DBConnection{} = conn, query, params, opts \\ []) do
     %DBConnection.PrepareStream{conn: conn, query: query, params: params,
                                 opts: opts}
   end
@@ -1298,7 +1298,7 @@ defmodule DBConnection do
   """
   @spec prepare_declare(conn, query, params, opts :: Keyword.t) ::
     {:ok, cursor} | {:error, Exception.t}
-  def prepare_declare(conn, query, params, opts) do
+  def prepare_declare(conn, query, params, opts \\ []) do
     result =
       with {:ok, query, meter} <- parse(query, meter(opts), opts) do
            run(conn, &run_prepare_declare/6, query, params, meter, opts)
@@ -1307,7 +1307,7 @@ defmodule DBConnection do
   end
 
   @spec prepare_declare!(conn, query, params, opts :: Keyword.t) :: cursor
-  def prepare_declare!(conn, query, params, opts) do
+  def prepare_declare!(conn, query, params, opts \\ []) do
     case prepare_declare(conn, query, params, opts) do
       {:ok, query, cursor} ->
         {query, cursor}
@@ -1340,7 +1340,7 @@ defmodule DBConnection do
   """
   @spec declare(conn, query, params, opts :: Keyword.t) ::
     {:ok, cursor} | {:error, Exception.t}
-  def declare(conn, query, params, opts) do
+  def declare(conn, query, params, opts \\ []) do
     result =
       with {:ok, params, meter} <- encode(query, params, meter(opts), opts) do
         run(conn, &run_declare/6, query, params, meter, opts)
@@ -1356,7 +1356,7 @@ defmodule DBConnection do
   See `declare/4`.
   """
   @spec declare!(conn, query, params, opts :: Keyword.t) :: cursor
-  def declare!(conn, query, params, opts) do
+  def declare!(conn, query, params, opts \\ []) do
     case declare(conn, query, params, opts) do
       {:ok, cursor} ->
         cursor
@@ -1383,7 +1383,7 @@ defmodule DBConnection do
   """
   @spec fetch(conn, query, cursor, opts :: Keyword.t) ::
     {:cont | :halt, result} | {:error, Exception.t}
-  def fetch(conn, query, cursor, opts) do
+  def fetch(conn, query, cursor, opts \\ []) do
     fun = :handle_fetch
     args = [query, cursor]
     result =
@@ -1406,7 +1406,7 @@ defmodule DBConnection do
   """
   @spec fetch!(conn, query, cursor, opts :: Keyword.t) ::
     {:cont | :halt, result}
-  def fetch!(conn, query, cursor, opts) do
+  def fetch!(conn, query, cursor, opts \\ []) do
     case fetch(conn, query, cursor, opts) do
       {:cont, _} = cont ->
         cont
@@ -1432,7 +1432,7 @@ defmodule DBConnection do
   """
   @spec deallocate(conn, query, cursor, opts :: Keyword.t) ::
     {:ok, result} | {:error, Exception.t}
-  def deallocate(conn, query, cursor, opts) do
+  def deallocate(conn, query, cursor, opts \\ []) do
     conn
     |> cleanup(&run_deallocate/6, [query, cursor], meter(opts), opts)
     |> log(:deallocate, query, cursor)
@@ -1446,7 +1446,7 @@ defmodule DBConnection do
   See `deallocate/4`.
   """
   @spec deallocate!(conn, query, cursor, opts :: Keyword.t) :: result
-  def deallocate!(conn, query, cursor, opts) do
+  def deallocate!(conn, query, cursor, opts \\ []) do
     case deallocate(conn, query, cursor, opts) do
       {:ok, result} ->
         result
