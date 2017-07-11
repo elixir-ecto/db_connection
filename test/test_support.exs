@@ -99,6 +99,10 @@ defmodule TestConnection do
         DBConnection.commit!(pool, opts2 ++ unquote(opts))
       end
 
+      def status(pool, opts2 \\ []) do
+        DBConnection.status(pool, opts2 ++ unquote(opts))
+      end
+
       defoverridable [start_link: 1]
     end
   end
@@ -137,6 +141,10 @@ defmodule TestConnection do
 
   def handle_rollback(opts, state) do
     TestAgent.eval(:handle_rollback, [opts, state])
+  end
+
+  def handle_status(opts, state) do
+    TestAgent.eval(:handle_status, [opts, state])
   end
 
   def handle_prepare(query, opts, state) do
