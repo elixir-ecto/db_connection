@@ -776,8 +776,8 @@ defmodule TransactionTest do
   test "transaction logs begin :commit and :rollback" do
     stack = [
       {:ok, :state},
-      {:commit, :new_state},
-      {:rollback, :newer_state},
+      {:transaction, :new_state},
+      {:error, :newer_state},
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -791,7 +791,7 @@ defmodule TransactionTest do
       [log: log]) == {:error, :rollback}
 
     assert_received %DBConnection.LogEntry{call: :begin} = entry
-    err = DBConnection.TransactionError.exception(:commit)
+    err = DBConnection.TransactionError.exception(:transaction)
     assert %{query: :begin, params: nil, result: {:error, ^err}} = entry
     assert is_integer(entry.pool_time)
     assert entry.pool_time >= 0
@@ -805,7 +805,7 @@ defmodule TransactionTest do
       [log: log]) == {:error, :rollback}
 
     assert_received %DBConnection.LogEntry{call: :begin} = entry
-    err = DBConnection.TransactionError.exception(:rollback)
+    err = DBConnection.TransactionError.exception(:error)
     assert %{query: :begin, params: nil, result: {:error, ^err}} = entry
     assert is_integer(entry.pool_time)
     assert entry.pool_time >= 0
@@ -825,9 +825,9 @@ defmodule TransactionTest do
     stack = [
       {:ok, :state},
       {:ok, :began, :new_state},
-      {:begin, :newer_state},
+      {:idle, :newer_state},
       {:ok, :began, :newest_state},
-      {:rollback, :state2},
+      {:error, :state2},
       {:ok, :rolledback, :new_state2}
       ]
     {:ok, agent} = A.start_link(stack)
@@ -843,7 +843,7 @@ defmodule TransactionTest do
       [log: log]) == {:error, :rollback}
 
     assert_received %DBConnection.LogEntry{call: :commit} = entry
-    err = DBConnection.TransactionError.exception(:begin)
+    err = DBConnection.TransactionError.exception(:idle)
     assert %{query: :commit, params: nil, result: {:error, ^err}} = entry
     assert is_nil(entry.pool_time)
     assert is_integer(entry.connection_time)
@@ -878,7 +878,7 @@ defmodule TransactionTest do
     stack = [
       {:ok, :state},
       {:ok, :began, :new_state},
-      {:begin, :newer_state}
+      {:idle, :newer_state}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -896,7 +896,7 @@ defmodule TransactionTest do
       [log: log]) == {:error, :oops}
 
     assert_received %DBConnection.LogEntry{call: :rollback} = entry
-    err = DBConnection.TransactionError.exception(:begin)
+    err = DBConnection.TransactionError.exception(:idle)
     assert %{query: :rollback, params: nil, result: {:error, ^err}} = entry
     assert is_nil(entry.pool_time)
     assert is_integer(entry.connection_time)
@@ -952,5 +952,45 @@ defmodule TransactionTest do
       handle_rollback: [_, :newest_state],
       handle_begin: [_, :state2],
       handle_rollback: [_, :new_state2]] = A.record(agent)
+  end
+
+  test "status returns result" do
+    err = RuntimeError.exception("oops")
+    stack = [
+      {:ok, :state},
+      {:idle, :new_state},
+      {:transaction, :newer_state},
+      {:error, :newest_state},
+      {:disconnect, err, :state2},
+      :ok,
+      fn(opts) ->
+        send(opts[:parent], :reconnected)
+        {:ok, :new_state2}
+      end,
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self()]
+    {:ok, pool} = P.start_link(opts)
+
+    assert P.status(pool, opts) == :idle
+    assert P.status(pool, opts) == :transaction
+    assert P.run(pool, fn(conn) ->
+      assert P.status(pool, [queue: false] ++ opts) == :error
+      assert P.status(conn, opts)
+    end, opts)
+    assert P.status(pool, opts) == :error
+
+    assert_receive :reconnected
+
+    assert [
+      connect: [_],
+      handle_status: [ _, :state],
+      handle_status: [_, :new_state],
+      handle_status: [_, :newer_state],
+      handle_status: [_, :newest_state],
+      disconnect: [^err, :state2],
+      connect: [_]
+      ]  = A.record(agent)
   end
 end
