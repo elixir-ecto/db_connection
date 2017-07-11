@@ -1372,8 +1372,7 @@ defmodule DBConnection do
   again, `{:halt, result}` on success and the cursor is closed, or
   `{:error, exception}` if there was an error.
 
-  On `:halt` tuple the cursor does not need to be deallocated but the callback
-  implementation may allow it.
+  On `:halt` tuple the cursor does needs to be deallocated with `deallocate/4`.
 
   ### Options
 
@@ -1580,7 +1579,7 @@ defmodule DBConnection do
       {:deallocate, result, conn_state}
           when fun in [:handle_first, :handle_next] ->
         put_info(conn, conn_state)
-        {:deallocate, result, meter}
+        {:halt, result, meter}
       {:idle, conn_state}
           when fun in [:handle_commit, :handle_rollback] ->
         put_info(conn, conn_state)
@@ -2100,24 +2099,11 @@ defmodule DBConnection do
   end
 
   defp run_fetch(conn, conn_state, fun, args, meter, opts) do
-    with {:deallocate, result, meter}
-          <- fetch(conn, conn_state, fun, args, meter, opts),
-         {status, conn_state, meter} when status in [:ok, :failed]
-          <- get_info(conn, meter),
-         {:ok, _, meter}
-          <- run_deallocate(conn, status, conn_state, args, meter, opts) do
-      {:halt, result, meter}
-    end
-  end
-
-  defp fetch(conn, conn_state, fun, args, meter, opts) do
     meter = event(meter, :fetch)
     handle(conn, conn_state, fun, args, meter, opts)
   end
 
-  defp stream_deallocate(_conn, {:halt, _query, _cursor}, _opts),
-    do: :ok
-  defp stream_deallocate(conn, {_cont, query, cursor}, opts),
+  defp stream_deallocate(conn, {_status, query, cursor}, opts),
     do: deallocate(conn, query, cursor, opts)
 
   defp run_deallocate(conn, status, conn_state, args, meter, opts) do
