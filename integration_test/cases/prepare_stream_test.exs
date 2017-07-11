@@ -105,7 +105,7 @@ defmodule PrepareStreamTest do
     assert entry.connection_time >= 0
     assert is_nil(entry.decode_time)
 
-    assert_received %DBConnection.LogEntry{call: :first} = entry
+    assert_received %DBConnection.LogEntry{call: :fetch} = entry
     assert %{query: %Q{}, params: %C{}, result: {:ok, %R{}}} = entry
     assert is_nil(entry.pool_time)
     assert is_integer(entry.connection_time)
