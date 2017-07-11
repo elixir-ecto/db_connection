@@ -99,6 +99,7 @@ defmodule DBConnection do
   @type params :: any
   @type result :: any
   @type cursor :: any
+  @type status :: :idle | :transaction | :error
 
   @doc """
   Connect to the database. Return `{:ok, state}` on success or
@@ -159,48 +160,47 @@ defmodule DBConnection do
   @doc """
   Handle the beginning of a transaction.
 
-  Return `{:ok, result, state}` to continue, `{:transaction, state}` to notify caller
-  to commit open transaction before continuing, `{:error, state}` to notify
-  caller to rollback aborted transaction before continuing,
+  Return `{:ok, result, state}` to continue, `{status, state}` to notify caller
+  that the transaction can not begin due to the transaction status `status`,
   `{:error, exception, state}` (deprecated) to error without beginning the
   transaction, or `{:disconnect, exception, state}` to error and disconnect.
 
-  A callback implementation should only return `:transaction` or `:error` if it
+  A callback implementation should only return `status` if it
   can determine the database's transaction status without side effect.
 
   This callback is called in the client process.
   """
   @callback handle_begin(opts :: Keyword.t, state :: any) ::
     {:ok, result, new_state :: any} |
-    {:transaction | :error, new_state :: any} |
+    {status, new_state :: any} |
     {:error | :disconnect, Exception.t, new_state :: any}
 
   @doc """
   Handle committing a transaction. Return `{:ok, result, state}` on successfully
-  committing transaction, `{:idle, state}` to notify caller to begin
-  transaction before continuing, `{:error, state}` to notify caller to
-  rollback aborted transaction before continuing, `{:error, exception, state}`
-  (deprecated) to error and no longer be inside transaction, or
-  `{:disconnect, exception, state}` to error and disconnect.
+  committing transaction, `{status, state}` to notify caller that the
+  transaction can not commit due to the transaction status `status`,
+  `{:error, exception, state}` (deprecated) to error and no longer be inside
+  transaction, or `{:disconnect, exception, state}` to error and disconnect.
 
-  A callback implementation should only return `:idle` or `:error` if it
+  A callback implementation should only return `status` if it
   can determine the database's transaction status without side effect.
 
   This callback is called in the client process.
   """
   @callback handle_commit(opts :: Keyword.t, state :: any) ::
     {:ok, result, new_state :: any} |
-    {:idle | :error, new_state :: any} |
+    {status, new_state :: any} |
     {:error | :disconnect, Exception.t, new_state :: any}
 
   @doc """
   Handle committing a transaction. Return `{:ok, result, state}` on successfully
-  committing transaction, `{:idle, state}` to notify caller to begin
-  transaction before continuing, `{:error, exception, state}` (deprecated) to
+  rolling back transaction, `{status, state}` to notify caller that the
+  transaction can not rollback due to the transaction status `status`,
+  `{:error, exception, state}` (deprecated) to
   error and no longer be inside transaction, or
   `{:disconnect, exception, state}` to error and disconnect.
 
-  A callback implementation should only return `:idle` if it
+  A callback implementation should only return `status` if it
   can determine the database' transaction status without side effect.
 
   This callback is called in the client and connection process.
@@ -1172,7 +1172,7 @@ defmodule DBConnection do
         end
       end
   """
-  @spec status(conn, opts :: Keyword.t) :: :idle | :transaction | :error
+  @spec status(conn, opts :: Keyword.t) :: status
   def status(conn, opts \\ [])
   def status(%DBConnection{conn_mode: :transaction}, _opts) do
     raise DBConnection.ConnectionError,
@@ -1581,14 +1581,15 @@ defmodule DBConnection do
         put_info(conn, conn_state)
         {:halt, result, meter}
       {:idle, conn_state}
-          when fun in [:handle_commit, :handle_rollback] ->
+          when fun in [:handle_begin, :handle_commit, :handle_rollback] ->
         put_info(conn, conn_state)
         {:idle, meter}
-      {:transaction, conn_state} when fun == :handle_begin ->
+      {:transaction, conn_state}
+          when fun in [:handle_begin, :handle_commit, :handle_rollback] ->
         put_info(conn, conn_state)
         {:transaction, meter}
       {:error, conn_state}
-          when fun in [:handle_begin, :handle_commit] ->
+          when fun in [:handle_begin, :handle_commit, :handle_rollback] ->
         put_info(conn, conn_state)
         {:error, meter}
       {:error, err, conn_state} ->
