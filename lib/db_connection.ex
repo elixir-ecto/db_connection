@@ -505,9 +505,10 @@ defmodule DBConnection do
 
       defoverridable [connect: 1, disconnect: 2, checkout: 1, checkin: 1,
                       ping: 1, handle_begin: 2, handle_commit: 2,
-                      handle_rollback: 2, handle_prepare: 3, handle_execute: 4,
-                      handle_close: 3, handle_declare: 4, handle_first: 4,
-                      handle_next: 4, handle_deallocate: 4, handle_info: 2]
+                      handle_rollback: 2, handle_status: 2, handle_prepare: 3,
+                      handle_execute: 4, handle_close: 3, handle_declare: 4,
+                      handle_fetch: 4, handle_first: 4, handle_next: 4,
+                      handle_deallocate: 4, handle_info: 2]
     end
   end
 
