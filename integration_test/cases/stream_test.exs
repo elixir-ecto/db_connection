@@ -99,7 +99,7 @@ defmodule StreamTest do
     assert entry.connection_time >= 0
     assert is_nil(entry.decode_time)
 
-    assert_received %DBConnection.LogEntry{call: :first} = entry
+    assert_received %DBConnection.LogEntry{call: :fetch} = entry
     assert %{query: %Q{}, params: %C{}, result: {:ok, %R{}}} = entry
     assert is_nil(entry.pool_time)
     assert is_integer(entry.connection_time)
@@ -221,14 +221,19 @@ defmodule StreamTest do
 
     assert_received %DBConnection.LogEntry{call: :declare}
 
-    assert_received %DBConnection.LogEntry{call: :first} = entry
+    assert_received %DBConnection.LogEntry{call: :fetch} = entry
     assert %{query: %Q{}, params: %C{}, result: {:error, ^err}} = entry
     assert is_nil(entry.pool_time)
     assert is_integer(entry.connection_time)
     assert entry.connection_time >= 0
     assert is_nil(entry.decode_time)
 
-    refute_received %DBConnection.LogEntry{call: :deallocate}
+    assert_received %DBConnection.LogEntry{call: :deallocate} = entry
+    closed = DBConnection.ConnectionError.exception("connection is closed")
+    assert %{query: %Q{}, params: %C{}, result: {:error, ^closed}} = entry
+    assert is_nil(entry.pool_time)
+    assert is_nil(entry.connection_time)
+    assert is_nil(entry.decode_time)
 
     assert_receive :reconnected
 
@@ -297,12 +302,12 @@ defmodule StreamTest do
 
     assert P.transaction(pool, fn(conn) ->
       stream = P.stream(conn, %Q{}, [:param], [log: &send(parent, &1)])
-      assert_raise RuntimeError, "oops",  fn() -> Enum.take(stream, 1) end
+      assert Enum.take(stream, 1) == [%R{}]
       :hi
     end) == {:error, :rollback}
 
     assert_received %DBConnection.LogEntry{call: :declare}
-    assert_received %DBConnection.LogEntry{call: :first}
+    assert_received %DBConnection.LogEntry{call: :fetch}
 
     assert_received %DBConnection.LogEntry{call: :deallocate} = entry
     assert %{query: %Q{}, params: %C{}, result: {:error, ^err}} = entry
