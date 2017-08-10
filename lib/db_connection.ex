@@ -242,13 +242,15 @@ defmodule DBConnection do
   @doc """
   Execute a query prepared by `handle_prepare/3`. Return
   `{:ok, result, state}` to return the result `result` and continue,
-  `{:error, exception, state}` to return an error and continue or
-  `{:disconnect, exception, state}` to return an error and disconnect.
+  `{:ok, query, result, state}` to return altered query `query` and result
+  `result` and continue, `{:error, exception, state}` to return an error and
+  continue or `{:disconnect, exception, state}` to return an error and
+  disconnect.
 
   This callback is called in the client process.
   """
   @callback handle_execute(query, params, opts :: Keyword.t, state :: any) ::
-    {:ok, result, new_state :: any} |
+    {:ok, result, new_state :: any} | {:ok, query, result, new_state :: any} |
     {:error | :disconnect, Exception.t, new_state :: any}
 
   @doc """
@@ -716,13 +718,18 @@ defmodule DBConnection do
   See `prepare/3`.
   """
   @spec execute(conn, query, params, opts :: Keyword.t) ::
-    {:ok, result} | {:error, Exception.t}
+    {:ok, result} | {:ok, query, result} | {:error, Exception.t}
   def execute(conn, query, params, opts \\ []) do
     result =
-      with {:ok, params, meter} <- encode(query, params, meter(opts), opts),
-           {:ok, result, meter}
-            <- run(conn, &run_execute/6, query, params, meter, opts) do
-           decode(query, result, meter, opts)
+      with {:ok, params, meter} <- encode(query, params, meter(opts), opts) do
+        case run(conn, &run_execute/6, query, params, meter, opts) do
+          {:ok, result, meter} ->
+            decode(query, result, meter, opts)
+          {:ok, new_query, result, meter} ->
+            altered_decode(new_query, result, meter, opts)
+          other ->
+            other
+        end
       end
     log(result, :execute, query, params)
   end
@@ -733,10 +740,12 @@ defmodule DBConnection do
 
   See `execute/4`
   """
-  @spec execute!(conn, query, params, opts :: Keyword.t) :: result
+  @spec execute!(conn, query, params, opts :: Keyword.t) ::
+    result | {query, result}
   def execute!(conn, query, params, opts \\ []) do
     case execute(conn, query, params, opts) do
       {:ok, result} -> result
+      {:ok, query, result} -> {query, result}
       {:error, err} -> raise err
     end
   end
@@ -1568,6 +1577,9 @@ defmodule DBConnection do
       {:ok, result, conn_state} ->
         put_info(conn, conn_state)
         {:ok, result, meter}
+      {:ok, query, result, conn_state} when fun == :handle_execute ->
+        put_info(conn, conn_state)
+        {:ok, query, result, meter}
       {:cont, result, conn_state}
           when fun in [:handle_fetch, :handle_first, :handle_next] ->
         put_info(conn, conn_state)
@@ -1681,6 +1693,15 @@ defmodule DBConnection do
     end
   end
 
+  defp altered_decode(query, result, meter, opts) do
+    case decode(query, result, meter, opts) do
+      {:ok, result, meter} ->
+        {:ok, query, result, meter}
+      other ->
+        other
+    end
+  end
+
   defp run_prepare(conn, conn_state, query, meter, opts) do
     with {:ok, query, meter} <- prepare(conn, conn_state, query, meter, opts) do
       describe(conn, query, meter, opts)
@@ -1699,6 +1720,9 @@ defmodule DBConnection do
          {:ok, conn_state, meter} <- fetch_info(conn, meter),
          {:ok, result, meter}
           <- run_execute(conn, conn_state, query, params, meter, opts) do
+      # run_execute maybe return {:ok, new_query, result, meter}, replacing the
+      # query prepared in run_prepare but it should not happen because just
+      # prepared.
       {:ok, query, result, meter}
     end
   end

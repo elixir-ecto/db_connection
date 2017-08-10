@@ -213,9 +213,13 @@ defimpl DBConnection.Query, for: TestQuery do
     encode.(params)
   end
 
-  def decode(_, result, opts) do
-    decode = Keyword.get(opts, :decode, &(&1))
-    decode.(result)
+  def decode(query, result, opts) do
+    case Keyword.get(opts, :decode, &(&1)) do
+      decode when is_function(decode, 1) ->
+        decode.(result)
+      decode when is_function(decode, 2) ->
+        decode.(query, result)
+    end
   end
 end
 

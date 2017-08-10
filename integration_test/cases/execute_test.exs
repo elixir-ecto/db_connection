@@ -45,6 +45,26 @@ defmodule ExecuteTest do
       handle_execute: [_, :encoded, _, :state]] = A.record(agent)
   end
 
+  test "execute replaces query and decodes result" do
+    stack = [
+      {:ok, :state},
+      {:ok, %Q{state: :replaced}, %R{}, :new_state},
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self()]
+    {:ok, pool} = P.start_link(opts)
+
+    opts2 = [decode: fn(%Q{state: :replaced}, %R{}) -> :decoded
+                       (%Q{state: :old}, _) -> flunk "decoded with old" end]
+    assert P.execute(pool, %Q{state: :old}, [:param], opts2) ==
+      {:ok, %Q{state: :replaced}, :decoded}
+
+    assert [
+      connect: [_],
+      handle_execute: [%Q{state: :old}, [:param], _, :state]] = A.record(agent)
+  end
+
   test "execute logs result" do
     stack = [
       {:ok, :state},
