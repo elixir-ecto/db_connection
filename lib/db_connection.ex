@@ -896,6 +896,8 @@ defmodule DBConnection do
   """
   @spec transaction(conn, (conn -> result), opts :: Keyword.t) ::
     {:ok, result} | {:error, reason :: any} when result: var
+  def transaction(conn, fun, opts \\ [])
+
   def transaction(%DBConnection{conn_mode: :transaction} = conn, fun, _opts) do
     %DBConnection{conn_ref: conn_ref} = conn
     try do
