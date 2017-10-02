@@ -11,6 +11,6 @@ defmodule DBConnection.Sojourn.Supervisor do
   end
 
   def start_pool(mod, opts) do
-    Supervisor.start_child(__MODULE__, [self(), mod, opts])
+    DBConnection.Watcher.watch(__MODULE__, [self(), mod, opts])
   end
 end
