@@ -197,6 +197,28 @@ defmodule ManagerTest do
     Task.async(fn -> assert_checked_out pool end) |> Task.await
   end
 
+  test "shared mode checks in previous connections" do
+    {:ok, agent} = A.start_link([{:ok, :state}, {:ok, :state}])
+    opts = [agent: agent, parent: self(), ownership_mode: :manual, pool_size: 2]
+    {:ok, pool} = P.start_link(opts)
+    parent = self()
+
+    task = Task.async(fn ->
+      assert Ownership.ownership_checkout(pool, []) == :ok
+      send parent, :checked_out
+      receive do
+        :shared -> refute_checked_out pool
+      end
+    end)
+
+    assert_receive :checked_out
+    assert Ownership.ownership_checkout(pool, []) == :ok
+    assert Ownership.ownership_mode(pool, {:shared, self()}, []) == :ok
+    assert Ownership.ownership_checkin(pool, []) == :ok
+    send task.pid, :shared
+    Task.await(task)
+  end
+
   test "shared mode can be set back to manual" do
     {:ok, pool} = start_pool()
     parent = self()
