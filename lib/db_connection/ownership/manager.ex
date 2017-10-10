@@ -98,7 +98,11 @@ defmodule DBConnection.Ownership.Manager do
   def handle_call({:mode, {:shared, pid}}, _from, state) do
     share_and_reply(state, pid)
   end
+  def handle_call({:mode, mode}, _from, %{mode: mode} = state) do
+    {:reply, :ok, state}
+  end
   def handle_call({:mode, mode}, _from, state) do
+    state = proxy_checkin_all(state, nil)
     {:reply, :ok, %{state | mode: mode, mode_ref: nil}}
   end
 

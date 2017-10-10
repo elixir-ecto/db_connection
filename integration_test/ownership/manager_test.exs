@@ -104,16 +104,10 @@ defmodule ManagerTest do
 
   test "owner's checkout automatically with caller option" do
     {:ok, pool} = start_pool()
-    :ok = Ownership.ownership_checkout(pool, [])
     parent = self()
 
-    Task.start_link fn ->
-      assert_checked_out pool, [caller: parent]
-      send parent, :checkin
-    end
-    assert_receive :checkin
-
-    assert Ownership.ownership_mode(pool, :auto, [])
+    assert Ownership.ownership_mode(pool, :manual, [])
+    :ok = Ownership.ownership_checkout(pool, [])
     Task.start_link fn ->
       assert_checked_out pool, [caller: parent]
       send parent, :checkin
@@ -127,7 +121,35 @@ defmodule ManagerTest do
     end
     assert_receive :checkin
 
+    assert Ownership.ownership_mode(pool, :auto, [])
+    :ok = Ownership.ownership_checkout(pool, [])
+    Task.start_link fn ->
+      assert_checked_out pool, [caller: parent]
+      send parent, :checkin
+    end
+    assert_receive :checkin
+
     assert_checked_out pool, [caller: parent]
+  end
+
+  test "setting manual mode checks in previous connections" do
+    {:ok, agent} = A.start_link([{:ok, :state}, {:ok, :state}])
+    opts = [agent: agent, parent: self(), ownership_mode: :auto, pool_size: 2]
+    {:ok, pool} = P.start_link(opts)
+    parent = self()
+    assert Ownership.ownership_mode(pool, :auto, []) == :ok
+
+    task = Task.async(fn ->
+      assert_checked_out pool
+      send parent, :checked_out
+      assert_receive :manual
+      refute_checked_out pool
+    end)
+
+    assert_receive :checked_out
+    assert Ownership.ownership_mode(pool, :manual, []) == :ok
+    send task.pid, :manual
+    Task.await(task)
   end
 
   test "uses ETS when the pool is named (with pid access)" do
@@ -206,9 +228,8 @@ defmodule ManagerTest do
     task = Task.async(fn ->
       assert Ownership.ownership_checkout(pool, []) == :ok
       send parent, :checked_out
-      receive do
-        :shared -> refute_checked_out pool
-      end
+      assert_receive :shared
+      refute_checked_out pool
     end)
 
     assert_receive :checked_out
@@ -223,7 +244,7 @@ defmodule ManagerTest do
     {:ok, pool} = start_pool()
     parent = self()
 
-    {:ok, pid} = Task.start fn ->
+    Task.start fn ->
       assert Ownership.ownership_checkout(pool, []) == :ok
       assert Ownership.ownership_mode(pool, {:shared, self()}, []) == :ok
       send parent, :shared
@@ -233,12 +254,6 @@ defmodule ManagerTest do
     assert_receive :shared
     assert_checked_out pool
     assert Ownership.ownership_mode(pool, :manual, []) == :ok
-    assert_checked_out pool
-
-    :erlang.trace(pool, true, [:receive])
-    Process.exit(pid, :shutdown)
-    assert_receive {:trace, ^pool, :receive, {:DOWN, _, _, _, _}}
-
     refute_checked_out pool
     assert Ownership.ownership_checkout(pool, []) == :ok
   end
