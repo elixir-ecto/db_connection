@@ -38,19 +38,21 @@ defmodule DBConnection.Watcher do
         Supervisor.terminate_child(supervisor, started_pid)
         {:noreply, {Map.delete(caller_refs, ref), Map.delete(started_refs, started_ref)}}
       %{} ->
-        case started_refs do
-          %{^ref => {caller_pid, caller_ref}} ->
-            Process.demonitor(caller_ref, [:flush])
-            Process.unlink(caller_pid)
-            Process.exit(caller_pid, :kill)
-            {:noreply, {Map.delete(caller_refs, caller_ref), Map.delete(started_refs, ref)}}
-          %{} ->
-            {:noreply, {caller_refs, started_refs}}
-        end
+        %{^ref => {caller_pid, caller_ref}} = started_refs
+        Process.demonitor(caller_ref, [:flush])
+        Process.exit(caller_pid, :kill)
+        {:noreply, {Map.delete(caller_refs, caller_ref), Map.delete(started_refs, ref)}}
     end
   end
 
   def handle_info({:EXIT, _, _}, state) do
     {:noreply, state}
+  end
+
+  def terminate(_, {_, started_refs}) do
+    for {_, {caller_pid, _}} <- started_refs do
+      Process.exit(caller_pid, :kill)
+    end
+    :ok
   end
 end
