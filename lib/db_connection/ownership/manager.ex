@@ -48,7 +48,7 @@ defmodule DBConnection.Ownership.Manager do
   end
 
   @spec lookup(GenServer.server, Keyword.t) ::
-    {:ok, pid} | {:init, pid} | :not_found
+    {:ok, pid} | {:init, pid} | :not_found | :revoked
   def lookup(manager, opts) when is_atom(manager) do
     client = self()
     case :ets.lookup(manager, client) do
@@ -82,7 +82,7 @@ defmodule DBConnection.Ownership.Manager do
     mode = Keyword.get(pool_opts, :ownership_mode, :auto)
     log = Keyword.get(pool_opts, :ownership_log, nil)
     {:ok, %{pool: pool, owner_sup: owner_sup, checkouts: %{}, owners: %{},
-            mode: mode, mode_ref: nil, ets: ets, log: log}}
+            revokes: %{}, mode: mode, mode_ref: nil, ets: ets, log: log}}
   end
 
   def handle_call({:mode, {:shared, pid}}, _from, %{mode: {:shared, current}} = state) do
@@ -107,8 +107,9 @@ defmodule DBConnection.Ownership.Manager do
   end
 
   def handle_call({:lookup, opts}, {pid, _},
-                  %{checkouts: checkouts, mode: mode} = state) do
+                  %{checkouts: checkouts, revokes: revokes, mode: mode} = state) do
     caller = Keyword.get(opts, :caller, pid)
+    revoked? = Map.has_key?(revokes, caller)
     case Map.get(checkouts, caller, :not_found) do
       {:owner, _, proxy} ->
         {:reply, {:ok, proxy}, state}
@@ -116,6 +117,8 @@ defmodule DBConnection.Ownership.Manager do
         {:reply, {:ok, proxy}, state}
       :not_found when caller != pid ->
         {:reply, :not_found, state}
+      :not_found when revoked? ->
+        {:reply, :revoked, state}
       :not_found when mode == :manual ->
         {:reply, :not_found, state}
       :not_found when mode == :auto ->
@@ -124,7 +127,7 @@ defmodule DBConnection.Ownership.Manager do
       :not_found ->
         {:shared, shared} = mode
         {:owner, ref, proxy} = Map.fetch!(checkouts, shared)
-        {:reply, {:ok, proxy}, owner_allow(state, caller, ref, proxy)}
+        {:reply, {:ok, proxy}, owner_allow(state, [caller], ref, proxy)}
     end
   end
 
@@ -139,9 +142,9 @@ defmodule DBConnection.Ownership.Manager do
     else
       case Map.get(checkouts, caller, :not_found) do
         {:owner, ref, proxy} ->
-          {:reply, :ok, owner_allow(state, allow, ref, proxy)}
+          {:reply, :ok, owner_allow(state, [allow], ref, proxy)}
         {:allowed, ref, proxy} ->
-          {:reply, :ok, owner_allow(state, allow, ref, proxy)}
+          {:reply, :ok, owner_allow(state, [allow], ref, proxy)}
         :not_found ->
           {:reply, :not_found, state}
       end
@@ -157,8 +160,13 @@ defmodule DBConnection.Ownership.Manager do
     end
   end
 
-  def handle_info({:DOWN, ref, _, _, _}, state) do
-    {:noreply, state |> owner_down(ref) |> unshare(ref)}
+  def handle_info({:DOWN, ref, _, pid, _}, state) do
+    case get_and_update_in(state.revokes, &Map.pop(&1, pid)) do
+      {^ref, state} ->
+        {:noreply, state}
+      {nil, state} ->
+        {:noreply, state |> owner_down(ref) |> unshare(ref)}
+      end
   end
 
   def handle_info(_msg, state) do
@@ -178,6 +186,8 @@ defmodule DBConnection.Ownership.Manager do
       ets: ets, log: log} = state
     {:ok, proxy} = ProxySupervisor.start_owner(owner_sup, caller, pool, opts)
     log && Logger.log(log, fn -> [inspect(caller), " owns proxy " | inspect(proxy)] end)
+    {mon, state} = get_and_update_in(state.revokes, &Map.pop(&1, caller))
+    mon && Process.demonitor(mon, [:flush])
     ref = Process.monitor(proxy)
     checkouts = Map.put(checkouts, caller, {:owner, ref, proxy})
     owners = Map.put(owners, ref, {proxy, caller, []})
@@ -202,20 +212,45 @@ defmodule DBConnection.Ownership.Manager do
       if key == pid do
         state
       else
-        {_, state} = proxy_checkin(state, key)
-        state
+        proxy_checkin_revoke(state, key)
       end
     end)
   end
 
-  defp owner_allow(%{ets: ets, log: log} = state, allow, ref, proxy) do
-    log && Logger.log(log, fn -> [inspect(allow), " allowed on proxy " | inspect(proxy)] end)
-    state = put_in(state.checkouts[allow], {:allowed, ref, proxy})
-    state = update_in(state.owners[ref], fn {proxy, caller, allowed} ->
-      {proxy, caller, [allow|List.delete(allowed, allow)]}
+  defp proxy_checkin_revoke(state, pid) do
+    case proxy_checkin(state, pid) do
+      {:ok, state} ->
+        proxy_revoke(state, pid)
+      {_, state} ->
+        state
+    end
+  end
+
+  defp proxy_revoke(state, pid) do
+    ref = Process.monitor(pid)
+    put_in(state.revokes[pid], ref)
+  end
+
+  defp proxy_allow_all(%{checkouts: checkouts, revokes: revokes} = state, owner) do
+    {:owner, ref, proxy} = Map.fetch!(checkouts, owner)
+    owner_allow(state, Map.keys(revokes), ref, proxy)
+  end
+
+  defp owner_allow(%{ets: ets, log: log} = state, entries, ref, proxy) do
+    log && Logger.log(log, fn ->
+      [Enum.map_join(entries, ", ", &inspect/1), " allowed on proxy " |
+        inspect(proxy)]
     end)
-    ets && :ets.insert(ets, {allow, proxy})
-    state
+    Enum.reduce(entries, state, fn allow, state ->
+      {mon, state} = get_and_update_in(state.revokes, &Map.pop(&1, allow))
+      mon && Process.demonitor(mon, [:flush])
+      state = put_in(state.checkouts[allow], {:allowed, ref, proxy})
+      state = update_in(state.owners[ref], fn {proxy, caller, allowed} ->
+        {proxy, caller, [allow|List.delete(allowed, allow)]}
+      end)
+      ets && :ets.insert(ets, {allow, proxy})
+      state
+    end)
   end
 
   defp owner_down(%{ets: ets, log: log} = state, ref) do
@@ -228,7 +263,8 @@ defmodule DBConnection.Ownership.Manager do
             inspect(proxy)]
         end)
         ets && Enum.each(entries, &:ets.delete(ets, &1))
-        update_in(state.checkouts, &Map.drop(&1, entries))
+        state = update_in(state.checkouts, &Map.drop(&1, entries))
+        Enum.reduce(allowed, state, &proxy_revoke(&2, &1))
       {nil, state} ->
         state
     end
@@ -237,7 +273,10 @@ defmodule DBConnection.Ownership.Manager do
   defp share_and_reply(%{checkouts: checkouts} = state, pid) do
     case Map.get(checkouts, pid, :not_found) do
       {:owner, ref, _} ->
-        state = proxy_checkin_all(state, pid)
+        state =
+          state
+          |> proxy_checkin_all(pid)
+          |> proxy_allow_all(pid)
         {:reply, :ok, %{state | mode: {:shared, pid}, mode_ref: ref}}
       {:allowed, _, _} ->
         {:reply, :not_owner, state}

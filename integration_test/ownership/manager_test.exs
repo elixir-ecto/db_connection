@@ -65,8 +65,8 @@ defmodule ManagerTest do
     parent = self()
 
     pid = spawn_link(fn() ->
-      assert_receive :refute_checkout
-      refute_checked_out pool
+      assert_receive :assert_revoked
+      assert_revoked pool
       send(parent, :no_checkout)
     end)
 
@@ -82,7 +82,7 @@ defmodule ManagerTest do
 
     :ok = Ownership.ownership_checkout(pool, [])
 
-    send(pid, :refute_checkout)
+    send(pid, :assert_revoked)
     assert_receive :no_checkout
   end
 
@@ -99,7 +99,7 @@ defmodule ManagerTest do
     end
 
     assert_receive :checkin
-    refute_checked_out pool
+    assert_revoked pool
   end
 
   test "owner's checkout automatically with caller option" do
@@ -143,7 +143,7 @@ defmodule ManagerTest do
       assert_checked_out pool
       send parent, :checked_out
       assert_receive :manual
-      refute_checked_out pool
+      assert_revoked pool
     end)
 
     assert_receive :checked_out
@@ -164,7 +164,7 @@ defmodule ManagerTest do
       assert_checked_out pool
       send parent, :allowed
       assert_receive :checked_in
-      refute_checked_out pool
+      assert_revoked pool
     end
 
     assert_receive :allowed
@@ -186,7 +186,7 @@ defmodule ManagerTest do
       assert_checked_out pool
       send parent, :allowed
       assert_receive :checked_in
-      refute_checked_out pool
+      assert_revoked pool
     end
 
     assert_receive :allowed
@@ -229,7 +229,7 @@ defmodule ManagerTest do
       assert Ownership.ownership_checkout(pool, []) == :ok
       send parent, :checked_out
       assert_receive :shared
-      refute_checked_out pool
+      assert_revoked pool
     end)
 
     assert_receive :checked_out
@@ -254,8 +254,9 @@ defmodule ManagerTest do
     assert_receive :shared
     assert_checked_out pool
     assert Ownership.ownership_mode(pool, :manual, []) == :ok
-    refute_checked_out pool
+    assert_revoked pool
     assert Ownership.ownership_checkout(pool, []) == :ok
+    assert_checked_out pool
   end
 
   test "shared mode automatically rolls back to manual on owner crash" do
@@ -295,6 +296,12 @@ defmodule ManagerTest do
 
   defp refute_checked_out(pool) do
     assert_raise DBConnection.OwnershipError, ~r/cannot find ownership process/, fn ->
+      P.run(pool, fn _ -> :ok end)
+    end
+  end
+
+  defp assert_revoked(pool) do
+    assert_raise DBConnection.OwnershipError, ~r/revoked ownership process/, fn ->
       P.run(pool, fn _ -> :ok end)
     end
   end

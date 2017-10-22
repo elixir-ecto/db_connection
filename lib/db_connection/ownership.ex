@@ -155,6 +155,47 @@ defmodule DBConnection.Ownership do
         of the steps above or that the owner process has crashed.
         """
         {:error, DBConnection.OwnershipError.exception(msg)}
+      :revoked ->
+        msg = """
+        revoked ownership process for #{inspect self()}.
+
+        When using ownership, you can revoke ownership in one of three ways:
+
+        * Allowed processes are revoked on explicit ownership checkin
+        * Allowed processes are revoked on owner exit
+        * All owners and allowed processes are revoked on changing the pool mode
+
+        Processes are revoked in these cases because they no longer have access
+        to the connection they depended on, and are assumed to be in an
+        inconsistent state. If a process is in an inconsistent state you may
+        want to restart it.
+
+        Otherwise, you must explicitly manage connections in one
+        of the four ways:
+
+        * By explicitly checking out a connection
+        * By explicitly allowing a spawned process
+        * By running the pool in shared mode
+        * By using :caller option with allowed process
+
+        The first two options require every new process to explicitly
+        check a connection out or be allowed by calling checkout or
+        allow respectively. Once this occurs the process is no longer
+        has revoked ownership.
+
+        The third option requires a {:shared, pid} mode to be set.
+        If using shared mode in tests, make sure your tests are not
+        async. Note that when shared mode ends for that pid the
+        ownership will become revoked again unless further, or repeat,
+        action is taken.
+
+        The fourth option requires [caller: pid] to be used when
+        checking out a connection from the pool. The caller process
+        should already be allowed on a connection. Note that when
+        making subsequent checkouts the ownership will still be revoked,
+        unless further, or repeat, action is taken.
+        """
+        {:error, DBConnection.OwnershipError.exception(msg)}
     end
   end
 
