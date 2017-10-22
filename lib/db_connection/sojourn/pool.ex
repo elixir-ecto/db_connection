@@ -6,9 +6,8 @@ defmodule DBConnection.Sojourn.Pool do
   import Supervisor.Spec
 
   def start_link(owner, mod, opts) do
-    children   = [regulator(opts), conn_sup(mod, opts), starter(owner, opts),
-                  watcher(owner)]
-    opts       = [strategy: :one_for_all, max_restarts: 0]
+    children = [regulator(opts), conn_sup(mod, opts), starter(owner, opts)]
+    opts = [strategy: :one_for_all, max_restarts: 0]
     Supervisor.start_link(children, opts)
   end
 
@@ -25,10 +24,6 @@ defmodule DBConnection.Sojourn.Pool do
   end
 
   ## Helpers
-
-  defp watcher(owner) do
-    worker(DBConnection.Watcher, [owner])
-  end
 
   defp regulator(opts) do
     regulator = Keyword.get(opts, :regulator, @regulator)

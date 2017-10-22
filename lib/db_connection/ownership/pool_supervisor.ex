@@ -11,7 +11,7 @@ defmodule DBConnection.Ownership.PoolSupervisor do
   end
 
   def start_pool(mod, opts) do
-    case Supervisor.start_child(__MODULE__, [self(), mod, opts]) do
+    case DBConnection.Watcher.watch(__MODULE__, [mod, opts]) do
       {:ok, pid} ->
         {:ok, Pool.pool_pid(pid), Pool.owner_sup_pid(pid)}
       other ->
