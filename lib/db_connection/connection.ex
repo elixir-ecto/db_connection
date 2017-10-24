@@ -113,7 +113,8 @@ defmodule DBConnection.Connection do
           after_connect_timeout: Keyword.get(opts, :after_connect_timeout,
                                              @timeout), idle: idle,
           idle_timeout: Keyword.get(opts, :idle_timeout, @idle_timeout),
-          idle_time: 0,  after_timeout: after_timeout}
+          idle_time: 0,  after_timeout: after_timeout,
+          hibernate?: Application.get_env(:db_connection, :enable_hibernate, false)}
     if mode == :connection and Keyword.get(opts, :sync_connect, false) do
       connect(:init, s)
     else
@@ -122,25 +123,29 @@ defmodule DBConnection.Connection do
   end
 
   @doc false
-  def connect(_, %{regulator: regulator, lock: nil} = s)
+  def connect(_, %{regulator: regulator, lock: nil, hibernate?: hibernate?} = s)
       when is_pid(regulator) do
     {:await, ref, _} = :sregulator.async_ask(regulator, {self(), make_ref()})
-    {:ok, %{s | client: {ref, :regulator}}}
+    maybe_hibernate(hibernate?, {:ok, %{s | client: {ref, :regulator}}})
+
   end
   def connect(_, s) do
     %{mod: mod, opts: opts, backoff: backoff, after_connect: after_connect,
       idle: idle, idle_timeout: idle_timeout, regulator: regulator,
-      lock: lock} = s
+      lock: lock, hibernate?: hibernate?} = s
     case apply(mod, :connect, [opts]) do
       {:ok, state} when after_connect != nil ->
         ref = make_ref()
         Connection.cast(self(), {:after_connect, ref})
-        {:ok, %{s | state: state, client: {ref, :connect}}}
+        maybe_hibernate(hibernate?, {:ok, %{s | state: state, client: {ref, :connect}}})
       {:ok, state} when idle == :passive ->
         backoff = backoff && Backoff.reset(backoff)
         ref = make_ref()
         Connection.cast(self(), {:connected, ref})
-        {:ok, %{s | state: state, client: {ref, :connect}, backoff: backoff}}
+        maybe_hibernate(
+          hibernate?,
+          {:ok, %{s | state: state, client: {ref, :connect}, backoff: backoff}}
+        )
       {:ok, state} when idle == :active ->
         backoff = backoff && Backoff.reset(backoff)
         {:ok, %{s | state: state, client: nil, backoff: backoff}, idle_timeout}
@@ -153,7 +158,7 @@ defmodule DBConnection.Connection do
         end)
         done_lock(regulator, lock)
         {timeout, backoff} = Backoff.backoff(backoff)
-        {:backoff, timeout, %{s | lock: nil, backoff: backoff}}
+        maybe_hibernate(hibernate?, {:backoff, timeout, %{s | lock: nil, backoff: backoff}})
     end
   end
 
@@ -170,7 +175,7 @@ defmodule DBConnection.Connection do
         :ok
     end
     %{state: state, client: client, timer: timer, regulator: regulator,
-      lock: lock, queue: queue, backoff: backoff} = s
+      lock: lock, queue: queue, backoff: backoff, hibernate?: hibernate?} = s
     demonitor(client)
     cancel_timer(timer)
     done_lock(regulator, lock)
@@ -182,14 +187,15 @@ defmodule DBConnection.Connection do
         {:stop, {:shutdown, err}, s}
       {_, :after_connect} ->
         {timeout, backoff} = Backoff.backoff(backoff)
-        {:backoff, timeout, %{s | backoff: backoff}}
+        maybe_hibernate(hibernate?, {:backoff, timeout, %{s | backoff: backoff}})
       _ ->
         {:connect, :disconnect, s}
     end
   end
 
   @doc false
-  def handle_call({:checkout, ref, queue?, timeout}, {pid, _} = from, s) do
+  def handle_call({:checkout, ref, queue?, timeout}, {pid, _} = from,
+                  %{hibernate?: hibernate?} = s) do
     case s do
       %{queue: :broker} ->
         exit(:bad_checkout)
@@ -197,7 +203,7 @@ defmodule DBConnection.Connection do
         Connection.reply(from, {:ok, {self(), ref}, mod, state})
         client = {ref, Process.monitor(pid)}
         timer = start_timer(pid, timeout)
-        {:noreply,  %{s | client: client, timer: timer}}
+        maybe_hibernate(hibernate?, {:noreply,  %{s | client: client, timer: timer}})
       %{client: {_, :connect}, after_connect: nil, idle: :passive,
       state: state} ->
         mon = Process.monitor(pid)
@@ -208,15 +214,15 @@ defmodule DBConnection.Connection do
       %{client: :closed} ->
         message = "connection not available because of disconnection"
         err = DBConnection.ConnectionError.exception(message)
-        {:reply, {:error, err}, s}
+        maybe_hibernate(hibernate?, {:reply, {:error, err}, s})
       %{queue: queue} when queue? == true ->
         client = {ref, Process.monitor(pid)}
         queue = :queue.in({client, timeout, from}, queue)
-        {:noreply, %{s | queue: queue}}
+        maybe_hibernate(hibernate?, {:noreply, %{s | queue: queue}})
       _ when queue? == false ->
         message = "connection not available and queuing is disabled"
         err = DBConnection.ConnectionError.exception(message)
-        {:reply, {:error, err}, s}
+        maybe_hibernate(hibernate?, {:reply, {:error, err}, s})
     end
   end
 
@@ -224,8 +230,8 @@ defmodule DBConnection.Connection do
     Connection.reply(from, :ok)
     handle_cast(stop, s)
   end
-  def handle_call({:stop, _, _, _}, _, s) do
-    {:reply, :error, s}
+  def handle_call({:stop, _, _, _}, _, %{hibernate?: hibernate?} = s) do
+    maybe_hibernate(hibernate?, {:reply, :error, s})
   end
 
   @doc false
@@ -272,7 +278,7 @@ defmodule DBConnection.Connection do
 
   def handle_cast({:after_connect, ref}, %{client: {ref, :connect}} = s) do
     %{mod: mod, state: state, after_connect: after_connect,
-      after_connect_timeout: timeout, opts: opts} = s
+      after_connect_timeout: timeout, opts: opts, hibernate?: hibernate?} = s
     case apply(mod, :checkout, [state]) do
       {:ok, state} ->
         opts = [timeout: timeout] ++ opts
@@ -280,23 +286,23 @@ defmodule DBConnection.Connection do
           DBConnection.Task.run_child(mod, after_connect, state, opts)
         timer = start_timer(pid, timeout)
         s = %{s | client: {ref, :after_connect}, timer: timer, state: state}
-        {:noreply, s}
+        maybe_hibernate(hibernate?, {:noreply, s})
       {:disconnect, err, state} ->
         {:disconnect, {:log, err}, %{s | state: state}}
     end
   end
 
-  def handle_cast({:after_connect, _}, s) do
-    {:noreply, s}
+  def handle_cast({:after_connect, _}, %{hibernate?: hibernate?} = s) do
+    maybe_hibernate(hibernate?, {:noreply, s})
   end
 
   def handle_cast({:connected, ref}, %{client: {ref, :connect}} = s) do
-    %{mod: mod, state: state, queue: queue, broker: broker} = s
+    %{mod: mod, state: state, queue: queue, broker: broker, hibernate?: hibernate?} = s
     case apply(mod, :checkout, [state]) do
       {:ok, state} when queue == :broker ->
         info = {self(), mod, state}
         {:await, ^ref, _} = :sbroker.async_ask_r(broker, info, {self(), ref})
-        {:noreply,  %{s | client: {ref, :broker}, state: state}}
+        maybe_hibernate(hibernate?, {:noreply,  %{s | client: {ref, :broker}, state: state}})
       {:ok, state} ->
         handle_next(state, %{s | client: nil})
       {:disconnect, err, state} ->
@@ -304,8 +310,8 @@ defmodule DBConnection.Connection do
     end
   end
 
-  def handle_cast({:connected, _}, %{idle: :passive} = s) do
-    {:noreply, s}
+  def handle_cast({:connected, _}, %{idle: :passive, hibernate?: hibernate?} = s) do
+    maybe_hibernate(hibernate?, {:noreply, s})
   end
 
   @doc false
@@ -323,7 +329,8 @@ defmodule DBConnection.Connection do
   def handle_info({:DOWN, _, :process, _, _} = msg, %{queue: :broker} = s) do
     do_handle_info(msg, s)
   end
-  def handle_info({:DOWN, ref, :process, _, _} = msg, %{queue: queue} = s) do
+  def handle_info({:DOWN, ref, :process, _, _} = msg,
+  %{queue: queue, hibernate?: hibernate?} = s) do
     len = :queue.len(queue)
     down = fn({{_, mon}, _, _}) -> ref != mon end
     queue = :queue.filter(down, queue)
@@ -331,7 +338,7 @@ defmodule DBConnection.Connection do
       ^len ->
         do_handle_info(msg, s)
       _ ->
-        {:noreply, %{s | queue: queue}}
+        maybe_hibernate(hibernate?, {:noreply, %{s | queue: queue}})
     end
   end
 
@@ -377,12 +384,12 @@ defmodule DBConnection.Connection do
   def handle_info(msg, %{client: {_, :connect}} = s) do
     do_handle_info(msg, s)
   end
-  def handle_info(msg, %{mod: mod} = s) do
+  def handle_info(msg, %{mod: mod, hibernate?: hibernate?} = s) do
     Logger.info(fn() ->
       [inspect(mod), ?\s, ?(, inspect(self()), ") missed message: " |
         inspect(msg)]
     end)
-    {:noreply, s}
+    maybe_hibernate(hibernate?, {:noreply, s})
   end
 
   @doc false
@@ -443,12 +450,15 @@ defmodule DBConnection.Connection do
   end
 
   defp handle_checkout({ref, _} = client, timeout, {pid, _} = from, state, s) do
-    %{mod: mod} = s
+    %{mod: mod, hibernate?: hibernate?} = s
     case apply(mod, :checkout, [state]) do
       {:ok, state} ->
         Connection.reply(from, {:ok, {self(), ref}, mod, state})
         timer = start_timer(pid, timeout)
-        {:noreply,  %{s | client: client, timer: timer, state: state}}
+        maybe_hibernate(
+          hibernate?,
+          {:noreply,  %{s | client: client, timer: timer, state: state}}
+        )
       {:disconnect, err, state} ->
         {:disconnect, {:log, err}, %{s | state: state}}
     end
@@ -460,15 +470,18 @@ defmodule DBConnection.Connection do
     demonitor(client)
     handle_next(state, %{s | client: nil, backoff: backoff})
   end
-  defp handle_next(state, %{queue: :broker} = s) do
+  defp handle_next(state, %{queue: :broker, hibernate?: hibernate?} = s) do
     %{client: client, timer: timer, mod: mod, broker: broker} = s
     demonitor(client)
     cancel_timer(timer)
     info = {self(), mod, state}
     {:await, ref, _} = :sbroker.async_ask_r(broker, info, {self(), make_ref()})
-    {:noreply,  %{s | state: state, client: {ref, :broker}, timer: nil}}
+    maybe_hibernate(
+      hibernate?,
+      {:noreply,  %{s | state: state, client: {ref, :broker}, timer: nil}}
+    )
   end
-  defp handle_next(state, s) do
+  defp handle_next(state, %{hibernate?: hibernate?} = s) do
     %{client: client, timer: timer, queue: queue, idle: idle} = s
     demonitor(client)
     cancel_timer(timer)
@@ -479,7 +492,10 @@ defmodule DBConnection.Connection do
         %{mod: mod} = s
         Connection.reply(from, {:ok, {self(), ref}, mod, state})
         timer = start_timer(pid, timeout)
-        {:noreply,  %{s | client: new_client, timer: timer, state: state}}
+        maybe_hibernate(
+          hibernate?,
+          {:noreply,  %{s | client: new_client, timer: timer, state: state}}
+        )
       :empty when idle == :passive ->
         handle_timeout(%{s | state: state})
       :empty when idle == :active ->
@@ -501,10 +517,13 @@ defmodule DBConnection.Connection do
   defp down_log({:shutdown, _}), do: :nolog
   defp down_log(_), do: :log
 
-  defp handle_broker({:go, ref, {pid, timeout}, _, _}, s) do
+  defp handle_broker({:go, ref, {pid, timeout}, _, _}, %{hibernate?: hibernate?} = s) do
     mon = Process.monitor(pid)
     timer = start_timer(pid, timeout)
-    {:noreply, %{s | idle_time: 0, client: {ref, mon}, timer: timer}}
+    maybe_hibernate(
+      hibernate?,
+      {:noreply, %{s | idle_time: 0, client: {ref, mon}, timer: timer}}
+    )
   end
 
   defp handle_broker({:drop, queue_time}, s) do
@@ -532,10 +551,11 @@ defmodule DBConnection.Connection do
   end
 
   defp continue_ask(s) do
-    %{mod: mod, state: state, broker: broker, client: {ref, :broker}} = s
-        info = {self(), mod, state}
-        {:await, ^ref, _} = :sbroker.async_ask_r(broker, info, {self(), ref})
-        {:noreply, s}
+    %{mod: mod, state: state, broker: broker,
+      client: {ref, :broker}, hibernate?: hibernate?} = s
+    info = {self(), mod, state}
+    {:await, ^ref, _} = :sbroker.async_ask_r(broker, info, {self(), ref})
+    maybe_hibernate(hibernate?, {:noreply, s})
   end
 
   defp continue_ping(%{mod: mod, state: state} = s) do
@@ -566,7 +586,12 @@ defmodule DBConnection.Connection do
   defp handle_timeout(%{client: nil, idle_timeout: idle_timeout} = s) do
     {:noreply, s, idle_timeout}
   end
-  defp handle_timeout(s), do: {:noreply, s}
+  defp handle_timeout(%{hibernate?: hibernate?} = s) do
+    maybe_hibernate(hibernate?, {:noreply, s})
+  end
+
+  defp maybe_hibernate(true, res), do: Tuple.append(res, :hibernate)
+  defp maybe_hibernate(_, res), do: res
 
   defp demonitor({_, mon}) when is_reference(mon) do
     Process.demonitor(mon, [:flush])
