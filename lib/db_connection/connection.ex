@@ -113,7 +113,8 @@ defmodule DBConnection.Connection do
           after_connect_timeout: Keyword.get(opts, :after_connect_timeout,
                                              @timeout), idle: idle,
           idle_timeout: Keyword.get(opts, :idle_timeout, @idle_timeout),
-          idle_time: 0,  after_timeout: after_timeout}
+          idle_time: 0,  after_timeout: after_timeout,
+          hibernate?: Application.get_env(:db_connection, :enable_hibernate, false)}
     if mode == :connection and Keyword.get(opts, :sync_connect, false) do
       connect(:init, s)
     else
@@ -130,7 +131,7 @@ defmodule DBConnection.Connection do
   def connect(_, s) do
     %{mod: mod, opts: opts, backoff: backoff, after_connect: after_connect,
       idle: idle, idle_timeout: idle_timeout, regulator: regulator,
-      lock: lock} = s
+      lock: lock, hibernate?: hibernate?} = s
     case apply(mod, :connect, [opts]) do
       {:ok, state} when after_connect != nil ->
         ref = make_ref()
@@ -153,7 +154,7 @@ defmodule DBConnection.Connection do
         end)
         done_lock(regulator, lock)
         {timeout, backoff} = Backoff.backoff(backoff)
-        {:backoff, timeout, %{s | lock: nil, backoff: backoff}}
+        maybe_hibernate(hibernate?, {:backoff, timeout, %{s | lock: nil, backoff: backoff}})
     end
   end
 
@@ -377,6 +378,9 @@ defmodule DBConnection.Connection do
   def handle_info(msg, %{client: {_, :connect}} = s) do
     do_handle_info(msg, s)
   end
+  def handle_info(:timeout, %{hibernate?: hibernate?} = s) do
+    maybe_hibernate(hibernate?, {:noreply, s})
+  end
   def handle_info(msg, %{mod: mod} = s) do
     Logger.info(fn() ->
       [inspect(mod), ?\s, ?(, inspect(self()), ") missed message: " |
@@ -563,10 +567,17 @@ defmodule DBConnection.Connection do
     end
   end
 
-  defp handle_timeout(%{client: nil, idle_timeout: idle_timeout} = s) do
-    {:noreply, s, idle_timeout}
+  defp handle_timeout(%{client: nil, idle_timeout: idle_timeout,
+                        hibernate?: hibernate?} = s) do
+    Process.send_after(self(), :timeout, idle_timeout)
+    maybe_hibernate(hibernate?, {:noreply, s})
   end
-  defp handle_timeout(s), do: {:noreply, s}
+  defp handle_timeout(%{hibernate?: hibernate?} = s) do
+    maybe_hibernate(hibernate?, {:noreply, s})
+  end
+
+  defp maybe_hibernate(true, res), do: Tuple.append(res, :hibernate)
+  defp maybe_hibernate(_, res), do: res
 
   defp demonitor({_, mon}) when is_reference(mon) do
     Process.demonitor(mon, [:flush])
