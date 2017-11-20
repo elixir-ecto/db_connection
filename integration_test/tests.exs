@@ -13,3 +13,4 @@ Code.require_file "cases/queue_test.exs", __DIR__
 Code.require_file "cases/stream_test.exs", __DIR__
 Code.require_file "cases/transaction_execute_test.exs", __DIR__
 Code.require_file "cases/transaction_test.exs", __DIR__
+Code.require_file "cases/hibernate_test.exs", __DIR__
