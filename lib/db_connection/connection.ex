@@ -18,9 +18,10 @@ defmodule DBConnection.Connection do
   require Logger
   alias DBConnection.Backoff
 
-  @pool_timeout  5_000
-  @timeout       15_000
-  @idle_timeout  1_000
+  @pool_timeout   5_000
+  @timeout        15_000
+  @idle_timeout   1_000
+  @idle_hibernate false
 
   ## DBConnection.Pool API
 
@@ -114,7 +115,7 @@ defmodule DBConnection.Connection do
                                              @timeout), idle: idle,
           idle_timeout: Keyword.get(opts, :idle_timeout, @idle_timeout),
           idle_time: 0,  after_timeout: after_timeout,
-          hibernate?: Application.get_env(:db_connection, :enable_hibernate, false)}
+          idle_hibernate: Keyword.get(opts, :idle_hibernate, @idle_hibernate)}
     if mode == :connection and Keyword.get(opts, :sync_connect, false) do
       connect(:init, s)
     else
@@ -131,7 +132,7 @@ defmodule DBConnection.Connection do
   def connect(_, s) do
     %{mod: mod, opts: opts, backoff: backoff, after_connect: after_connect,
       idle: idle, idle_timeout: idle_timeout, regulator: regulator,
-      lock: lock, hibernate?: hibernate?} = s
+      lock: lock, idle_hibernate: idle_hibernate} = s
     case apply(mod, :connect, [opts]) do
       {:ok, state} when after_connect != nil ->
         ref = make_ref()
@@ -154,7 +155,7 @@ defmodule DBConnection.Connection do
         end)
         done_lock(regulator, lock)
         {timeout, backoff} = Backoff.backoff(backoff)
-        maybe_hibernate(hibernate?, {:backoff, timeout, %{s | lock: nil, backoff: backoff}})
+        maybe_hibernate(idle_hibernate, {:backoff, timeout, %{s | lock: nil, backoff: backoff}})
     end
   end
 
@@ -378,8 +379,8 @@ defmodule DBConnection.Connection do
   def handle_info(msg, %{client: {_, :connect}} = s) do
     do_handle_info(msg, s)
   end
-  def handle_info(:timeout, %{hibernate?: hibernate?} = s) do
-    maybe_hibernate(hibernate?, {:noreply, s})
+  def handle_info(:timeout, %{idle_hibernate: idle_hibernate} = s) do
+    maybe_hibernate(idle_hibernate, {:noreply, s})
   end
   def handle_info(msg, %{mod: mod} = s) do
     Logger.info(fn() ->
@@ -568,12 +569,12 @@ defmodule DBConnection.Connection do
   end
 
   defp handle_timeout(%{client: nil, idle_timeout: idle_timeout,
-                        hibernate?: hibernate?} = s) do
+                        idle_hibernate: idle_hibernate} = s) do
     Process.send_after(self(), :timeout, idle_timeout)
-    maybe_hibernate(hibernate?, {:noreply, s})
+    maybe_hibernate(idle_hibernate, {:noreply, s})
   end
-  defp handle_timeout(%{hibernate?: hibernate?} = s) do
-    maybe_hibernate(hibernate?, {:noreply, s})
+  defp handle_timeout(%{idle_hibernate: idle_hibernate} = s) do
+    maybe_hibernate(idle_hibernate, {:noreply, s})
   end
 
   defp maybe_hibernate(true, res), do: Tuple.append(res, :hibernate)
