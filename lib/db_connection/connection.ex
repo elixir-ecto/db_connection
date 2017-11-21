@@ -109,7 +109,7 @@ defmodule DBConnection.Connection do
 
     s = %{mod: mod, opts: opts, state: nil, client: :closed, broker: broker,
           regulator: regulator, lock: nil, queue: queue, timer: nil,
-          hibernate_timer: nil,
+          idle_timer: nil,
           backoff: Backoff.new(opts),
           after_connect: Keyword.get(opts, :after_connect),
           after_connect_timeout: Keyword.get(opts, :after_connect_timeout,
@@ -338,6 +338,17 @@ defmodule DBConnection.Connection do
     end
   end
 
+  def handle_info({:timeout, timer, {__MODULE__, :idle, _}}, s)
+      when is_reference(timer) do
+    %{mod: mod, state: state} = s
+    case apply(mod, :ping, [state]) do
+      {:ok, state} ->
+        handle_timeout(%{s | state: state, idle_timer: nil})
+      {:disconnect, err, state} ->
+        {:disconnect, {:log, err}, %{s | state: state, idle_timer: nil}}
+    end
+  end
+
   def handle_info({:timeout, timer, {__MODULE__, pid, timeout}},
   %{timer: timer} = s) when is_reference(timer) do
     message = "client #{inspect pid} timed out because " <>
@@ -354,11 +365,6 @@ defmodule DBConnection.Connection do
       _ ->
         {:disconnect, {:log, exception}, %{s | timer: nil}}
     end
-  end
-
-  def handle_info({:timeout, timer, :trigger_hibernate},
-                  %{idle_hibernate: idle_hibernate} = s) when is_reference(timer) do
-    maybe_hibernate(idle_hibernate, {:noreply, %{s | hibernate_timer: nil}})
   end
 
   def handle_info(:timeout, %{client: nil, broker: nil} = s) do
@@ -384,9 +390,6 @@ defmodule DBConnection.Connection do
   end
   def handle_info(msg, %{client: {_, :connect}} = s) do
     do_handle_info(msg, s)
-  end
-  def handle_info(:timeout, %{idle_hibernate: idle_hibernate} = s) do
-    maybe_hibernate(idle_hibernate, {:noreply, %{s | hibernate_timer: nil}})
   end
   def handle_info(msg, %{mod: mod} = s) do
     Logger.info(fn() ->
@@ -549,10 +552,10 @@ defmodule DBConnection.Connection do
         {:noreply, s}
   end
 
-  defp continue_ping(%{mod: mod, state: state} = s) do
+  defp continue_ping(%{mod: mod, state: state, idle_hibernate: idle_hibernate} = s) do
     case apply(mod, :ping, [state]) do
       {:ok, state} ->
-        continue_ask(%{s | idle_time: 0, state: state})
+        maybe_hibernate(idle_hibernate, continue_ask(%{s | idle_time: 0, state: state}))
       {:disconnect, err, state} ->
         {:disconnect, {:log, err}, %{s | idle_time: 0, state: state}}
     end
@@ -576,11 +579,10 @@ defmodule DBConnection.Connection do
 
   defp handle_timeout(%{client: nil, idle_timeout: idle_timeout,
                         idle_hibernate: true,
-                        hibernate_timer: hibernate_timer} = s) do
-    cancel_timer(hibernate_timer)
-    hibernate_timer = Process.send_after(self(), :timeout, idle_timeout)
-    # hibernate_timer = start_timer(self(), idle_timeout, :trigger_hibernate)
-    maybe_hibernate(true, {:noreply, %{s | hibernate_timer: hibernate_timer}})
+                        idle_timer: idle_timer} = s) do
+    cancel_timer(idle_timer)
+    idle_timer = start_timer(:idle, idle_timeout)
+    maybe_hibernate(true, {:noreply, %{s | idle_timer: idle_timer}})
   end
   defp handle_timeout(%{client: nil, idle_timeout: idle_timeout} = s) do
     {:noreply, s, idle_timeout}
@@ -605,15 +607,11 @@ defmodule DBConnection.Connection do
   defp start_timer(pid, timeout) do
     :erlang.start_timer(timeout, self(), {__MODULE__, pid, timeout})
   end
-  defp start_timer(_, :infinity, _), do: nil
-  defp start_timer(pid, timeout, msg) do
-    :erlang.start_timer(timeout, pid, msg)
-  end
 
   defp cancel_timer(nil), do: :ok
   defp cancel_timer(timer) do
     case :erlang.cancel_timer(timer) do
-      false -> :erlang.read_timer(timer) and flush_timer(timer)
+      false -> flush_timer(timer)
       _     -> :ok
     end
   end
@@ -621,8 +619,6 @@ defmodule DBConnection.Connection do
   defp flush_timer(timer) do
     receive do
       {:timeout, ^timer, {__MODULE__, _, _}} ->
-        :ok
-      {:timeout, ^timer, :trigger_hibernate} ->
         :ok
     after
       0 ->

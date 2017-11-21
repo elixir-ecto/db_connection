@@ -10,8 +10,7 @@ case :erlang.system_info(:otp_release) do
     ExUnit.start([exclude: [:test]])
   _ ->
     ExUnit.start([capture_log: :true, assert_receive_timeout: 500,
-                  exclude: [:enqueue_disconnected, :queue_timeout_exit,
-                            :idle_hibernate_backoff, :idle_hibernate]])
+                  exclude: [:enqueue_disconnected, :queue_timeout_exit]])
 
     {:ok, _} = TestPool.ensure_all_started()
 end

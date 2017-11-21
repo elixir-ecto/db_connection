@@ -10,7 +10,6 @@ defmodule BackoffTest do
     execute_test_backoff_after_failed(agent, opts)
   end
 
-  @tag :idle_hibernate_backoff
   test "backoff after failed initial connection attempt with idle_hibernate" do
     agent = spawn_agent_backoff_after_failed()
     opts = [agent: agent, parent: self(), backoff_min: 10, idle_hibernate: true]
