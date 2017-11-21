@@ -23,6 +23,9 @@ defmodule DBConnection.Connection do
   @idle_timeout   1_000
   @idle_hibernate false
 
+  ## for unit test
+  @ets_table_name_for_test :ets_for_test_hibernate
+
   ## DBConnection.Pool API
 
   @doc false
@@ -577,8 +580,23 @@ defmodule DBConnection.Connection do
     maybe_hibernate(idle_hibernate, {:noreply, s})
   end
 
-  defp maybe_hibernate(true, res), do: Tuple.append(res, :hibernate)
+  defp maybe_hibernate(true, res) do
+    maybe_update_test_data()
+    Tuple.append(res, :hibernate)
+  end
   defp maybe_hibernate(_, res), do: res
+
+  if Mix.env() in [:test, :connection, :poolboy, :sojourn, :ownership] do
+    defp maybe_update_test_data() do
+      :ets.update_counter(@ets_table_name_for_test, :hibernate_times, 1,
+                          {:hibernate_times, 0})
+      :ok
+    end
+  else
+    defp maybe_update_test_data() do
+      :ok
+    end
+  end
 
   defp demonitor({_, mon}) when is_reference(mon) do
     Process.demonitor(mon, [:flush])

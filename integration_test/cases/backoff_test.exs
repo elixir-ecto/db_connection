@@ -4,6 +4,8 @@ defmodule BackoffTest do
   alias TestPool, as: P
   alias TestAgent, as: A
 
+  @ets_table_name_for_test :ets_for_test_hibernate
+
   test "backoff after failed initial connection attempt" do
     agent = spawn_agent_backoff_after_failed()
     opts = [agent: agent, parent: self(), backoff_min: 10]
@@ -11,9 +13,10 @@ defmodule BackoffTest do
   end
 
   test "backoff after failed initial connection attempt with idle_hibernate" do
+    create_ets_for_test()
     agent = spawn_agent_backoff_after_failed()
     opts = [agent: agent, parent: self(), backoff_min: 10, idle_hibernate: true]
-    execute_test_backoff_after_failed(agent, opts)
+    execute_test_backoff_after_failed(agent, opts, true)
   end
 
   defp spawn_agent_backoff_after_failed() do
@@ -31,7 +34,7 @@ defmodule BackoffTest do
     agent
   end
 
-  defp execute_test_backoff_after_failed(agent, opts) do
+  defp execute_test_backoff_after_failed(agent, opts, test_hibernate? \\ false) do
     {:ok, _} = P.start_link(opts)
     assert_receive {:error, conn}
     assert_receive {:hi, ^conn}
@@ -39,6 +42,22 @@ defmodule BackoffTest do
     assert [
       connect: [opts2],
       connect: [opts2]] = A.record(agent)
+
+    if test_hibernate? do
+      assert [{:hibernate_times, _}] =
+        :ets.lookup(@ets_table_name_for_test, :hibernate_times)
+    end
+  end
+
+  defp create_ets_for_test() do
+    case :ets.info(@ets_table_name_for_test) do
+      :undefined ->
+        :ets.new(@ets_table_name_for_test, [:named_table, :public])
+        :ok
+      _ ->
+        :ets.delete_all_objects(@ets_table_name_for_test)
+        :ok
+    end
   end
 
   test "backoff after disconnect and failed connection attempt" do
