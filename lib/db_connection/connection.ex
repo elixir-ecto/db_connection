@@ -109,6 +109,7 @@ defmodule DBConnection.Connection do
 
     s = %{mod: mod, opts: opts, state: nil, client: :closed, broker: broker,
           regulator: regulator, lock: nil, queue: queue, timer: nil,
+          hibernate_timer: nil,
           backoff: Backoff.new(opts),
           after_connect: Keyword.get(opts, :after_connect),
           after_connect_timeout: Keyword.get(opts, :after_connect_timeout,
@@ -355,6 +356,11 @@ defmodule DBConnection.Connection do
     end
   end
 
+  def handle_info({:timeout, timer, :trigger_hibernate},
+                  %{idle_hibernate: idle_hibernate} = s) when is_reference(timer) do
+    maybe_hibernate(idle_hibernate, {:noreply, %{s | hibernate_timer: nil}})
+  end
+
   def handle_info(:timeout, %{client: nil, broker: nil} = s) do
     %{mod: mod, state: state} = s
     case apply(mod, :ping, [state]) do
@@ -380,7 +386,7 @@ defmodule DBConnection.Connection do
     do_handle_info(msg, s)
   end
   def handle_info(:timeout, %{idle_hibernate: idle_hibernate} = s) do
-    maybe_hibernate(idle_hibernate, {:noreply, s})
+    maybe_hibernate(idle_hibernate, {:noreply, %{s | hibernate_timer: nil}})
   end
   def handle_info(msg, %{mod: mod} = s) do
     Logger.info(fn() ->
@@ -569,9 +575,15 @@ defmodule DBConnection.Connection do
   end
 
   defp handle_timeout(%{client: nil, idle_timeout: idle_timeout,
-                        idle_hibernate: idle_hibernate} = s) do
-    Process.send_after(self(), :timeout, idle_timeout)
-    maybe_hibernate(idle_hibernate, {:noreply, s})
+                        idle_hibernate: true,
+                        hibernate_timer: hibernate_timer} = s) do
+    cancel_timer(hibernate_timer)
+    hibernate_timer = Process.send_after(self(), :timeout, idle_timeout)
+    # hibernate_timer = start_timer(self(), idle_timeout, :trigger_hibernate)
+    maybe_hibernate(true, {:noreply, %{s | hibernate_timer: hibernate_timer}})
+  end
+  defp handle_timeout(%{client: nil, idle_timeout: idle_timeout} = s) do
+    {:noreply, s, idle_timeout}
   end
   defp handle_timeout(%{idle_hibernate: idle_hibernate} = s) do
     maybe_hibernate(idle_hibernate, {:noreply, s})
@@ -593,11 +605,15 @@ defmodule DBConnection.Connection do
   defp start_timer(pid, timeout) do
     :erlang.start_timer(timeout, self(), {__MODULE__, pid, timeout})
   end
+  defp start_timer(_, :infinity, _), do: nil
+  defp start_timer(pid, timeout, msg) do
+    :erlang.start_timer(timeout, pid, msg)
+  end
 
   defp cancel_timer(nil), do: :ok
   defp cancel_timer(timer) do
     case :erlang.cancel_timer(timer) do
-      false -> flush_timer(timer)
+      false -> :erlang.read_timer(timer) and flush_timer(timer)
       _     -> :ok
     end
   end
@@ -605,6 +621,8 @@ defmodule DBConnection.Connection do
   defp flush_timer(timer) do
     receive do
       {:timeout, ^timer, {__MODULE__, _, _}} ->
+        :ok
+      {:timeout, ^timer, :trigger_hibernate} ->
         :ok
     after
       0 ->

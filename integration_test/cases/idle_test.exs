@@ -11,7 +11,7 @@ defmodule TestIdle do
     execute_test_case(agent, opts)
   end
 
-  @tag :idle_timeout
+  @tag :idle_hibernate
   test "ping after idle timeout using hibernate" do
     agent = spawn_agent()
     opts = [agent: agent, parent: self(), idle_timeout: 50, idle_hibernate: true]
@@ -46,7 +46,7 @@ defmodule TestIdle do
   defp execute_test_case(agent, opts, test_hibernate? \\ false) do
     {:ok, pool} = P.start_link(opts)
     assert_receive {:hi, conn}
-    if test_hibernate? and :sojourn != Mix.env() do
+    if test_hibernate? do
       assert {:current_function, {:erlang, :hibernate, 3}} ==
         Process.info(conn, :current_function)
     end

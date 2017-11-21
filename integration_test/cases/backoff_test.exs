@@ -10,6 +10,7 @@ defmodule BackoffTest do
     execute_test_backoff_after_failed(agent, opts)
   end
 
+  @tag :idle_hibernate_backoff
   test "backoff after failed initial connection attempt with idle_hibernate" do
     agent = spawn_agent_backoff_after_failed()
     opts = [agent: agent, parent: self(), backoff_min: 10, idle_hibernate: true]
@@ -36,7 +37,7 @@ defmodule BackoffTest do
     assert_receive {:error, conn}
     assert_receive {:hi, ^conn}
 
-    if test_hibernate? and Mix.env() != :sojourn do
+    if test_hibernate? do
       assert {:current_function, {:erlang, :hibernate, 3}} ==
         Process.info(conn, :current_function)
     end
