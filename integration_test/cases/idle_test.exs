@@ -12,6 +12,7 @@ defmodule TestIdle do
   end
 
   @tag :idle_timeout
+  @tag :idle_hibernate
   test "ping after idle timeout using hibernate" do
     agent = spawn_agent()
     opts = [agent: agent, parent: self(), idle_timeout: 50, idle_hibernate: true]
