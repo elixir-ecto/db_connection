@@ -268,13 +268,15 @@ defmodule DBConnection do
   @doc """
   Declare a cursor using a query prepared by `handle_prepare/3`. Return
   `{:ok, cursor, state}` to start a cursor for a stream and continue,
-  `{:error, exception, state}` to return an error and continue or
-  `{:disconnect, exception, state}` to return an error and disconnect.
+  `{:ok, query, cursor, state}` to return altered query `query` and cursor
+  `cursor` for a stream and continue, `{:error, exception, state}` to return an
+  error and continue or `{:disconnect, exception, state}` to return an error
+  and disconnect.
 
   This callback is called in the client process.
   """
   @callback handle_declare(query, params, opts :: Keyword.t, state :: any) ::
-    {:ok, cursor, new_state :: any} |
+    {:ok, cursor, new_state :: any} | {:ok, query, cursor, new_state :: any} |
     {:error | :disconnect, Exception.t, new_state :: any}
 
   @doc """
@@ -693,8 +695,8 @@ defmodule DBConnection do
 
   @doc """
   Execute a prepared query with a database connection and return
-  `{:ok, result}` on success or `{:error, exception}` if there was an
-  error.
+  `{:ok, result}` or `{:ok, query, result}` on success or
+  `{:error, exception}` if there was an error.
 
   If the query is not prepared on the connection an attempt may be made to
   prepare it and then execute again.
@@ -1308,7 +1310,7 @@ defmodule DBConnection do
       end
   """
   @spec prepare_declare(conn, query, params, opts :: Keyword.t) ::
-    {:ok, cursor} | {:error, Exception.t}
+    {:ok, query, cursor} | {:error, Exception.t}
   def prepare_declare(conn, query, params, opts \\ []) do
     result =
       with {:ok, query, meter} <- parse(query, meter(opts), opts) do
@@ -1330,8 +1332,8 @@ defmodule DBConnection do
   @doc """
   Declare a cursor.
 
-  Returns `{:ok, cursor}` on success or `{:error, exception}` if there was
-  an error.
+  Returns `{:ok, cursor}` or `{:ok, query, cursor}` on success or
+  `{:error, exception}` if there was an error.
 
   ### Options
 
@@ -1350,7 +1352,7 @@ defmodule DBConnection do
       end
   """
   @spec declare(conn, query, params, opts :: Keyword.t) ::
-    {:ok, cursor} | {:error, Exception.t}
+    {:ok, cursor} | {:ok, query, cursor} | {:error, Exception.t}
   def declare(conn, query, params, opts \\ []) do
     result =
       with {:ok, params, meter} <- encode(query, params, meter(opts), opts) do
@@ -1366,11 +1368,14 @@ defmodule DBConnection do
 
   See `declare/4`.
   """
-  @spec declare!(conn, query, params, opts :: Keyword.t) :: cursor
+  @spec declare!(conn, query, params, opts :: Keyword.t) ::
+    cursor | {query, cursor}
   def declare!(conn, query, params, opts \\ []) do
     case declare(conn, query, params, opts) do
       {:ok, cursor} ->
         cursor
+      {:ok, query, cursor} ->
+        {query, cursor}
       {:error, err} ->
         raise err
     end
@@ -1481,7 +1486,17 @@ defmodule DBConnection do
   def reduce(%DBConnection.Stream{} = stream, acc, fun) do
     %DBConnection.Stream{conn: conn, query: query, params: params,
                          opts: opts} = stream
-    declare = &{:first, query, declare!(&1, query, params, &2)}
+    declare =
+      fn(conn, opts) ->
+        case declare(conn, query, params, opts) do
+          {:ok, query, cursor} ->
+            {:first, query, cursor}
+          {:ok, cursor} ->
+            {:first, query, cursor}
+          {:error, err} ->
+            raise err
+        end
+      end
     enum = resource(conn, declare, &stream_fetch/3, &stream_deallocate/3, opts)
     enum.(acc, fun)
   end
@@ -1579,7 +1594,8 @@ defmodule DBConnection do
       {:ok, result, conn_state} ->
         put_info(conn, conn_state)
         {:ok, result, meter}
-      {:ok, query, result, conn_state} when fun == :handle_execute ->
+      {:ok, query, result, conn_state}
+          when fun in [:handle_execute, :handle_declare] ->
         put_info(conn, conn_state)
         {:ok, query, result, meter}
       {:cont, result, conn_state}

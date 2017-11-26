@@ -72,6 +72,38 @@ defmodule StreamTest do
       ] = A.record(agent)
   end
 
+  test "stream replaces query and decodes result" do
+    stack = [
+      {:ok, :state},
+      {:ok, :began, :new_state},
+      {:ok, %Q{state: :replaced}, %C{}, :newer_state},
+      {:deallocate, %R{}, :newest_state},
+      {:ok, :deallocated, :state2},
+      {:ok, :committed, :new_state2}
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self()]
+    {:ok, pool} = P.start_link(opts)
+
+    assert P.transaction(pool, fn(conn) ->
+      opts2 = [decode: fn(%Q{state: :replaced}, %R{}) -> :decoded
+                         (%Q{state: :old}, _) -> flunk "decoded with old" end]
+      stream = P.stream(conn, %Q{state: :old}, [:param], opts2)
+      assert Enum.to_list(stream) == [:decoded]
+      :hi
+    end) == {:ok, :hi}
+
+    assert [
+      connect: [_],
+      handle_begin: [_, :state],
+      handle_declare: [_, [:param], _, :new_state],
+      handle_first: [%Q{state: :replaced}, %C{}, _, :newer_state],
+      handle_deallocate: [%Q{state: :replaced}, %C{}, _, :newest_state],
+      handle_commit: [_, :state2]
+      ] = A.record(agent)
+  end
+
   test "stream logs result" do
     stack = [
       {:ok, :state},
