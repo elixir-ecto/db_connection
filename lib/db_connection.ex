@@ -1984,36 +1984,38 @@ defmodule DBConnection do
     transaction_error(conn, :begin, opts)
   end
   defp begin(conn, run, opts) do
-    case run.(conn, &run_begin/4, meter(opts), opts) do
-      {status, meter} ->
-        err = DBConnection.TransactionError.exception(status)
-        log(meter, :begin, :begin, nil, {:error, err})
-      other ->
-        log(other, :begin, :begin, nil)
-    end
+    conn
+    |> run.(&run_begin/4, meter(opts), opts)
+    |> log(:begin, :begin, nil)
   end
 
   defp run_begin(conn, conn_state, meter, opts) do
     meter = event(meter, :begin)
-    handle(conn, conn_state, :handle_begin, [], meter, opts)
+    case handle(conn, conn_state, :handle_begin, [], meter, opts) do
+      {status, meter} ->
+        status_disconnect(conn, status, meter, opts)
+      other ->
+        other
+    end
   end
 
   defp rollback(%DBConnection{conn_mode: :transaction} = conn, _, opts) do
     transaction_error(conn, :rollback, opts)
   end
   defp rollback(conn, run, opts) do
-    case run.(conn, &run_rollback/4, meter(opts), opts) do
-      {status, meter} ->
-        err = DBConnection.TransactionError.exception(status)
-        log(meter, :rollback, :rollback, nil, {:error, err})
-      other ->
-        log(other, :rollback, :rollback, nil)
-    end
+    conn
+    |> run.(&run_rollback/4, meter(opts), opts)
+    |> log(:rollback, :rollback, nil)
   end
 
   defp run_rollback(conn, conn_state, meter, opts) do
     meter = event(meter, :rollback)
-    handle(conn, conn_state, :handle_rollback, [], meter, opts)
+    case handle(conn, conn_state, :handle_rollback, [], meter, opts) do
+      {status, meter} ->
+        status_disconnect(conn, status, meter, opts)
+      other ->
+        other
+    end
   end
 
   defp commit(%DBConnection{conn_mode: :transaction} = conn, _, opts) do
@@ -2025,9 +2027,6 @@ defmodule DBConnection do
         log(meter, :commit, :rollback, nil, {:ok, result})
         err = DBConnection.TransactionError.exception(:error)
         {:error, err}
-      {query, {status, meter}} ->
-        err = DBConnection.TransactionError.exception(status)
-        log(meter, :commit, query, nil, {:error, err})
       {query, other} ->
         log(other, :commit, query, nil)
       {:error, err, meter} ->
@@ -2044,9 +2043,19 @@ defmodule DBConnection do
         # conn_state must valid as just put there in previous call
         {:ok, conn_state, meter} = fetch_info(conn, meter)
         {:rollback, run_rollback(conn, conn_state, meter, opts)}
+      {status, meter} ->
+        {:commit, status_disconnect(conn, status, meter, opts)}
       return ->
         {:commit, return}
     end
+  end
+
+  defp status_disconnect(conn, status, meter, opts) do
+    # conn_state must valid as just put there in previous call
+    {:ok, conn_state, meter} = fetch_info(conn, meter)
+    err = DBConnection.TransactionError.exception(status)
+    delete_disconnect(conn, conn_state, err, opts)
+    {:error, err, meter}
   end
 
   defp run_status(conn, conn_state, meter, opts) do
