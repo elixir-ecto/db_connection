@@ -773,11 +773,21 @@ defmodule TransactionTest do
       handle_rollback: [_, :new_state]] = A.record(agent)
   end
 
-  test "transaction logs begin :commit and :rollback" do
+  test "transaction logs begin status errors and disconnects" do
     stack = [
       {:ok, :state},
       {:transaction, :new_state},
-      {:error, :newer_state},
+      :ok,
+      fn(opts) ->
+        send(opts[:parent], :reconnected)
+        {:ok, :newer_state}
+      end,
+      {:error, :newest_state},
+      :ok,
+      fn(opts) ->
+        send(opts[:parent], :reconnected)
+        {:ok, :state2}
+      end
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -801,6 +811,8 @@ defmodule TransactionTest do
 
     refute_received %DBConnection.LogEntry{}
 
+    assert_receive :reconnected
+
     assert P.transaction(pool, fn(_) -> flunk("transaction ran") end,
       [log: log]) == {:error, :rollback}
 
@@ -814,21 +826,31 @@ defmodule TransactionTest do
     assert is_nil(entry.decode_time)
 
     refute_received %DBConnection.LogEntry{}
+    assert_receive :reconnected
 
     assert [
       connect: [_],
-      handle_begin: [ _, :state],
-      handle_begin: [_, :new_state]] = A.record(agent)
+      handle_begin: [_, :state],
+      disconnect: [%DBConnection.TransactionError{status: :transaction}, :new_state],
+      connect: [_],
+      handle_begin: [_, :newer_state],
+      disconnect: [%DBConnection.TransactionError{status: :error}, :newest_state],
+      connect: [_]] = A.record(agent)
   end
 
-  test "transaction logs commit :begin and :rollback" do
+  test "transaction logs commit status errors and disconnects" do
     stack = [
       {:ok, :state},
       {:ok, :began, :new_state},
       {:idle, :newer_state},
-      {:ok, :began, :newest_state},
-      {:error, :state2},
-      {:ok, :rolledback, :new_state2}
+      :ok,
+      fn(opts) ->
+        send(opts[:parent], :reconnected)
+        {:ok, :newest_state}
+      end,
+      {:ok, :began, :state2},
+      {:error, :new_state2},
+      {:ok, :rolledback, :newer_state2}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -851,6 +873,7 @@ defmodule TransactionTest do
     assert is_nil(entry.decode_time)
 
     refute_received %DBConnection.LogEntry{}
+    assert_receive :reconnected
 
     assert P.transaction(pool,
       fn(_) -> assert_receive %DBConnection.LogEntry{call: :begin} end,
@@ -869,16 +892,23 @@ defmodule TransactionTest do
       connect: [_],
       handle_begin: [ _, :state],
       handle_commit: [_, :new_state],
-      handle_begin: [_, :newer_state],
-      handle_commit: [_, :newest_state],
-      handle_rollback: [_, :state2]] = A.record(agent)
+      disconnect: [%DBConnection.TransactionError{status: :idle}, :newer_state],
+      connect: [_],
+      handle_begin: [_, :newest_state],
+      handle_commit: [_, :state2],
+      handle_rollback: [_, :new_state2]] = A.record(agent)
   end
 
-  test "transaction logs rollback :begin" do
+  test "transaction logs rollback status error and disconnects" do
     stack = [
       {:ok, :state},
       {:ok, :began, :new_state},
-      {:idle, :newer_state}
+      {:idle, :newer_state},
+      :ok,
+      fn(opts) ->
+        send(opts[:parent], :reconnected)
+        {:ok, :newest_state}
+      end,
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -904,11 +934,14 @@ defmodule TransactionTest do
     assert is_nil(entry.decode_time)
 
     refute_received %DBConnection.LogEntry{}
+    assert_receive :reconnected
 
     assert [
       connect: [_],
       handle_begin: [ _, :state],
-      handle_rollback: [_, :new_state]] = A.record(agent)
+      handle_rollback: [_, :new_state],
+      disconnect: [%DBConnection.TransactionError{status: :idle}, :newer_state],
+      connect: [_]] = A.record(agent)
   end
 
   test "transaction with explicit begin/rollback/commit call causes rollback" do
