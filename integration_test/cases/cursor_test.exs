@@ -59,6 +59,24 @@ defmodule CursorTest do
       handle_declare: [%Q{}, :encoded, _, :state]] = A.record(agent)
   end
 
+  test "declare replaces query" do
+    stack = [
+      {:ok, :state},
+      {:ok, %Q{state: :replaced}, %C{}, :new_state},
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self()]
+    {:ok, pool} = P.start_link(opts)
+
+    assert P.declare(pool, %Q{state: :old}, [:param], opts) ==
+      {:ok, %Q{state: :replaced}, %C{}}
+
+    assert [
+      connect: [_],
+      handle_declare: [%Q{state: :old}, [:param], _, :state]] = A.record(agent)
+  end
+
   test "fetch decodes result" do
     stack = [
       {:ok, :state},
