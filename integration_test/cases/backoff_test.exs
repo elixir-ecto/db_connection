@@ -5,6 +5,19 @@ defmodule BackoffTest do
   alias TestAgent, as: A
 
   test "backoff after failed initial connection attempt" do
+    agent = spawn_agent_backoff_after_failed()
+    opts = [agent: agent, parent: self(), backoff_min: 10]
+    execute_test_backoff_after_failed(agent, opts)
+  end
+
+  @tag :idle_hibernate
+  test "backoff after failed initial connection attempt with idle_hibernate" do
+    agent = spawn_agent_backoff_after_failed()
+    opts = [agent: agent, parent: self(), backoff_min: 10, idle_hibernate: true]
+    execute_test_backoff_after_failed(agent, opts, true)
+  end
+
+  defp spawn_agent_backoff_after_failed() do
     err = RuntimeError.exception("oops")
     stack = [
       fn(opts) ->
@@ -16,11 +29,18 @@ defmodule BackoffTest do
         {:ok, :state}
       end]
     {:ok, agent} = A.start_link(stack)
+    agent
+  end
 
-    opts = [agent: agent, parent: self(), backoff_min: 10]
+  defp execute_test_backoff_after_failed(agent, opts, test_hibernate? \\ false) do
     {:ok, _} = P.start_link(opts)
     assert_receive {:error, conn}
     assert_receive {:hi, ^conn}
+
+    if test_hibernate? do
+      assert {:current_function, {:erlang, :hibernate, 3}} ==
+        Process.info(conn, :current_function)
+    end
 
     assert [
       connect: [opts2],
