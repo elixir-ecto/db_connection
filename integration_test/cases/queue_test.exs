@@ -58,7 +58,7 @@ defmodule QueueTest do
 
     run = fn() ->
       try do
-        P.run(pool, fn(_) -> flunk("run ran") end, [pool_timeout: 50])
+        P.run(pool, fn(_) -> flunk("run ran") end, [pool_timeout: 50, timeout: 50])
       rescue
         DBConnection.ConnectionError ->
           :error
@@ -165,7 +165,7 @@ defmodule QueueTest do
     {:ok, agent} = A.start_link(stack)
 
     opts = [agent: agent, parent: self(), backoff_start: 30_000,
-      queue_timeout: 10, pool_timeout: 10]
+      queue_timeout: 10, pool_timeout: 10, timeout: 10]
     {:ok, pool} = P.start_link(opts)
 
     P.run(pool, fn(_) ->
