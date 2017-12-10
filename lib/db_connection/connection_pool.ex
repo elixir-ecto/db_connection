@@ -176,7 +176,7 @@ defmodule DBConnection.ConnectionPool do
         {sent, _} = key when sent <= last_sent and status == :ready ->
             ping(key, queue, start_idle(time, last_sent, codel))
         {sent, _} ->
-            {:noreply, {:ready, queue, start_idle(time, sent, codel)}}
+            {:noreply, {status, queue, start_idle(time, sent, codel)}}
         :"$end_of_table" ->
             {:noreply, {status, queue, start_idle(time, time, codel)}}
     end
