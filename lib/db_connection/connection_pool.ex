@@ -1,14 +1,15 @@
 defmodule DBConnection.ConnectionPool do
 
-  alias DBConnection.Ownership.PoolSupervisor
-
   @behaviour DBConnection.Pool
   use GenServer
+  alias DBConnection.ConnectionPool.PoolSupervisor
 
   @timeout 5000
   @queue true
   @queue_target 50
   @queue_interval 1000
+  @idle_interval 1000
+  @holder_key :__info__
 
   ## DBConnection.Pool API
 
@@ -29,273 +30,273 @@ defmodule DBConnection.ConnectionPool do
 
   @doc false
   def checkout(pool, opts) do
+    queue? = Keyword.get(opts, :queue, @queue)
     now = System.monotonic_time(:milliseconds)
-    with pid when node(pid) == node() <- GenServer.whereis(pool) do
-      queue? = Keyword.get(opts, :queue, @queue)
-      # Technically its possible for caller to exit between starting
-      # timer and sending message in call. This leaks the timer but should
-      # be so rare and last a very short time period.
-      deadline = start_deadline(pid, now, opts)
-      try do
-        GenServer.call(pid, {:checkout, now, queue?, deadline}, :infinity)
-      catch
-        :exit, {reason, {:gen_statem, :call, [^pid | _]}} ->
-          exit({reason, {__MODULE__, :checkout, [pool, opts]}})
-      end
-    else
-      nil ->
-        exit({:noproc, {__MODULE__, :checkout, [pool, opts]}})
-      {_, node} ->
-        exit({{:badnode, node}, {__MODULE__, :checkout, [pool, opts]}})
-      pid ->
-        exit({{:badnode, node(pid)}, {__MODULE__, :checkout, [pool, opts]}})
+    timeout = abs_timeout(now, opts)
+    case GenServer.call(pool, {:checkout, now, queue?}, :infinity) do
+      {:ok, holder} ->
+        recv_holder(holder, now, timeout)
+      {:error, _err} = error ->
+        error
     end
   end
 
   @doc false
-  def checkin({pid, {deadline, mon}}, conn, _) do
+  def checkin({pool, ref, deadline, holder}, conn, _) do
     cancel_deadline(deadline)
     now = System.monotonic_time(:milliseconds)
-    GenServer.cast(pid, {:checkin, now, mon, conn})
+    checkin_holder(holder, pool, conn, {:checkin, ref, now})
   end
 
   @doc false
-  def disconnect({pid, {deadline, mon}}, err, conn, _) do
+  def disconnect({pool, ref, deadline, holder}, err, conn, _) do
     cancel_deadline(deadline)
-    GenServer.cast(pid, {:disconnect, mon, err, conn})
+    checkin_holder(holder, pool, conn, {:disconnect, ref, err})
   end
 
   @doc false
-  def stop({pid, {deadline, mon}}, err, conn, _) do
+  def stop({pool, ref, deadline, holder}, err, conn, _) do
     cancel_deadline(deadline)
-    GenServer.cast(pid, {:stop, mon, err, conn})
+    checkin_holder(holder, pool, conn, {:stop, ref, err})
+  end
+
+  ## Holder api
+
+  @doc false
+  def update(pool, ref, mod, state) do
+    holder = start_holder(pool, ref, mod, state)
+    now = System.monotonic_time(:milliseconds)
+    checkin_holder(holder, pool, state, {:checkin, ref, now})
+    holder
   end
 
   ## GenServer api
     
   def init({mod, opts}) do
-    queue = :ets.new(__MODULE__, [:private, :ordered_set])
-    {:ok, pool, _} = PoolSupervisor.start_pool(mod, pool_opts(opts, queue))
+    queue = :ets.new(__MODULE__.Queue, [:private, :ordered_set])
+    {:ok, _} = PoolSupervisor.start_pool(queue, mod, opts)
     target = Keyword.get(opts, :queue_target, @queue_target)
     interval = Keyword.get(opts, :queue_interval, @queue_interval)
-    state = %{queue: queue, pool: pool, target: target, interval: interval,
-              delay: 0, slow: false, next: System.monotonic_time(:milliseconds),
-              client: nil, conn: nil}
-    {:ok, state}
+    idle_interval = Keyword.get(opts, :idle_interval, @idle_interval)
+    now = System.monotonic_time(:milliseconds)
+    codel = %{target: target, interval: interval, delay: 0, slow: false,
+              next: now, poll: nil, idle_interval: idle_interval, idle: nil}
+    codel = start_idle(now, now, start_poll(now, now, codel))
+    {:ok, {:busy, queue, codel}}
   end
 
-  def handle_call({:checkout, time, queue?, deadline}, {pid, _} = from, s) do
-    case s do
-      %{client: nil, conn: {:ok, _pool_ref, _mod, _state} = conn} ->
-        client = {deadline, Process.monitor(pid)}
-        {:reply, put_elem(conn, 1, {self(), client}), %{s | client: client}}
-      %{client: nil, conn: {:error, _} = error} ->
-        cancel_deadline(deadline)
-        {:reply, error, s}
-      %{queue: queue} when queue? == true ->
-        client = {deadline, Process.monitor(pid)}
-        # from is {pid, ref} so order could favor certain pid(s)
-        :ets.insert(queue, {{time, from}, client})
-        {:noreply, s}
-      s when queue? == false ->
+  def handle_call({:checkout, now, queue?}, from, {:busy, queue, _} = busy) do
+    case queue? do
+      true ->
+        {pid, _} = from
+        mon = Process.monitor(pid)
+        :ets.insert(queue, {{now, System.unique_integer()}, from, mon})
+        {:noreply, busy}
+      false ->
         message = "connection not available and queuing is disabled"
         err = DBConnection.ConnectionError.exception(message)
-        {:reply, {:error, err}, s}
+        {:reply, {:error, err}, busy}
     end
   end
 
-  def handle_cast({:checkin, time, mon, state}, s) do
-    case s do
-      %{client: {_deadline, ^mon}, conn: {:ok, _pool_ref, _mod, _state} = conn} ->
-        result = dequeue(time, put_elem(conn, 3, state), s)
-        Process.demonitor(mon, [:flush])
-        result
-      %{} ->
-        {:noreply, s}
+  def handle_call({:checkout, _now, _queue?} = checkout, from, ready) do
+    {:ready, queue, _codel} = ready 
+    case :ets.first(queue) do
+      {_time, holder} = key ->
+        checkout_holder(holder, from, queue) and :ets.delete(queue, key)
+        {:noreply, ready}
+      :"$end_of_table" ->
+        handle_call(checkout, from, put_elem(ready, 0, :busy))
     end
   end
 
-  def handle_cast({:disconnect, mon, err, state}, s) do
-    abort(&DBConnection.Connection.disconnect/4, mon, err, state, s)
+  def handle_info({:"ETS-TRANSFER", holder, pid, queue}, {_, queue, _} = data) do
+    message = "client #{inspect pid} exited"
+    err = DBConnection.ConnectionError.exception(message)
+    disconnect_holder(holder, err)
+    {:noreply, data}
   end
 
-  def handle_cast({:stop, mon, err, state}, s) do
-    abort(&DBConnection.Connection.stop/4, mon, err, state, s)
-  end
-
-  def handle_cast({:connected, time, queue}, %{queue: queue, conn: conn} = s)
-      when conn == nil or elem(conn, 0) == :error do
-    # TODO: connection process must send the state async so that pool never blocks.
-    case DBConnection.Connection.checkout(s.pool, [queue: false, timeout: :infinity]) do
-      {:ok, _pool_ref, _mod, _state} = conn ->
-        dequeue(time, conn, %{s | conn: conn})
-      {:error, _} = error ->
-        error(queue, error)
-        {:noreply, %{s | conn: error}}
+  def handle_info({:"ETS-TRANSFER", holder, _, {msg, queue, extra}}, {_, queue, _} = data) do
+    case msg do
+      :checkin ->
+        handle_checkin(holder, extra, data)
+      :disconnect ->
+        disconnect_holder(holder, extra)
+        {:noreply, data}
+      :stop ->
+        stop_holder(holder, extra)
+        {:noreply, data}
     end
   end
 
-  def handle_info({:DOWN, mon, _, pid, reason}, s) do
-    case s do
-      %{client: {deadline, ^mon}} ->
-        cancel_deadline(deadline)
-        message = "client #{inspect pid} exited with: " <> Exception.format_exit(reason)
-        err = DBConnection.ConnectionError.exception(message)
-        fail(err, s)
-      %{} ->
-        down(mon, s)
-    end
+  def handle_info({:DOWN, mon, _, _, _}, {_, queue, _ } = data) do
+    :ets.match_delete(queue, {:_, {:_, mon}})
+    {:noreply, data}
   end
 
-  def handle_info({:timeout, deadline, {pid, sent, time}}, s) do
-    case s do
-      %{client: {^deadline, mon}} ->
-        Process.demonitor(mon, [:flush])
+  def handle_info({:timeout, deadline, {queue, holder, pid, len}}, {_, queue, _} = data) do
+    # Check that timeout refers to current holder (and not previous)
+    try do
+      :ets.lookup_element(holder, @holder_key, 3)
+    rescue
+      ArgumentError ->
+        :ok
+    else
+      ^deadline ->
+        :ets.update_element(holder, @holder_key, {3, nil})
         message = "client #{inspect pid} timed out because " <>
-            "it queued and checked out the connection for longer than #{time-sent}ms"
+            "it queued and checked out the connection for longer than #{len}ms"
         err = DBConnection.ConnectionError.exception(message)
-        fail(err, s)
-      %{} ->
-        timeout(deadline, sent, time, s)
+        disconnect_holder(holder, err)
+      _ ->
+        :ok
+    end
+    {:noreply, data}
+  end
+
+  def handle_info({:timeout, poll, {time, last_sent}}, {_, _, %{poll: poll}} = data) do
+    {status, queue, codel} = data
+    # If no queue progress since last poll check queue
+    case :ets.first(queue) do
+        {sent, _} when sent <= last_sent and status == :busy ->
+            delay = time - sent
+            timeout(delay, time, queue, start_poll(time, sent, codel))
+        {sent, _} ->
+            {:noreply, {status, queue, start_poll(time, sent, codel)}}
+        :"$end_of_table" ->
+            {:noreply, {status, queue, start_poll(time, time, codel)}}
     end
   end
 
-  defp dequeue(time, conn, s) do
-    case s do
-      %{next: next, delay: delay, target: target} when time > next  ->
-        dequeue_first(time, delay > target, conn, s)
-      %{slow: false, queue: queue, delay: delay} ->
-        dequeue_fast(time, queue, delay, conn, s)
-      %{slow: true, queue: queue, delay: delay, target: target} ->
-        dequeue_slow(time, queue, delay, target * 2, conn, s)
+  def handle_info({:timeout, idle, {time, last_sent}}, {_, _, %{idle: idle}} = data) do
+    {status, queue, codel} = data
+    # If no queue progress since last idle check oldest connection
+    case :ets.first(queue) do
+        {sent, _} = key when sent <= last_sent and status == :ready ->
+            ping(key, queue, start_idle(time, last_sent, codel))
+        {sent, _} ->
+            {:noreply, {:ready, queue, start_idle(time, sent, codel)}}
+        :"$end_of_table" ->
+            {:noreply, {status, queue, start_idle(time, time, codel)}}
     end
   end
 
-  defp dequeue_first(time, slow?, conn, s) do
-    %{queue: queue, interval: interval} = s
+  defp timeout(delay, time, queue, codel) do
+    case codel do
+      %{delay: min_delay, next: next, target: target, interval: interval}
+          when time >= next and min_delay > target ->
+        codel = %{codel | slow: true, delay: delay, next: time + interval}
+        drop_slow(time, target * 2, queue)
+        {:noreply, {:busy, queue, codel}}
+      %{next: next, interval: interval} when time >= next ->
+        codel = %{codel | slow: false, delay: delay, next: time + interval}
+        {:noreply, {:busy, queue, codel}}
+      _ ->
+        {:noreply, {:busy, queue, codel}}
+    end
+  end
+
+  defp drop_slow(time, timeout, queue) do
+    min_sent = time - timeout
+    match = {{:"$1", :_}, :"$2", :"$3"}
+    guards = [{:<, :"$1", min_sent}]
+    select_slow = [{match, guards, [{{:"$1", :"$2", :"$3"}}]}]
+    for {sent, from, mon} <- :ets.select(queue, select_slow) do
+      drop(time, from, mon, sent)
+    end
+    :ets.select_delete(queue, [{match, guards, [true]}])
+  end
+
+  defp ping({_, holder} = key, queue, codel) do
+    [{_, conn, _, _, state}] = :ets.lookup(holder, @holder_key)
+    DBConnection.Connection.ping({conn, holder}, state)
+    :ets.delete(holder)
+    :ets.delete(queue, key)
+    {:noreply, {:ready, queue, codel}}
+  end
+
+  defp handle_checkin(holder, now, {:ready, queue, _} = data) do
+    :ets.insert(queue, {{now, holder}})
+    {:noreply, data}
+  end
+  
+  defp handle_checkin(holder, now, {:busy, queue, codel}) do
+    dequeue(now, holder, queue, codel)
+  end
+ 
+  defp dequeue(time, holder, queue, codel) do
+    case codel do
+      %{next: next, delay: delay, target: target} when time >= next  ->
+        dequeue_first(time, delay > target, holder, queue, codel)
+      %{slow: false} ->
+        dequeue_fast(time, holder, queue, codel)
+      %{slow: true, target: target} ->
+        dequeue_slow(time, target * 2, holder, queue, codel)
+    end
+  end
+
+  defp dequeue_first(time, slow?, holder, queue, codel) do
+    %{interval: interval} = codel
     next = time + interval
     case :ets.first(queue) do
-      {sent, from} = key ->
-        client = go(queue, key, from, conn)
+      {sent, _} = key ->
         delay = time - sent
-        {:noreply, %{s | next: next, delay: delay, slow: slow?, client: client,
-                         conn: conn}}
+        codel =  %{codel | next: next, delay: delay, slow: slow?}
+        pop(key, delay, time, holder, queue, codel)
       :"$end_of_table" ->
-        {:noreply, %{s | next: next, delay: 0, slow: slow?, client: nil,
-                         conn: conn}}
+        codel = %{codel | next: next, delay: 0, slow: slow?}
+        :ets.insert(queue, {{time, holder}})
+        {:noreply, {:ready, queue, codel}}
     end
   end
 
-  defp dequeue_fast(time, queue, delay, conn, s) do
+  defp dequeue_fast(time, holder, queue, codel) do
     case :ets.first(queue) do
-      {sent, from} = key ->
-        delay = min(time - sent, delay)
-        client = go(queue, key, from, conn)
-        {:noreply, %{s | delay: delay, client: client, conn: conn}}
+      {sent, _} = key ->
+        pop(key, time - sent, time, holder, queue, codel)
       :"$end_of_table" ->
-        {:noreply, %{s | delay: 0, client: nil, conn: conn}}
+        :ets.insert(queue, {{time, holder}})
+        {:noreply, {:ready, queue, %{codel | delay: 0}}}
     end     
   end
 
-  defp dequeue_slow(time, queue, min_delay, timeout, conn, s) do
-    with {sent, from} = key <- :ets.first(queue) do
-      case time - sent do
-        delay when delay > timeout ->
-          drop(queue, key, from, delay)
-          dequeue_slow(time, queue, min(delay, min_delay), timeout, conn, s)
-        delay ->
-          client = go(queue, key, from, conn)
-          {:noreply, %{s | delay: min(delay, min_delay), client: client,
-                           conn: conn}}
-        end
-    else
+  defp dequeue_slow(time, timeout, holder, queue, codel) do
+    case :ets.first(queue) do
+      {sent, _} = key when time - sent > timeout ->
+        [{_, from, mon}] = :ets.take(queue, key)
+        drop(time, from, mon, sent)
+        dequeue_slow(time, timeout, holder, queue, codel)
+      {sent, _} = key ->
+        pop(key, time - sent, time, holder, queue, codel)
       :"$end_of_table" ->
-        {:noreply, %{s | delay: 0, client: nil, conn: conn}}
+        :ets.insert(queue, {{time, holder}})
+        {:noreply, {:ready, queue, %{codel | delay: 0}}}
     end
   end
 
-  defp go(queue, key, from, conn) do
-    [{_, client}] = :ets.take(queue, key)
-    GenServer.reply(from, put_elem(conn, 1, {self(), client}))
-    client
+  defp pop(key, delay, time, holder, queue, %{delay: min} = codel) do
+    [{_, from, mon}] = :ets.take(queue, key)
+    case Process.demonitor(mon, [:flush, :info]) and checkout_holder(holder, from, queue) do
+      true when delay < min ->
+        {:noreply, {:busy, queue, %{codel | delay: delay}}}
+      true ->
+        {:noreply, {:busy, queue, codel}}
+      false ->
+        dequeue(time, holder, queue, codel)
+    end
   end
 
-  defp drop(queue, key, from, sojourn) do
+  defp drop(time, from, mon, sent) do
     message = "connection not available " <>
-      "and request was dropped from queue after #{sojourn}ms"
+      "and request was dropped from queue after #{time - sent}ms"
     err = DBConnection.ConnectionError.exception(message)
-    error(queue, key, from, err)
-  end
-  
-  defp error(queue, key, from, err) do
-    [{_, {deadline, mon}}] = :ets.take(queue, key)
     GenServer.reply(from, {:error, err})
     Process.demonitor(mon, [:flush])
-    cancel_deadline(deadline)
-  end
-
-  defp error(queue, err) do
-    case :ets.first(queue) do
-      {_, from} = key ->
-        error(queue, key, from, err)
-      :"$end_of_table" ->
-        :ok
-    end
-  end
-
-  defp abort(fun, mon, err, state, s) do
-    case s do
-      %{client: {_deadline, ^mon}, conn: {:ok, pool_ref, _, _}} ->
-        Process.demonitor(mon, [:flush])
-        fun.(pool_ref, err, state, [])
-        {:noreply, %{s | client: nil, conn: nil}}
-      %{} ->
-        {:noreply, s}
-    end
-  end
-
-  defp fail(err, %{conn: {:ok, pool_ref, _, state}} = s) do
-    DBConnection.Connection.disconnect(pool_ref, err, state, [])
-    {:noreply, %{s | client: nil, conn: nil}}
-  end
-
-  defp down(mon, %{queue: queue} = s) do
-    case :ets.match_object(queue, {:_, {:_, mon}}, 1) do
-      {[{key, {deadline, _}}], _cont} ->
-        cancel_deadline(deadline)
-        :ets.delete(queue, key)
-        {:noreply, s}
-      :"$end_of_table"->
-        {:noreply, s}
-    end
-  end
-
-  defp timeout(deadline, sent, time, %{queue: queue} = s) do
-    case :ets.match_object(queue, {{sent, :_}, {deadline, :_}}) do
-      [{{_, from} = key, {_, mon}}] ->
-        message = "connection not available " <>
-          "and request was dropped from queue after #{time-sent}ms"
-        err = DBConnection.ConnectionError.exception(message)
-        GenServer.reply(from, {:error, err})
-        Process.demonitor(mon, [:flush])
-        :ets.delete(queue, key)
-        {:noreply, s}
-      [] ->
-        {:noreply, s}
-    end
   end
 
   defp start_opts(opts) do
     Keyword.take(opts, [:name, :spawn_opt])
-  end
-
-  defp start_deadline(pid, now, opts) do
-    case abs_timeout(now, opts) do
-      nil ->
-        nil
-      timeout ->
-        :erlang.start_timer(timeout, pid, {self(), now, timeout}, [abs: true])
-    end
   end
 
   defp abs_timeout(now, opts) do
@@ -307,35 +308,102 @@ defmodule DBConnection.ConnectionPool do
     end
   end
 
+  defp start_deadline(nil, _, _, _, _) do
+    nil
+  end
+  defp start_deadline(timeout, pid, ref, holder, start) do
+    deadline = :erlang.start_timer(timeout, pid, {ref, holder, self(), timeout-start}, [abs: true])
+    :ets.update_element(holder, @holder_key, {3, deadline})
+    deadline
+  end
+
+  defp cancel_deadline(nil) do
+    :ok
+  end
+
   defp cancel_deadline(deadline) do
     :erlang.cancel_timer(deadline, [async: true, info: false])
   end
 
-  defp pool_opts(opts, ref) do
-    # TODO: Use a pool of size > 1
-      opts
-      |> after_connect_hook(ref)
-      |> Keyword.put(:pool, DBConnection.Connection)
-      |> Keyword.put(:sync_connect, false)
-      |> Keyword.put(:idle, :passive)
+  defp start_poll(now, last_sent, %{interval: interval} = codel) do
+    timeout = now + interval
+    poll = :erlang.start_timer(timeout, self(), {timeout, last_sent}, [abs: true])
+    %{codel | poll: poll}
   end
 
-  defp after_connect_hook(opts, ref) do
-    Keyword.update(opts, :after_connect,
-      {__MODULE__, :after_connect, [self(), ref]}, &{__MODULE__, :after_connect, [self(), ref, &1]})
+  defp start_idle(now, last_sent, %{idle_interval: interval} = codel) do
+    timeout = now + interval
+    idle = :erlang.start_timer(timeout, self(), {timeout, last_sent}, [abs: true])
+    %{codel | idle: idle}
   end
 
-  def after_connect(conn, pool, ref, fun \\ fn _ -> :ok end) do
-    res = apply_fun(fun, conn)
-    GenServer.cast(pool, {:connected, System.monotonic_time(:milliseconds), ref})
-    res
+  defp start_holder(pool, ref, mod, state) do
+    # Insert before setting heir so that pool can't receive empty table
+    holder = :ets.new(__MODULE__.Holder, [:public, :ordered_set])
+    :true = :ets.insert_new(holder, {@holder_key, self(), nil, mod, state})
+    :ets.setopts(holder, {:heir, pool, ref})
+    holder
   end
 
-  defp apply_fun(fun, conn) when is_function(fun, 1) do
-    fun.(conn)
+  defp checkout_holder(holder, {pid, _} = from, ref) do
+    try do
+      :ets.give_away(holder, pid, ref)
+      GenServer.reply(from, {:ok, holder})
+      true
+    rescue
+      ArgumentError ->
+        # Likely the local pid died so won't receive but possible foreign pid
+        msg = "cannot use connection pool on foreign node #{node()}"
+        err = DBConnection.ConnectionError.exception(msg)
+        GenServer.reply(from, {:error, err})
+        false
+    end
   end
-  defp apply_fun({mod, fun, args}, conn) do
-    apply(mod, fun, [conn | args])
+
+  defp recv_holder(holder, start, timeout) do
+    receive do
+      {:"ETS-TRANSFER", ^holder, pool, ref} ->
+        deadline = start_deadline(timeout, pool, ref, holder, start)
+        try do
+          :ets.lookup(holder, @holder_key)
+        rescue
+          ArgumentError ->
+            # Deadline could hit and by handled pool before using connectoon
+            msg = "connection not available because deadline reached while in queue"
+            {:error, DBConnection.ConnectionError.exception(msg)}
+        else
+           [{_, _, _, mod, state}] ->
+            {:ok, {pool, ref, deadline, holder}, mod, state}
+        end
+    end
+  end
+
+  defp checkin_holder(holder, pool, state, msg) do
+    try do
+      :ets.update_element(holder, @holder_key, [{3, nil}, {5, state}])
+      :ets.give_away(holder, pool, msg)
+    rescue
+      ArgumentError ->
+        :ok
+    else
+      true ->
+        :ok
+    end
+  end
+
+  defp disconnect_holder(holder, err) do
+    delete_holder(holder, &DBConnection.Connection.disconnect/4, err)
+  end
+
+  defp stop_holder(holder, err) do
+    delete_holder(holder, &DBConnection.Connection.stop/4, err)
+  end
+
+  defp delete_holder(holder, stop, err) do
+    [{_, conn, deadline, _, state}] = :ets.lookup(holder, @holder_key)
+    :ets.delete(holder)
+    cancel_deadline(deadline)
+    stop.({conn, holder}, err, state, [])
   end
 end
     

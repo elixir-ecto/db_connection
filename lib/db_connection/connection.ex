@@ -17,6 +17,7 @@ defmodule DBConnection.Connection do
   use Connection
   require Logger
   alias DBConnection.Backoff
+  alias DBConnection.ConnectionPool
 
   @pool_timeout  5_000
   @timeout       15_000
@@ -83,6 +84,11 @@ defmodule DBConnection.Connection do
     end
   end
 
+  @doc false
+  def ping({pid, ref}, state) do
+    Connection.cast(pid, {:ping, ref, state})
+  end
+
   ## Internal API
 
   @doc false
@@ -96,19 +102,26 @@ defmodule DBConnection.Connection do
     Supervisor.Spec.worker(__MODULE__, [mod, opts, mode], child_opts)
   end
 
+  @doc false
+  def child_spec(mod, opts, mode, info, child_opts) do
+    Supervisor.Spec.worker(__MODULE__, [mod, opts, mode, info], child_opts)
+  end
+
   ## Connection API
 
   @doc false
   def init({mod, opts, mode, info}) do
-    queue         = if mode == :sojourn, do: :broker, else: :queue.new()
+    queue         = if mode in [:connection, :poolboy], do: :queue.new(), else: mode
+    idle          = if mode in [:connection, :poolboy], do: get_idle(opts), else: :passive
     broker        = if mode == :sojourn, do: elem(info, 0)
     regulator     = if mode == :sojourn, do: elem(info, 1)
-    idle          = if mode == :sojourn, do: :passive, else: get_idle(opts)
     after_timeout = if mode == :poolboy, do: :stop, else: :backoff
+    pool          = if mode == :connection_pool, do: elem(info, 0)
+    tag           = if mode == :connection_pool, do: elem(info, 1)
 
     s = %{mod: mod, opts: opts, state: nil, client: :closed, broker: broker,
-          regulator: regulator, lock: nil, queue: queue, timer: nil,
-          backoff: Backoff.new(opts),
+          regulator: regulator, lock: nil, pool: pool, tag: tag, queue: queue,
+          timer: nil, backoff: Backoff.new(opts),
           after_connect: Keyword.get(opts, :after_connect),
           after_connect_timeout: Keyword.get(opts, :after_connect_timeout,
                                              @timeout), idle: idle,
@@ -191,7 +204,7 @@ defmodule DBConnection.Connection do
   @doc false
   def handle_call({:checkout, ref, queue?, timeout}, {pid, _} = from, s) do
     case s do
-      %{queue: :broker} ->
+      %{queue: mode} when is_atom(mode) ->
         exit(:bad_checkout)
       %{client: nil, idle: :passive, mod: mod, state: state} ->
         Connection.reply(from, {:ok, {self(), ref}, mod, state})
@@ -229,6 +242,16 @@ defmodule DBConnection.Connection do
   end
 
   @doc false
+  def handle_cast({:ping, ref, state}, %{client: {ref, :pool}} = s) do
+    %{mod: mod} = s
+    case apply(mod, :ping, [state]) do
+      {:ok, state} ->
+        pool_update(state, s)
+      {:disconnect, err, state} ->
+        {:disconnect, {:log, err}, %{s | state: state}}
+    end
+  end
+
   def handle_cast({:checkin, ref, state}, %{client: {ref, _}} = s) do
     handle_next(state, s)
   end
@@ -244,7 +267,7 @@ defmodule DBConnection.Connection do
     {:stop, {err, stack}, %{s | state: state}}
   end
 
-  def handle_cast({:cancel, _}, %{queue: :broker}) do
+  def handle_cast({:cancel, _}, %{queue: mode}) when is_atom(mode) do
     exit(:bad_cancel)
   end
   def handle_cast({:cancel, ref}, %{client: {ref, _}, state: state} = s) do
@@ -293,7 +316,9 @@ defmodule DBConnection.Connection do
   def handle_cast({:connected, ref}, %{client: {ref, :connect}} = s) do
     %{mod: mod, state: state, queue: queue, broker: broker} = s
     case apply(mod, :checkout, [state]) do
-      {:ok, state} when queue == :broker ->
+      {:ok, state} when queue == :connection_pool ->
+        pool_update(state, s)
+      {:ok, state} when queue == :sojourn ->
         info = {self(), mod, state}
         {:await, ^ref, _} = :sbroker.async_ask_r(broker, info, {self(), ref})
         {:noreply,  %{s | client: {ref, :broker}, state: state}}
@@ -320,7 +345,8 @@ defmodule DBConnection.Connection do
     err = DBConnection.ConnectionError.exception(message)
     {:disconnect, {down_log(reason), err}, %{s | client: {ref, nil}}}
   end
-  def handle_info({:DOWN, _, :process, _, _} = msg, %{queue: :broker} = s) do
+  def handle_info({:DOWN, _, :process, _, _} = msg, %{queue: mode} = s)
+      when is_atom(mode) do
     do_handle_info(msg, s)
   end
   def handle_info({:DOWN, ref, :process, _, _} = msg, %{queue: queue} = s) do
@@ -410,7 +436,7 @@ defmodule DBConnection.Connection do
   defp start_opts(:connection, opts) do
     Keyword.take(opts, [:debug, :name, :timeout, :spawn_opt])
   end
-  defp start_opts(mode, opts) when mode in [:poolboy, :sojourn] do
+  defp start_opts(mode, opts) when mode in [:poolboy, :sojourn, :connection_pool] do
     Keyword.take(opts, [:debug, :spawn_opt])
   end
 
@@ -460,7 +486,10 @@ defmodule DBConnection.Connection do
     demonitor(client)
     handle_next(state, %{s | client: nil, backoff: backoff})
   end
-  defp handle_next(state, %{queue: :broker} = s) do
+  defp handle_next(state, %{queue: :connection_pool} = s) do
+    pool_update(state, s)
+  end
+  defp handle_next(state, %{queue: :sojourn} = s) do
     %{client: client, timer: timer, mod: mod, broker: broker} = s
     demonitor(client)
     cancel_timer(timer)
@@ -600,7 +629,9 @@ defmodule DBConnection.Connection do
     end
   end
 
-  defp clear_queue(:broker), do: :broker
+  defp clear_queue(queue) when is_atom(queue) do
+    queue
+  end
   defp clear_queue(queue) do
     clear =
       fn({{_, mon}, _, from}) ->
@@ -617,6 +648,11 @@ defmodule DBConnection.Connection do
   defp done_lock(regulator, lock) do
     {:stop, _} = :sregulator.done(regulator, lock, :infinity)
     :ok
+  end
+
+  defp pool_update(state, %{pool: pool, tag: tag, mod: mod} = s) do
+    ref = ConnectionPool.update(pool, tag, mod, state)
+    {:noreply, %{s | client: {ref, :pool}, state: state}, :hibernate}
   end
 
   defp normal_status(mod, pdict, state) do
