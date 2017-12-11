@@ -9,6 +9,7 @@ defmodule DBConnection.ConnectionPool do
   @queue_target 50
   @queue_interval 1000
   @idle_interval 1000
+  @time_unit 1000
   @holder_key :__info__
 
   ## DBConnection.Pool API
@@ -31,7 +32,7 @@ defmodule DBConnection.ConnectionPool do
   @doc false
   def checkout(pool, opts) do
     queue? = Keyword.get(opts, :queue, @queue)
-    now = System.monotonic_time(:milliseconds)
+    now = System.monotonic_time(@time_unit)
     timeout = abs_timeout(now, opts)
     case GenServer.call(pool, {:checkout, now, queue?}, :infinity) do
       {:ok, holder} ->
@@ -44,7 +45,7 @@ defmodule DBConnection.ConnectionPool do
   @doc false
   def checkin({pool, ref, deadline, holder}, conn, _) do
     cancel_deadline(deadline)
-    now = System.monotonic_time(:milliseconds)
+    now = System.monotonic_time(@time_unit)
     checkin_holder(holder, pool, conn, {:checkin, ref, now})
   end
 
@@ -65,7 +66,7 @@ defmodule DBConnection.ConnectionPool do
   @doc false
   def update(pool, ref, mod, state) do
     holder = start_holder(pool, ref, mod, state)
-    now = System.monotonic_time(:milliseconds)
+    now = System.monotonic_time(@time_unit)
     checkin_holder(holder, pool, state, {:checkin, ref, now})
     holder
   end
@@ -78,7 +79,7 @@ defmodule DBConnection.ConnectionPool do
     target = Keyword.get(opts, :queue_target, @queue_target)
     interval = Keyword.get(opts, :queue_interval, @queue_interval)
     idle_interval = Keyword.get(opts, :idle_interval, @idle_interval)
-    now = System.monotonic_time(:milliseconds)
+    now = System.monotonic_time(@time_unit)
     codel = %{target: target, interval: interval, delay: 0, slow: false,
               next: now, poll: nil, idle_interval: idle_interval, idle: nil}
     codel = start_idle(now, now, start_poll(now, now, codel))
