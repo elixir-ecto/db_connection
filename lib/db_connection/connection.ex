@@ -131,7 +131,17 @@ defmodule DBConnection.Connection do
     %{mod: mod, opts: opts, backoff: backoff, after_connect: after_connect,
       idle: idle, idle_timeout: idle_timeout, regulator: regulator,
       lock: lock} = s
-    case apply(mod, :connect, [opts]) do
+    try do
+      apply(mod, :connect, [opts])
+    rescue e ->
+      stack = System.stacktrace()
+      msg = """
+      Connect raised a #{inspect e.__struct__} error. The parameters passed in are hidden, as
+      they may contain sensitive data such as database credentials.
+      """
+
+      reraise RuntimeError.exception(msg), stack
+    else
       {:ok, state} when after_connect != nil ->
         ref = make_ref()
         Connection.cast(self(), {:after_connect, ref})
