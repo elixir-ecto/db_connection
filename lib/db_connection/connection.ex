@@ -134,7 +134,12 @@ defmodule DBConnection.Connection do
     try do
       apply(mod, :connect, [opts])
     rescue e ->
-      stack = System.stacktrace()
+      stack =
+        case System.stacktrace() do
+          [{_, _, arity, _} | _rest] = stacktrace when is_integer(arity) -> stacktrace
+          [{a, b, params, c} | rest] when is_list(params) ->
+            [{a, b, length(params), c} | rest]
+        end
       msg = """
       Connect raised a #{inspect e.__struct__} error. The exception details are hidden, as
       they may contain sensitive data such as database credentials.
