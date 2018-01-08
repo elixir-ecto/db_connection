@@ -136,7 +136,7 @@ defmodule DBConnection.Connection do
     rescue e ->
       stack = System.stacktrace()
       msg = """
-      Connect raised a #{inspect e.__struct__} error. The parameters passed in are hidden, as
+      Connect raised a #{inspect e.__struct__} error. The exception details are hidden, as
       they may contain sensitive data such as database credentials.
       """
 
