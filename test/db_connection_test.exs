@@ -85,7 +85,7 @@ defmodule DBConnectionTest do
     Process.flag(:trap_exit, true)
 
     opts = [agent: agent, sync_connect: true]
-    assert {:error, {%RuntimeError{message: "oops"}, [_|_]}} =
+    assert {:error, {%RuntimeError{}, [_|_]}} =
       C.start_link(opts)
 
     assert A.record(agent) == [{:connect, [opts]}]
