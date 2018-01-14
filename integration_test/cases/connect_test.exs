@@ -59,6 +59,36 @@ defmodule ConnectTest do
     assert_receive {:EXIT, _, {%RuntimeError{}, [{_, _, 1, _} | _rest]}}
   end
 
+  test "lazy configure connection with module function and args" do
+    stack = [
+      fn(opts) ->
+        send(opts[:parent], {:hello, opts[:ref]})
+        {:ok, :state}
+      end]
+    {:ok, agent} = A.start_link(stack)
+    ref = make_ref()
+    extra_opts = [parent: self(), ref: ref]
+    opts = [agent: agent, configure: {Keyword, :merge, [extra_opts]}]
+    {:ok, _} = P.start_link(opts)
+
+    assert_receive {:hello, ^ref}
+  end
+
+  test "lazy configure connection with fun" do
+    stack = [
+      fn(opts) ->
+        send(opts[:parent], {:hello, opts[:ref]})
+        {:ok, :state}
+      end]
+    {:ok, agent} = A.start_link(stack)
+    ref = make_ref()
+    extra_opts = [parent: self(), ref: ref]
+    opts = [agent: agent, configure: &Keyword.merge(&1, extra_opts)]
+    {:ok, _} = P.start_link(opts)
+
+    assert_receive {:hello, ^ref}
+  end
+
   test "backoff after disconnect and failed connection attempt" do
     err = RuntimeError.exception("oops")
     stack = [
