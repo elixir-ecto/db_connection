@@ -130,6 +130,42 @@ defmodule ManagerTest do
     assert_checked_out pool, [caller: parent]
   end
 
+  test "automatically allow caller process with caller option" do
+    {:ok, pool} = start_pool()
+    parent = self()
+
+    assert Ownership.ownership_mode(pool, :manual, [])
+    Task.start_link fn ->
+      refute_checked_out pool, [caller: parent]
+      send parent, :checkin
+    end
+    assert_receive :checkin
+
+    assert Ownership.ownership_checkout(pool, [])
+    :ok = Ownership.ownership_mode(pool, {:shared, parent}, [])
+    Task.start_link fn ->
+      untracked = self()
+      Task.start_link fn ->
+        assert_checked_out pool, [caller: untracked]
+        send untracked, :checkin
+      end
+      assert_receive :checkin
+      assert_checked_out pool
+      send parent, :checkin
+    end
+    assert_receive :checkin
+    Ownership.ownership_checkin(pool, [])
+
+    assert Ownership.ownership_mode(pool, :auto, [])
+    Task.start_link fn ->
+      assert_checked_out pool, [caller: parent]
+      send parent, :checkin
+    end
+    assert_receive :checkin
+
+    assert_checked_out pool, [caller: parent]
+  end
+
   test "uses ETS when the pool is named (with pid access)" do
     {:ok, pool} = start_pool(name: :ownership_pid_access)
     parent = self()
@@ -256,9 +292,9 @@ defmodule ManagerTest do
      assert P.run(pool, fn _ -> :ok end, opts)
    end
 
-  defp refute_checked_out(pool) do
+  defp refute_checked_out(pool, opts \\ []) do
     assert_raise DBConnection.OwnershipError, ~r/cannot find ownership process/, fn ->
-      P.run(pool, fn _ -> :ok end)
+      P.run(pool, fn _ -> :ok end, opts)
     end
   end
 end

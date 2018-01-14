@@ -110,8 +110,6 @@ defmodule DBConnection.Ownership.Manager do
         {:reply, {:ok, proxy}, state}
       {:allowed, _, proxy} ->
         {:reply, {:ok, proxy}, state}
-      :not_found when caller != pid ->
-        {:reply, :not_found, state}
       :not_found when mode == :manual ->
         {:reply, :not_found, state}
       :not_found when mode == :auto ->
