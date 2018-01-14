@@ -11,6 +11,8 @@ defimpl Enumerable, for: DBConnection.Stream do
 
   def member?(_, _), do: {:error, __MODULE__}
 
+  def slice(_), do: {:error, __MODULE__}
+
   def reduce(stream, acc, fun), do: DBConnection.reduce(stream, acc, fun)
 end
 
@@ -26,6 +28,8 @@ defimpl Enumerable, for: DBConnection.PrepareStream do
   def count(_), do: {:error, __MODULE__}
 
   def member?(_, _), do: {:error, __MODULE__}
+
+  def slice(_), do: {:error, __MODULE__}
 
   def reduce(stream, acc, fun), do: DBConnection.reduce(stream, acc, fun)
 end
@@ -579,7 +583,7 @@ defmodule DBConnection do
       {:ok, query, result} = DBConnection.prepare_execute(conn, query, [1])
       {:ok, result2}       = DBConnection.execute(conn, query, [2])
       :ok                  = DBConnection.close(conn, query)
-   """
+  """
   @spec prepare_execute(conn, query, params, Keyword.t) ::
     {:ok, query, result} |
     {:error, Exception.t}
