@@ -265,7 +265,7 @@ defmodule DBConnection do
     {:error | :disconnect, Exception.t, new_state :: any}
 
   @doc """
-  Deallocate a cursor declared by `handle_declare/4' with the database. Return
+  Deallocate a cursor declared by `handle_declare/4` with the database. Return
   `{:ok, result, state}` on success and to continue,
   `{:error, exception, state}` to return an error and continue, or
   `{:disconnect, exception, state}` to return an error and disconnect.
@@ -470,7 +470,7 @@ defmodule DBConnection do
     random exponential (default: `:rand_exp`)
     * `:configure` - A function to run before every connect attempt to
     dynamically configure the options, either a 1-arity fun,
-    `{module, function, args} with options prepended to `args` or `nil` where
+    `{module, function, args}` with options prepended to `args` or `nil` where
     only returned options are passed to connect callback (default: `nil`)
     * `:after_connect` - A function to run on connect using `run/3`, either
     a 1-arity fun, `{module, function, args}` with `DBConnection.t` prepended
@@ -855,7 +855,7 @@ defmodule DBConnection do
 
   The pool and connection module may support other options. All options
   are passed to `handle_prepare/3, `handle_close/3, `handle_declare/4`,
-  `handle_first/4`, `handle_next/4' and `handle_deallocate/4`.
+  `handle_first/4`, `handle_next/4` and `handle_deallocate/4`.
 
   ### Example
 
@@ -890,7 +890,7 @@ defmodule DBConnection do
     prepended to `args` or `nil`. See `DBConnection.LogEntry` (default: `nil`)
 
   The pool and connection module may support other options. All options
-  are passed to `handle_declare/4`, `handle_first/4` , `handle_next/4 and
+  are passed to `handle_declare/4`, `handle_first/4` , `handle_next/4` and
   `handle_deallocate/4`.
 
   ### Example
