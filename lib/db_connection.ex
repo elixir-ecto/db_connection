@@ -464,6 +464,10 @@ defmodule DBConnection do
     * `:backoff_type` - The backoff strategy, `:stop` for no backoff and
     to stop, `:exp` for exponential, `:rand` for random and `:rand_exp` for
     random exponential (default: `:rand_exp`)
+    * `:configure` - A function to run before every connect attempt to
+    dynamically configure the options, either a 1-arity fun,
+    `{module, function, args} with options prepended to `args` or `nil` where
+    only returned options are passed to connect callback (default: `nil`)
     * `:after_connect` - A function to run on connect using `run/3`, either
     a 1-arity fun, `{module, function, args}` with `DBConnection.t` prepended
     to `args` or `nil` (default: `nil`)

@@ -132,7 +132,7 @@ defmodule DBConnection.Connection do
       idle: idle, idle_timeout: idle_timeout, regulator: regulator,
       lock: lock} = s
     try do
-      apply(mod, :connect, [opts])
+      apply(mod, :connect, [connect_opts(opts)])
     rescue e ->
       stack =
         case System.stacktrace() do
@@ -427,6 +427,17 @@ defmodule DBConnection.Connection do
   end
   defp start_opts(mode, opts) when mode in [:poolboy, :sojourn] do
     Keyword.take(opts, [:debug, :spawn_opt])
+  end
+
+  defp connect_opts(opts) do
+    case Keyword.get(opts, :configure) do
+      {mod, fun, args} ->
+        apply(mod, fun, [opts | args])
+      fun when is_function(fun, 1) ->
+        fun.(opts)
+      nil ->
+        opts
+    end
   end
 
   defp cancel(pool, ref) do
