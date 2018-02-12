@@ -158,7 +158,7 @@ defmodule DBConnection.ConnectionPool do
             timeout(delay, time, queue, start_poll(time, sent, codel))
         {sent, _, _} ->
             {:noreply, {status, queue, start_poll(time, sent, codel)}}
-        :"$end_of_table" ->
+        _ ->
             {:noreply, {status, queue, start_poll(time, time, codel)}}
     end
   end
@@ -172,7 +172,7 @@ defmodule DBConnection.ConnectionPool do
             ping(holder, queue, start_idle(time, last_sent, codel))
         {sent, _} ->
             {:noreply, {status, queue, start_idle(time, sent, codel)}}
-        :"$end_of_table" ->
+        _ ->
             {:noreply, {status, queue, start_idle(time, time, codel)}}
     end
   end
