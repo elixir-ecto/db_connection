@@ -89,9 +89,7 @@ defmodule DBConnection.ConnectionPool do
   def handle_call({:checkout, now, queue?}, from, {:busy, queue, _} = busy) do
     case queue? do
       true ->
-        {pid, _} = from
-        mon = Process.monitor(pid)
-        :ets.insert(queue, {{now, System.unique_integer()}, from, mon})
+        :ets.insert(queue, {{now, System.unique_integer(), from}})
         {:noreply, busy}
       false ->
         message = "connection not available and queuing is disabled"
@@ -131,11 +129,6 @@ defmodule DBConnection.ConnectionPool do
     end
   end
 
-  def handle_info({:DOWN, mon, _, _, _}, {_, queue, _ } = data) do
-    :ets.match_delete(queue, {:_, {:_, mon}})
-    {:noreply, data}
-  end
-
   def handle_info({:timeout, deadline, {queue, holder, pid, len}}, {_, queue, _} = data) do
     # Check that timeout refers to current holder (and not previous)
     try do
@@ -160,10 +153,10 @@ defmodule DBConnection.ConnectionPool do
     {status, queue, codel} = data
     # If no queue progress since last poll check queue
     case :ets.first(queue) do
-        {sent, _} when sent <= last_sent and status == :busy ->
+        {sent, _, _} when sent <= last_sent and status == :busy ->
             delay = time - sent
             timeout(delay, time, queue, start_poll(time, sent, codel))
-        {sent, _} ->
+        {sent, _, _} ->
             {:noreply, {status, queue, start_poll(time, sent, codel)}}
         :"$end_of_table" ->
             {:noreply, {status, queue, start_poll(time, time, codel)}}
@@ -174,8 +167,9 @@ defmodule DBConnection.ConnectionPool do
     {status, queue, codel} = data
     # If no queue progress since last idle check oldest connection
     case :ets.first(queue) do
-        {sent, _} = key when sent <= last_sent and status == :ready ->
-            ping(key, queue, start_idle(time, last_sent, codel))
+        {sent, holder} = key when sent <= last_sent and status == :ready ->
+            :ets.delete(queue, key)
+            ping(holder, queue, start_idle(time, last_sent, codel))
         {sent, _} ->
             {:noreply, {status, queue, start_idle(time, sent, codel)}}
         :"$end_of_table" ->
@@ -200,20 +194,19 @@ defmodule DBConnection.ConnectionPool do
 
   defp drop_slow(time, timeout, queue) do
     min_sent = time - timeout
-    match = {{:"$1", :_}, :"$2", :"$3"}
+    match = {{:"$1", :_, :"$2"}}
     guards = [{:<, :"$1", min_sent}]
-    select_slow = [{match, guards, [{{:"$1", :"$2", :"$3"}}]}]
-    for {sent, from, mon} <- :ets.select(queue, select_slow) do
-      drop(time, from, mon, sent)
+    select_slow = [{match, guards, [{{:"$1", :"$2"}}]}]
+    for {sent, from} <- :ets.select(queue, select_slow) do
+      drop(time - sent, from)
     end
     :ets.select_delete(queue, [{match, guards, [true]}])
   end
 
-  defp ping({_, holder} = key, queue, codel) do
+  defp ping(holder, queue, codel) do
     [{_, conn, _, _, state}] = :ets.lookup(holder, @holder_key)
     DBConnection.Connection.ping({conn, holder}, state)
     :ets.delete(holder)
-    :ets.delete(queue, key)
     {:noreply, {:ready, queue, codel}}
   end
 
@@ -241,10 +234,11 @@ defmodule DBConnection.ConnectionPool do
     %{interval: interval} = codel
     next = time + interval
     case :ets.first(queue) do
-      {sent, _} = key ->
+      {sent, _, from} = key ->
+        :ets.delete(queue, key)
         delay = time - sent
         codel =  %{codel | next: next, delay: delay, slow: slow?}
-        pop(key, delay, time, holder, queue, codel)
+        go(delay, from, time, holder, queue, codel)
       :"$end_of_table" ->
         codel = %{codel | next: next, delay: 0, slow: slow?}
         :ets.insert(queue, {{time, holder}})
@@ -254,8 +248,9 @@ defmodule DBConnection.ConnectionPool do
 
   defp dequeue_fast(time, holder, queue, codel) do
     case :ets.first(queue) do
-      {sent, _} = key ->
-        pop(key, time - sent, time, holder, queue, codel)
+      {sent, _, from} = key ->
+        :ets.delete(queue, key)
+        go(time - sent, from, time, holder, queue, codel)
       :"$end_of_table" ->
         :ets.insert(queue, {{time, holder}})
         {:noreply, {:ready, queue, %{codel | delay: 0}}}
@@ -264,21 +259,21 @@ defmodule DBConnection.ConnectionPool do
 
   defp dequeue_slow(time, timeout, holder, queue, codel) do
     case :ets.first(queue) do
-      {sent, _} = key when time - sent > timeout ->
-        [{_, from, mon}] = :ets.take(queue, key)
-        drop(time, from, mon, sent)
+      {sent, _, from} = key when time - sent > timeout ->
+        :ets.delete(queue, key)
+        drop(time - sent, from)
         dequeue_slow(time, timeout, holder, queue, codel)
-      {sent, _} = key ->
-        pop(key, time - sent, time, holder, queue, codel)
+      {sent, _, from} = key ->
+        :ets.delete(queue, key)
+        go(time - sent, from, time, holder, queue, codel)
       :"$end_of_table" ->
         :ets.insert(queue, {{time, holder}})
         {:noreply, {:ready, queue, %{codel | delay: 0}}}
     end
   end
 
-  defp pop(key, delay, time, holder, queue, %{delay: min} = codel) do
-    [{_, from, mon}] = :ets.take(queue, key)
-    case Process.demonitor(mon, [:flush, :info]) and checkout_holder(holder, from, queue) do
+  defp go(delay, from, time, holder, queue, %{delay: min} = codel) do
+    case checkout_holder(holder, from, queue) do
       true when delay < min ->
         {:noreply, {:busy, queue, %{codel | delay: delay}}}
       true ->
@@ -288,12 +283,11 @@ defmodule DBConnection.ConnectionPool do
     end
   end
 
-  defp drop(time, from, mon, sent) do
+  defp drop(delay, from) do
     message = "connection not available " <>
-      "and request was dropped from queue after #{time - sent}ms"
+      "and request was dropped from queue after #{delay}ms"
     err = DBConnection.ConnectionError.exception(message)
     GenServer.reply(from, {:error, err})
-    Process.demonitor(mon, [:flush])
   end
 
   defp start_opts(opts) do
