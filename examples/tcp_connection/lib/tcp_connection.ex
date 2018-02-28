@@ -40,7 +40,7 @@ defmodule TCPConnection do
   end
 
   def connect(opts) do
-    host        = Keyword.fetch!(opts, :hostname) |> String.to_char_list()
+    host        = Keyword.fetch!(opts, :hostname) |> String.to_charlist()
     port        = Keyword.fetch!(opts, :port)
     socket_opts = Keyword.get(opts, :socket_options, [])
     timeout     = Keyword.get(opts, :connect_timeout, 5_000)
