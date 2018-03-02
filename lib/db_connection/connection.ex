@@ -163,7 +163,7 @@ defmodule DBConnection.Connection do
         raise err
       {:error, err} ->
         Logger.error(fn() ->
-          [inspect(mod), ?\s, ?(, inspect(self()), ") failed to connect: " |
+          [inspect(mod), ?\s, " failed to connect: " |
             Exception.format_banner(:error, err, [])]
         end)
         done_lock(regulator, lock)
@@ -179,8 +179,8 @@ defmodule DBConnection.Connection do
         :ok
       :log ->
         _ = Logger.error(fn() ->
-          [inspect(mod), ?\s, ?(, inspect(self()),
-            ") disconnected: " | Exception.format_banner(:error, err, [])]
+          [inspect(mod), ?\s,
+            " disconnected: " | Exception.format_banner(:error, err, [])]
         end)
         :ok
     end
