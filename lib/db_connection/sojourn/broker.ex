@@ -27,7 +27,7 @@ defmodule DBConnection.Sojourn.Broker do
     5%-10% of the `:protector_interval` for the queue to feel responsive,
     (default: `div(protector_interval, 10)`)
     * `:protector_size` - The maximum number of requests the protector will
-    try to allow in the message queue (default: `64`)
+    try to allow in the message queue (default: `128`)
     * `:protector_min` - The minimum number of requests in the message queue
     before the protector will drop requests (default: `0`)
 
