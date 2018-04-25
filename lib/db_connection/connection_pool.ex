@@ -34,22 +34,9 @@ defmodule DBConnection.ConnectionPool do
     queue? = Keyword.get(opts, :queue, @queue)
     now = System.monotonic_time(@time_unit)
     timeout = abs_timeout(now, opts)
-    with {:ok, pid} <- whereis_pool(pool),
-         {:ok, owner, ref, holder} <- checkout(pid, queue?, now) do
-      deadline = start_deadline(timeout, owner, ref, holder, now)
-      try do
-        :ets.lookup(holder, @holder_key)
-      rescue
-        ArgumentError ->
-          # Deadline could hit and by handled pool before using connection
-          msg = "connection not available because deadline reached while in queue"
-          {:error, DBConnection.ConnectionError.exception(msg)}
-      else
-        [{_, _, _, mod, state}] ->
-          pool_ref = {owner, ref, deadline, holder}
-          {:ok, pool_ref, mod, state}
-      end
-    else
+    case checkout(pool, queue?, now, timeout) do
+      {:ok, _, _, _} = ok ->
+        ok
       {:error, _} = error ->
         error
       {:exit, reason} ->
@@ -366,10 +353,10 @@ defmodule DBConnection.ConnectionPool do
     end
   end
 
-  defp whereis_pool(pool) do
+  defp checkout(pool, queue?, start, timeout) do
     case GenServer.whereis(pool) do
       pid when node(pid) == node() ->
-        {:ok, pid}
+        checkout_call(pid, queue?, start, timeout)
       pid when node(pid) != node() ->
         {:exit, {:badnode, node(pid)}}
       {_name, node} ->
@@ -379,18 +366,34 @@ defmodule DBConnection.ConnectionPool do
     end
   end
 
-  defp checkout(pid, queue?, start) do
+  defp checkout_call(pid, queue?, start, timeout) do
     mref = Process.monitor(pid)
     send(pid, {:db_connection, {self(), mref}, {:checkout, start, queue?}})
     receive do
       {:"ETS-TRANSFER", holder, owner, {^mref, ref}} ->
         Process.demonitor(mref, [:flush])
-        {:ok, owner, ref, holder}
+        deadline = start_deadline(timeout, owner, ref, holder, start)
+        pool_ref = {owner, ref, deadline, holder}
+        checkout_info(holder, pool_ref)
       {^mref, reply} ->
         Process.demonitor(mref, [:flush])
         reply
       {:DOWN, ^mref, _, _, reason} ->
         {:exit, reason}
+    end
+  end
+
+  defp checkout_info(holder, pool_ref) do
+    try do
+      :ets.lookup(holder, @holder_key)
+    rescue
+      ArgumentError ->
+        # Deadline could hit and by handled pool before using connection
+        msg = "connection not available because deadline reached while in queue"
+        {:error, DBConnection.ConnectionError.exception(msg)}
+    else
+      [{_, _, _, mod, state}] ->
+        {:ok, pool_ref, mod, state}
     end
   end
 
