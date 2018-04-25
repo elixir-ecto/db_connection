@@ -34,11 +34,26 @@ defmodule DBConnection.ConnectionPool do
     queue? = Keyword.get(opts, :queue, @queue)
     now = System.monotonic_time(@time_unit)
     timeout = abs_timeout(now, opts)
-    case GenServer.call(pool, {:checkout, now, queue?}, :infinity) do
-      {:ok, holder} ->
-        recv_holder(holder, now, timeout)
-      {:error, _err} = error ->
+    with {:ok, pid} <- whereis_pool(pool),
+         {:ok, owner, ref, holder} <- checkout(pid, queue?, now) do
+      deadline = start_deadline(timeout, owner, ref, holder, now)
+      try do
+        :ets.lookup(holder, @holder_key)
+      rescue
+        ArgumentError ->
+          # Deadline could hit and by handled pool before using connection
+          msg = "connection not available because deadline reached while in queue"
+          {:error, DBConnection.ConnectionError.exception(msg)}
+      else
+        [{_, _, _, mod, state}] ->
+          pool_ref = {owner, ref, deadline, holder}
+          {:ok, pool_ref, mod, state}
+      end
+    else
+      {:error, _} = error ->
         error
+      {:exit, reason} ->
+        exit({reason, {__MODULE__, :checkout, [pool, opts]}})
     end
   end
 
@@ -86,7 +101,7 @@ defmodule DBConnection.ConnectionPool do
     {:ok, {:busy, queue, codel}}
   end
 
-  def handle_call({:checkout, now, queue?}, from, {:busy, queue, _} = busy) do
+  def handle_info({:db_connection, from, {:checkout, now, queue?}}, {:busy, queue, _} = busy) do
     case queue? do
       true ->
         :ets.insert(queue, {{now, System.unique_integer(), from}})
@@ -94,18 +109,19 @@ defmodule DBConnection.ConnectionPool do
       false ->
         message = "connection not available and queuing is disabled"
         err = DBConnection.ConnectionError.exception(message)
-        {:reply, {:error, err}, busy}
+        GenServer.reply(from, {:error, err})
+        {:noreply, busy}
     end
   end
 
-  def handle_call({:checkout, _now, _queue?} = checkout, from, ready) do
+  def handle_info({:db_connection, from, {:checkout, _now, _queue?}} = checkout, ready) do
     {:ready, queue, _codel} = ready 
     case :ets.first(queue) do
       {_time, holder} = key ->
         checkout_holder(holder, from, queue) and :ets.delete(queue, key)
         {:noreply, ready}
       :"$end_of_table" ->
-        handle_call(checkout, from, put_elem(ready, 0, :busy))
+        handle_info(checkout, put_elem(ready, 0, :busy))
     end
   end
 
@@ -340,36 +356,41 @@ defmodule DBConnection.ConnectionPool do
     holder
   end
 
-  defp checkout_holder(holder, {pid, _} = from, ref) do
+  defp checkout_holder(holder, {pid, mref}, ref) do
     try do
-      :ets.give_away(holder, pid, ref)
-      GenServer.reply(from, {:ok, holder})
-      true
+      :ets.give_away(holder, pid, {mref, ref})
     rescue
       ArgumentError ->
-        # Likely the local pid died so won't receive but possible foreign pid
-        msg = "cannot use connection pool on foreign node #{node()}"
-        err = DBConnection.ConnectionError.exception(msg)
-        GenServer.reply(from, {:error, err})
+        # pid is not alive
         false
     end
   end
 
-  defp recv_holder(holder, start, timeout) do
+  defp whereis_pool(pool) do
+    case GenServer.whereis(pool) do
+      pid when node(pid) == node() ->
+        {:ok, pid}
+      pid when node(pid) != node() ->
+        {:exit, {:badnode, node(pid)}}
+      {_name, node} ->
+        {:exit, {:badnode, node}}
+      nil ->
+        {:exit, :noproc}
+    end
+  end
+
+  defp checkout(pid, queue?, start) do
+    mref = Process.monitor(pid)
+    send(pid, {:db_connection, {self(), mref}, {:checkout, start, queue?}})
     receive do
-      {:"ETS-TRANSFER", ^holder, pool, ref} ->
-        deadline = start_deadline(timeout, pool, ref, holder, start)
-        try do
-          :ets.lookup(holder, @holder_key)
-        rescue
-          ArgumentError ->
-            # Deadline could hit and by handled pool before using connectoon
-            msg = "connection not available because deadline reached while in queue"
-            {:error, DBConnection.ConnectionError.exception(msg)}
-        else
-           [{_, _, _, mod, state}] ->
-            {:ok, {pool, ref, deadline, holder}, mod, state}
-        end
+      {:"ETS-TRANSFER", holder, owner, {^mref, ref}} ->
+        Process.demonitor(mref, [:flush])
+        {:ok, owner, ref, holder}
+      {^mref, reply} ->
+        Process.demonitor(mref, [:flush])
+        reply
+      {:DOWN, ^mref, _, _, reason} ->
+        {:exit, reason}
     end
   end
 
