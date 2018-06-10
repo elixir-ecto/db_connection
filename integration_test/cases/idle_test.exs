@@ -28,7 +28,7 @@ defmodule TestIdle do
       end]
     {:ok, agent} = A.start_link(stack)
 
-    opts = [agent: agent, parent: self(), idle_timeout: 50]
+    opts = [agent: agent, parent: self(), idle_timeout: 50, idle_interval: 50]
     {:ok, pool} = P.start_link(opts)
     assert_receive {:hi, conn}
     assert_receive {:pong, ^conn}

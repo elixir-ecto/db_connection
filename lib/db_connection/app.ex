@@ -9,6 +9,7 @@ defmodule DBConnection.App do
       supervisor(DBConnection.Task, []),
       supervisor(DBConnection.Sojourn.Supervisor, []),
       supervisor(DBConnection.Ownership.PoolSupervisor, []),
+      supervisor(DBConnection.ConnectionPool.PoolSupervisor, []),
       worker(DBConnection.Watcher, [])
     ]
     Supervisor.start_link(children, strategy: :one_for_all, name: __MODULE__)

@@ -42,7 +42,8 @@ defmodule QueueTest do
     stack = [{:ok, :state}]
     {:ok, agent} = A.start_link(stack)
 
-    opts = [agent: agent, parent: self(), queue_timeout: 50]
+    opts = [agent: agent, parent: self(), queue_timeout: 50, queue_target: 50,
+      queue_interval: 50]
     {:ok, pool} = P.start_link(opts)
 
     parent = self()
@@ -147,7 +148,8 @@ defmodule QueueTest do
     {:ok, agent} = A.start_link(stack)
 
     opts = [agent: agent, parent: self(), backoff_start: 30_000,
-      queue_timeout: 10, pool_timeout: 10]
+      queue_timeout: 10, pool_timeout: 10, queue_target: 10,
+      queue_interval: 10]
     {:ok, pool} = P.start_link(opts)
 
     P.run(pool, fn(_) ->
@@ -165,7 +167,7 @@ defmodule QueueTest do
     {:ok, agent} = A.start_link(stack)
 
     opts = [agent: agent, parent: self(), backoff_start: 30_000,
-      queue_timeout: 10, pool_timeout: 10]
+      queue_timeout: 10, pool_timeout: 10, queue_target: 10, queue_interval: 10]
     {:ok, pool} = P.start_link(opts)
 
     P.run(pool, fn(_) ->
