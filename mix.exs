@@ -1,7 +1,7 @@
 defmodule DBConnection.Mixfile do
   use Mix.Project
 
-  @pools [:connection, :connection_pool, :poolboy, :sojourn, :ownership]
+  @pools [:connection, :connection_pool, :poolboy, :ownership]
   @version "1.1.2"
 
   def project do
@@ -17,7 +17,6 @@ defmodule DBConnection.Mixfile do
      test_paths: test_paths(Mix.env),
      aliases: ["test.all": ["test", "test.pools"],
                "test.pools": &test_pools/1],
-     xref: [exclude: [:sbroker, :poolboy, :sregulator]],
      preferred_cli_env: ["test.all": :test]]
   end
 
@@ -29,7 +28,6 @@ defmodule DBConnection.Mixfile do
   defp deps do
     [{:connection, "~> 1.0.2"},
      {:poolboy, "~> 1.5", [optional: true]},
-     {:sbroker, "~> 1.0", [optional: true]},
      {:ex_doc, "~> 0.12", only: :dev}]
   end
 

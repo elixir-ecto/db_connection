@@ -1,4 +1,3 @@
 %{"backoff": {:hex, :backoff, "1.1.1"},
   "connection": {:hex, :connection, "1.0.2"},
-  "poolboy": {:hex, :poolboy, "1.5.1"},
-  "sbroker": {:hex, :sbroker, "0.7.0"}}
+  "poolboy": {:hex, :poolboy, "1.5.1"}}

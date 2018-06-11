@@ -72,10 +72,7 @@ defmodule TCPConnection do
     # Socket is back with the owning process, activate it to use the
     # buffer and to handle error/closed messages. It is not required for
     # the socket to be in active mode when checked in as `:idle_timeout`
-    # can be used to ping the database with `ping/1`. However it means that
-    # noticing connection loss might be delayed. `DBConnection.Sojourn`
-    # relies on this feature as the state is immediately checked out to the
-    # broker.
+    # can be used to ping the database with `ping/1`.
     case :inet.setopts(sock, [active: :once]) do
       :ok ->
         {:ok, state}
