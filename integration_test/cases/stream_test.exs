@@ -13,8 +13,8 @@ defmodule StreamTest do
       {:ok, :state},
       {:ok, :began, :new_state},
       {:ok, %C{}, :newer_state},
-      {:ok, %R{}, :newest_state},
-      {:deallocate, %R{}, :state2},
+      {:cont, %R{}, :newest_state},
+      {:halt, %R{}, :state2},
       {:ok, :deallocated, :new_state2},
       {:ok, :commited, :newer_state2}
       ]
@@ -33,8 +33,8 @@ defmodule StreamTest do
       connect: [_],
       handle_begin: [_, :state],
       handle_declare: [%Q{}, [:param], _, :new_state],
-      handle_first: [%Q{}, %C{}, _, :newer_state],
-      handle_next: [%Q{}, %C{}, _, :newest_state],
+      handle_fetch: [%Q{}, %C{}, _, :newer_state],
+      handle_fetch: [%Q{}, %C{}, _, :newest_state],
       handle_deallocate: [%Q{}, %C{}, _, :state2],
       handle_commit: [_, :new_state2]
       ] = A.record(agent)
@@ -45,7 +45,7 @@ defmodule StreamTest do
       {:ok, :state},
       {:ok, :began, :new_state},
       {:ok, %C{}, :newer_state},
-      {:deallocate, %R{}, :newest_state},
+      {:halt, %R{}, :newest_state},
       {:ok, :deallocated, :state2},
       {:ok, :committed, :new_state2}
       ]
@@ -66,7 +66,7 @@ defmodule StreamTest do
       connect: [_],
       handle_begin: [_, :state],
       handle_declare: [_, :encoded, _, :new_state],
-      handle_first: [%Q{}, %C{}, _, :newer_state],
+      handle_fetch: [%Q{}, %C{}, _, :newer_state],
       handle_deallocate: [%Q{}, %C{}, _, :newest_state],
       handle_commit: [_, :state2]
       ] = A.record(agent)
@@ -77,7 +77,7 @@ defmodule StreamTest do
       {:ok, :state},
       {:ok, :began, :new_state},
       {:ok, %Q{state: :replaced}, %C{}, :newer_state},
-      {:deallocate, %R{}, :newest_state},
+      {:halt, %R{}, :newest_state},
       {:ok, :deallocated, :state2},
       {:ok, :committed, :new_state2}
       ]
@@ -98,7 +98,7 @@ defmodule StreamTest do
       connect: [_],
       handle_begin: [_, :state],
       handle_declare: [_, [:param], _, :new_state],
-      handle_first: [%Q{state: :replaced}, %C{}, _, :newer_state],
+      handle_fetch: [%Q{state: :replaced}, %C{}, _, :newer_state],
       handle_deallocate: [%Q{state: :replaced}, %C{}, _, :newest_state],
       handle_commit: [_, :state2]
       ] = A.record(agent)
@@ -109,7 +109,7 @@ defmodule StreamTest do
       {:ok, :state},
       {:ok, :began, :new_state},
       {:ok, %C{}, :newer_state},
-      {:ok, %R{}, :newest_state},
+      {:cont, %R{}, :newest_state},
       {:ok, :result, :state2},
       {:ok, :committed, :new_state2}
       ]
@@ -150,7 +150,7 @@ defmodule StreamTest do
       connect: [_],
       handle_begin: [_, :state],
       handle_declare: [%Q{}, [:param], _, :new_state],
-      handle_first: [%Q{}, %C{}, _, :newer_state],
+      handle_fetch: [%Q{}, %C{}, _, :newer_state],
       handle_deallocate: [%Q{}, %C{}, _, :newest_state],
       handle_commit: [_, :state2]
       ] = A.record(agent)
@@ -273,7 +273,7 @@ defmodule StreamTest do
       connect: [_],
       handle_begin: [_, :state],
       handle_declare: [%Q{}, [:param], _, :new_state],
-      handle_first: [%Q{}, %C{}, _, :newer_state],
+      handle_fetch: [%Q{}, %C{}, _, :newer_state],
       disconnect: [^err, :newest_state],
       connect: [_]
       ] = A.record(agent)
@@ -284,7 +284,7 @@ defmodule StreamTest do
       {:ok, :state},
       {:ok, :began, :new_state},
       {:ok, %C{}, :newer_state},
-      {:ok, %R{}, :newest_state},
+      {:cont, %R{}, :newest_state},
       {:ok, :deallocated, :state2},
       {:ok, :rolledback, :new_state2}
       ]
@@ -306,7 +306,7 @@ defmodule StreamTest do
       connect: [_],
       handle_begin: [_, :state],
       handle_declare: [%Q{}, [:param], _, :new_state],
-      handle_first: [%Q{}, %C{}, _, :newer_state],
+      handle_fetch: [%Q{}, %C{}, _, :newer_state],
       handle_deallocate: [%Q{}, %C{}, _, :newest_state],
       handle_rollback: [_, :state2]
       ] = A.record(agent)
@@ -318,7 +318,7 @@ defmodule StreamTest do
       {:ok, :state},
       {:ok, :began, :new_state},
       {:ok, %C{}, :newer_state},
-      {:ok, %R{}, :newest_state},
+      {:cont, %R{}, :newest_state},
       {:disconnect, err, :state2},
       :ok,
       fn(opts) ->
@@ -354,7 +354,7 @@ defmodule StreamTest do
       connect: [_],
       handle_begin: [_, :state],
       handle_declare: [%Q{}, [:param], _, :new_state],
-      handle_first: [%Q{}, %C{}, _, :newer_state],
+      handle_fetch: [%Q{}, %C{}, _, :newer_state],
       handle_deallocate: [%Q{}, %C{}, _, :newest_state],
       disconnect: [^err, :state2],
       connect: [_]
@@ -444,7 +444,7 @@ defmodule StreamTest do
       {:ok, :state},
       {:ok, :began, :new_state},
       {:ok, %C{}, :newer_state},
-      {:deallocate, %R{}, :newest_state},
+      {:halt, %R{}, :newest_state},
       {:ok, :deallocated, :state2},
       {:ok, :commited, :new_state2}
       ]
@@ -467,7 +467,7 @@ defmodule StreamTest do
       connect: [_],
       handle_begin: [_, :state],
       handle_declare: [%Q{}, [:param], _, :new_state],
-      handle_first: [%Q{}, %C{}, _, :newer_state],
+      handle_fetch: [%Q{}, %C{}, _, :newer_state],
       handle_deallocate: [%Q{}, %C{}, _, :newest_state],
       handle_commit: [_, :state2]
       ] = A.record(agent)
@@ -511,7 +511,7 @@ defmodule StreamTest do
       {:connect, _},
       {:handle_begin, [_, :state]},
       {:handle_declare, [%Q{}, [:param], _, :new_state]},
-      {:handle_first, [%Q{}, %C{}, _, :newer_state]} | _] = A.record(agent)
+      {:handle_fetch, [%Q{}, %C{}, _, :newer_state]} | _] = A.record(agent)
   end
 
   test "stream deallocate raise raises and stops connection" do
@@ -523,7 +523,7 @@ defmodule StreamTest do
       end,
       {:ok, :began, :new_state},
       {:ok, %C{}, :newer_state},
-      {:ok, %R{}, :newest_state},
+      {:cont, %R{}, :newest_state},
       fn(_, _, _, _) ->
         raise "oops"
       end,
@@ -553,7 +553,7 @@ defmodule StreamTest do
       {:connect, _},
       {:handle_begin, [_, :state]},
       {:handle_declare, [%Q{}, [:param], _, :new_state]},
-      {:handle_first, [%Q{}, %C{}, _, :newer_state]},
+      {:handle_fetch, [%Q{}, %C{}, _, :newer_state]},
       {:handle_deallocate, [%Q{}, %C{}, _, :newest_state]} | _] = A.record(agent)
   end
 end

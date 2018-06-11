@@ -167,14 +167,6 @@ defmodule TestConnection do
     TestAgent.eval(:handle_fetch, [query, cursor, opts, state])
   end
 
-  def handle_first(query, cursor, opts, state) do
-    TestAgent.eval(:handle_first, [query, cursor, opts, state])
-  end
-
-  def handle_next(query, cursor, opts, state) do
-    TestAgent.eval(:handle_next, [query, cursor, opts, state])
-  end
-
   def handle_deallocate(query, cursor, opts, state) do
     TestAgent.eval(:handle_deallocate, [query, cursor, opts, state])
   end
@@ -183,7 +175,6 @@ defmodule TestConnection do
     TestAgent.eval(:handle_info, [msg, state])
   end
 end
-
 
 defmodule TestQuery do
   defstruct [:state]
@@ -224,7 +215,6 @@ defimpl DBConnection.Query, for: TestQuery do
 end
 
 defmodule TestAgent do
-
   def start_link(stack) do
     {:ok, agent} = ok = Agent.start_link(fn() -> {stack, []} end)
     _ = Process.put(:agent, agent)

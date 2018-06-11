@@ -297,48 +297,6 @@ defmodule DBConnection do
     {:error | :disconnect, Exception.t, new_state :: any}
 
   @doc """
-  Fetch the first result from a cursor declared by `handle_declare/4`. Return
-  `{:cont | :ok, result, state}` to return the result `result` and continue
-  using cursor, `{:halt, result, state}` to return the result `result` and close
-  the cursor, `{:deallocate, result, state}` to return the result `result` and
-  require cursor to be deallocated, `{:error, exception, state}` to return an
-  error and close the cursor, `{:disconnect, exception, state}` to return an
-  error and disconnect.
-
-  This callback is called when fetching the first result using `stream/4` and
-  `prepare_stream/4`. `use DBConnection` will add a default implementation for
-  this callback to call `hande_fetch/4`. Explicitly defining this callback is
-  deprecated but it is still called for backwards compatibility. `fetch/4` will
-  only use `handle_fetch/4`.
-
-  This callback is called in the client process.
-  """
-  @callback handle_first(query, cursor, opts :: Keyword.t, state :: any) ::
-    {:cont | :ok | :halt | :deallocate, result, new_state :: any} |
-    {:error | :disconnect, Exception.t, new_state :: any}
-
-  @doc """
-  Fetch the next result from a cursor declared by `handle_declare/4`. Return
-  `{:cont | :ok, result, state}` to return the result `result` and continue
-  using cursor, `{:halt, result, state}` to return the result `result` and close
-  the cursor, `{:deallocate, result, state}` to return the result `result` and
-  require cursor to be deallocated, `{:error, exception, state}` to return an
-  error and close the cursor, `{:disconnect, exception, state}` to return an
-  error and disconnect.
-
-  This callback is called when fetching the first result using `stream/4` and
-  `prepare_stream/4`. `use DBConnection` will add a default implementation for
-  this callback to call `hande_fetch/4`. Explicitly defining this callback is
-  deprecated but it is still called for backwards compatibility. `fetch/4` will
-  only use `handle_fetch/4`.
-
-  This callback is called in the client process.
-  """
-  @callback handle_next(query, cursor, opts :: Keyword.t, state :: any) ::
-    {:cont | :ok | :halt | :deallocate, result, new_state :: any} |
-    {:error | :disconnect, Exception.t, new_state :: any}
-
-  @doc """
   Deallocate a cursor declared by `handle_declare/4` with the database. Return
   `{:ok, result, state}` on success and to continue,
   `{:error, exception, state}` to return an error and continue, or
@@ -378,7 +336,7 @@ defmodule DBConnection do
   """
   @callback disconnect(err :: Exception.t, state :: any) :: :ok
 
-  @optional_callbacks handle_first: 4, handle_next: 4, handle_info: 2, ping: 1
+  @optional_callbacks handle_info: 2
 
   @doc """
   Use `DBConnection` to set the behaviour.
@@ -1133,8 +1091,7 @@ defmodule DBConnection do
     prepended to `args` or `nil`. See `DBConnection.LogEntry` (default: `nil`)
 
   The pool and connection module may support other options. All options
-  are passed to `handle_declare/4`, `handle_first/4` , `handle_next/4` and
-  `handle_deallocate/4`.
+  are passed to `handle_declare/4` and `handle_deallocate/4`.
 
   ### Example
 
@@ -1277,14 +1234,13 @@ defmodule DBConnection do
   @spec fetch(conn, query, cursor, opts :: Keyword.t) ::
     {:cont | :halt, result} | {:error, Exception.t}
   def fetch(conn, query, cursor, opts \\ []) do
-    fun = :handle_fetch
-    args = [query, cursor]
     result =
-      with {ok, result, meter} when ok in [:cont, :halt]
-            <- run(conn, &run_fetch/6, fun, args, meter(opts), opts),
+      with {ok, result, meter} when ok in [:cont, :halt] <-
+             run(conn, &run_fetch/5, [query, cursor], meter(opts), opts),
            {:ok, result, meter} <- decode(query, result, meter, opts) do
-            {ok, result, meter}
+        {ok, result, meter}
       end
+
     log(result, :fetch, query, cursor)
   end
 
@@ -1355,7 +1311,7 @@ defmodule DBConnection do
     declare =
       fn(conn, opts) ->
         {query, cursor} = prepare_declare!(conn, query, params, opts)
-        {:first, query, cursor}
+        {:cont, query, cursor}
       end
     enum = resource(conn, declare, &stream_fetch/3, &stream_deallocate/3, opts)
     enum.(acc, fun)
@@ -1367,9 +1323,9 @@ defmodule DBConnection do
       fn(conn, opts) ->
         case declare(conn, query, params, opts) do
           {:ok, query, cursor} ->
-            {:first, query, cursor}
+            {:cont, query, cursor}
           {:ok, cursor} ->
-            {:first, query, cursor}
+            {:cont, query, cursor}
           {:error, err} ->
             raise err
         end
@@ -1999,57 +1955,36 @@ defmodule DBConnection do
     end
   end
 
-  defp stream_fetch(conn, {:first, query, cursor}, opts) do
-    stream_fetch(conn, :handle_first, query, cursor,opts)
-  end
   defp stream_fetch(conn, {:cont, query, cursor}, opts) do
-    stream_fetch(conn, :handle_next, query, cursor, opts)
+    conn
+    |> run(&run_stream_fetch/5, [query, cursor], meter(opts), opts)
+    |> log(:fetch, query, cursor)
+    |> case do
+      {ok, result} when ok in [:cont, :halt] ->
+        {[result], {ok, query, cursor}}
+
+      {:error, err} ->
+        raise err
+    end
   end
   defp stream_fetch(_, {:halt, _,  _} = state, _) do
     {:halt, state}
   end
 
-  defp stream_fetch(conn, fun, query, cursor, opts) do
-    result =
-      conn
-      |> run(&run_stream_fetch/6, fun, [query, cursor], meter(opts), opts)
-      |> log(:fetch, query, cursor)
-    case result do
-      {ok, result} when ok in [:cont, :halt] ->
-        {[result], {ok, query, cursor}}
-      {:error, err} ->
-        raise err
-    end
-  end
-
-  defp run_stream_fetch(conn, conn_state, fun, args, meter, opts) do
+  defp run_stream_fetch(conn, conn_state, args, meter, opts) do
     [query, _] = args
-    with {ok, result, meter} when ok in [:cont, :halt]
-          <- run_fetch(conn, conn_state, fun, args, meter, opts),
+
+    with {ok, result, meter} when ok in [:cont, :halt] <-
+           run_fetch(conn, conn_state, args, meter, opts),
          {:ok, result, meter} <- decode(query, result, meter, opts) do
       {ok, result, meter}
     end
   end
 
-  defp run_fetch(%{conn_mod: mod} = conn, conn_state, fun, args, meter, opts) do
+  defp run_fetch(conn, conn_state, args, meter, opts) do
     meter = event(meter, :fetch)
 
-    apply_fun =
-      if fun != :handle_fetch and not function_exported?(mod, fun, 4) do
-        :handle_fetch
-      else
-        fun
-      end
-
-    case handle(conn, conn_state, apply_fun, args, opts) do
-      {:ok, result, conn_state} when fun in [:handle_first, :handle_next] ->
-        put_info(conn, conn_state)
-        {:cont, result, meter}
-
-      {:deallocate, result, conn_state} when fun in [:handle_first, :handle_next] ->
-        put_info(conn, conn_state)
-        {:halt, result, meter}
-
+    case handle(conn, conn_state, :handle_fetch, args, opts) do
       {:cont, result, conn_state}  ->
         put_info(conn, conn_state)
         {:cont, result, meter}

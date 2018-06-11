@@ -258,16 +258,12 @@ defmodule DBConnection.Connection do
 
   @doc false
   def handle_cast({:ping, ref, state}, %{client: {ref, :pool}, mod: mod} = s) do
-    if function_exported?(mod, :ping, 1) do
-      case apply(mod, :ping, [state]) do
-        {:ok, state} ->
-          pool_update(state, s)
+    case apply(mod, :ping, [state]) do
+      {:ok, state} ->
+        pool_update(state, s)
 
-        {:disconnect, err, state} ->
-          {:disconnect, {:log, err}, %{s | state: state}}
-      end
-    else
-      {:noreply, s, :hibernate}
+      {:disconnect, err, state} ->
+        {:disconnect, {:log, err}, %{s | state: state}}
     end
   end
 
