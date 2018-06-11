@@ -429,7 +429,7 @@ defmodule DBConnection.Connection do
   defp start_opts(:connection, opts) do
     Keyword.take(opts, [:debug, :name, :timeout, :spawn_opt])
   end
-  defp start_opts(mode, opts) when mode in [:poolboy, :sojourn, :connection_pool] do
+  defp start_opts(mode, opts) when mode in [:poolboy, :connection_pool] do
     Keyword.take(opts, [:debug, :spawn_opt])
   end
 
