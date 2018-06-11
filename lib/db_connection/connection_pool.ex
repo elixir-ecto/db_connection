@@ -154,29 +154,31 @@ defmodule DBConnection.ConnectionPool do
 
   def handle_info({:timeout, poll, {time, last_sent}}, {_, _, %{poll: poll}} = data) do
     {status, queue, codel} = data
+
     # If no queue progress since last poll check queue
     case :ets.first(queue) do
-        {sent, _, _} when sent <= last_sent and status == :busy ->
-            delay = time - sent
-            timeout(delay, time, queue, start_poll(time, sent, codel))
-        {sent, _, _} ->
-            {:noreply, {status, queue, start_poll(time, sent, codel)}}
-        _ ->
-            {:noreply, {status, queue, start_poll(time, time, codel)}}
+      {sent, _, _} when sent <= last_sent and status == :busy ->
+        delay = time - sent
+        timeout(delay, time, queue, start_poll(time, sent, codel))
+      {sent, _, _} ->
+        {:noreply, {status, queue, start_poll(time, sent, codel)}}
+      _ ->
+        {:noreply, {status, queue, start_poll(time, time, codel)}}
     end
   end
 
   def handle_info({:timeout, idle, {time, last_sent}}, {_, _, %{idle: idle}} = data) do
     {status, queue, codel} = data
+
     # If no queue progress since last idle check oldest connection
     case :ets.first(queue) do
-        {sent, holder} = key when sent <= last_sent and status == :ready ->
-            :ets.delete(queue, key)
-            ping(holder, queue, start_idle(time, last_sent, codel))
-        {sent, _} ->
-            {:noreply, {status, queue, start_idle(time, sent, codel)}}
-        _ ->
-            {:noreply, {status, queue, start_idle(time, time, codel)}}
+      {sent, holder} = key when sent <= last_sent and status == :ready ->
+        :ets.delete(queue, key)
+        ping(holder, queue, start_idle(time, last_sent, codel))
+      {sent, _} ->
+        {:noreply, {status, queue, start_idle(time, sent, codel)}}
+      _ ->
+        {:noreply, {status, queue, start_idle(time, time, codel)}}
     end
   end
 

@@ -3,8 +3,7 @@ defmodule DBConnection.LogEntry do
   Struct containing log entry information.
   """
 
-  defstruct [:call, :query, :params, :result, :pool_time, :connection_time,
-    :decode_time]
+  defstruct [:call, :query, :params, :result, :pool_time, :connection_time, :decode_time]
 
   @typedoc """
   Log entry information.
@@ -33,8 +32,7 @@ defmodule DBConnection.LogEntry do
 
   @doc false
   def new(call, query, params, times, result) do
-    entry = %__MODULE__{call: call, query: query, params: params,
-      result: result}
+    entry = %__MODULE__{call: call, query: query, params: params, result: result}
     parse_times(times, entry)
   end
 
