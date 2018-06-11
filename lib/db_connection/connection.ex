@@ -257,13 +257,17 @@ defmodule DBConnection.Connection do
   end
 
   @doc false
-  def handle_cast({:ping, ref, state}, %{client: {ref, :pool}} = s) do
-    %{mod: mod} = s
-    case apply(mod, :ping, [state]) do
-      {:ok, state} ->
-        pool_update(state, s)
-      {:disconnect, err, state} ->
-        {:disconnect, {:log, err}, %{s | state: state}}
+  def handle_cast({:ping, ref, state}, %{client: {ref, :pool}, mod: mod} = s) do
+    if function_exported?(mod, :ping, 1) do
+      case apply(mod, :ping, [state]) do
+        {:ok, state} ->
+          pool_update(state, s)
+
+        {:disconnect, err, state} ->
+          {:disconnect, {:log, err}, %{s | state: state}}
+      end
+    else
+      {:noreply, s, :hibernate}
     end
   end
 
@@ -437,10 +441,13 @@ defmodule DBConnection.Connection do
     case function_exported?(mod, :format_status, 2) do
       true when info == :normal ->
         normal_status(mod, pdict, state)
+
       false when info == :normal ->
         normal_status_default(mod, state)
+
       true when info == :terminate ->
         {mod, terminate_status(mod, pdict, state)}
+
       false when info == :terminate ->
         {mod, state}
     end
@@ -610,11 +617,16 @@ defmodule DBConnection.Connection do
   end
 
   defp do_handle_info(msg, %{mod: mod, state: state} = s) do
-    case apply(mod, :handle_info, [msg, state]) do
-      {:ok, state} ->
-        handle_timeout(%{s | state: state})
-      {:disconnect, err, state} ->
-        {:disconnect, {:log, err}, %{s | state: state}}
+    if function_exported?(mod, :handle_info, 2) do
+      case apply(mod, :handle_info, [msg, state]) do
+        {:ok, state} ->
+          handle_timeout(%{s | state: state})
+
+        {:disconnect, err, state} ->
+          {:disconnect, {:log, err}, %{s | state: state}}
+      end
+    else
+      handle_timeout(s)
     end
   end
 

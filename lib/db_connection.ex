@@ -378,145 +378,14 @@ defmodule DBConnection do
   """
   @callback disconnect(err :: Exception.t, state :: any) :: :ok
 
+  @optional_callbacks handle_first: 4, handle_next: 4, handle_info: 2, ping: 1
+
   @doc """
-  Use `DBConnection` to set the behaviour and include default
-  no-op implementations for `ping/1` and `handle_info/2`.
+  Use `DBConnection` to set the behaviour.
   """
   defmacro __using__(_) do
     quote location: :keep do
       @behaviour DBConnection
-
-      def connect(_) do
-        # We do this to trick dialyzer to not complain about non-local returns.
-        message = "connect/1 not implemented"
-        case :erlang.phash2(1, 1) do
-          0 -> raise message
-          1 -> {:error, RuntimeError.exception(message)}
-        end
-      end
-
-      def disconnect(_, _) do
-        message = "disconnect/2 not implemented"
-        case :erlang.phash2(1, 1) do
-          0 -> raise message
-          1 -> :ok
-        end
-      end
-
-      def checkout(state) do
-        message = "checkout/1 not implemented"
-        case :erlang.phash2(1, 1) do
-          0 -> raise message
-          1 -> {:disconnect, RuntimeError.exception(message), state}
-        end
-      end
-
-      def checkin(state) do
-        message = "checkin/1 not implemented"
-        case :erlang.phash2(1, 1) do
-          0 -> raise message
-          1 -> {:disconnect, RuntimeError.exception(message), state}
-        end
-      end
-
-      def ping(state), do: {:ok, state}
-
-      def handle_begin(_, state) do
-        message = "handle_begin/2 not implemented"
-        case :erlang.phash2(1, 1) do
-          0 -> raise message
-          1 -> {:disconnect, RuntimeError.exception(message), state}
-        end
-      end
-
-      def handle_commit(_, state) do
-        message = "handle_commit/2 not implemented"
-        case :erlang.phash2(1, 1) do
-          0 -> raise message
-          1 -> {:disconnect, RuntimeError.exception(message), state}
-        end
-      end
-
-      def handle_rollback(_, state) do
-        message = "handle_rollback/2 not implemented"
-        case :erlang.phash2(1, 1) do
-          0 -> raise message
-          1 -> {:disconnect, RuntimeError.exception(message), state}
-        end
-      end
-
-      def handle_status(_, state) do
-        message = "handle_status/2 not implemented"
-        case :erlang.phash2(1, 1) do
-          0 -> raise message
-          1 -> {:disconnect, RuntimeError.exception(message), state}
-        end
-      end
-
-      def handle_prepare(_, _, state) do
-       message = "handle_prepare/3 not implemented"
-        case :erlang.phash2(1, 1) do
-          0 -> raise message
-          1 -> {:error, RuntimeError.exception(message), state}
-        end
-      end
-
-      def handle_execute(_, _, _, state) do
-        message = "handle_execute/4 not implemented"
-        case :erlang.phash2(1, 1) do
-          0 -> raise message
-          1 -> {:error, RuntimeError.exception(message), state}
-        end
-      end
-
-      def handle_close(_, _, state) do
-        message = "handle_close/3 not implemented"
-        case :erlang.phash2(1, 1) do
-          0 -> raise message
-          1 -> {:error, RuntimeError.exception(message), state}
-        end
-      end
-
-      def handle_declare(_, _, _, state) do
-       message = "handle_declare/4 not implemented"
-        case :erlang.phash2(1, 1) do
-          0 -> raise message
-          1 -> {:error, RuntimeError.exception(message), state}
-        end
-      end
-
-      def handle_fetch(_, _, _, state) do
-       message = "handle_fetch/4 not implemented"
-        case :erlang.phash2(1, 1) do
-          0 -> raise message
-          1 -> {:error, RuntimeError.exception(message), state}
-        end
-      end
-
-      def handle_first(query, cursor, opts, state) do
-        handle_fetch(query, cursor, opts, state)
-      end
-
-      def handle_next(query, cursor, opts, state) do
-        handle_fetch(query, cursor, opts, state)
-      end
-
-      def handle_deallocate(_, _, _, state) do
-        message = "handle_deallocate/4 not implemented"
-        case :erlang.phash2(1, 1) do
-          0 -> raise message
-          1 -> {:error, RuntimeError.exception(message), state}
-        end
-      end
-
-      def handle_info(_, state), do: {:ok, state}
-
-      defoverridable [connect: 1, disconnect: 2, checkout: 1, checkin: 1,
-                      ping: 1, handle_begin: 2, handle_commit: 2,
-                      handle_rollback: 2, handle_status: 2, handle_prepare: 3,
-                      handle_execute: 4, handle_close: 3, handle_declare: 4,
-                      handle_fetch: 4, handle_first: 4, handle_next: 4,
-                      handle_deallocate: 4, handle_info: 2]
     end
   end
 
@@ -1590,52 +1459,36 @@ defmodule DBConnection do
     :ok
   end
 
-  defp handle(conn, conn_state, fun, args, meter, opts) do
+  defp handle(conn, conn_state, fun, args, opts) do
     %DBConnection{conn_mod: conn_mod} = conn
+
     try do
       apply(conn_mod, fun, args ++ [opts, conn_state])
-    else
-      {:ok, result, conn_state}
-          when fun in [:handle_first, :handle_next] ->
-        put_info(conn, conn_state)
-        {:cont, result, meter}
+    catch
+      kind, reason ->
+        stack = System.stacktrace()
+        delete_stop(conn, conn_state, kind, reason, stack, opts)
+        {:catch, kind, reason, stack}
+    end
+  end
+
+  defp handle_common_result(return, conn, conn_state, meter, opts) do
+    case return do
       {:ok, result, conn_state} ->
         put_info(conn, conn_state)
         {:ok, result, meter}
-      {:ok, query, result, conn_state}
-          when fun in [:handle_execute, :handle_declare] ->
-        put_info(conn, conn_state)
-        {:ok, query, result, meter}
-      {:cont, result, conn_state}
-          when fun in [:handle_fetch, :handle_first, :handle_next] ->
-        put_info(conn, conn_state)
-        {:cont, result, meter}
-      {:halt, result, conn_state}
-          when fun in [:handle_fetch, :handle_first, :handle_next] ->
-        put_info(conn, conn_state)
-        {:halt, result, meter}
-      {:deallocate, result, conn_state}
-          when fun in [:handle_first, :handle_next] ->
-        put_info(conn, conn_state)
-        {:halt, result, meter}
-      {:idle, conn_state}
-          when fun in [:handle_begin, :handle_commit, :handle_rollback] ->
-        put_info(conn, conn_state)
-        {:idle, meter}
-      {:transaction, conn_state}
-          when fun in [:handle_begin, :handle_commit, :handle_rollback] ->
-        put_info(conn, conn_state)
-        {:transaction, meter}
-      {:error, conn_state}
-          when fun in [:handle_begin, :handle_commit, :handle_rollback] ->
-        put_info(conn, conn_state)
-        {:error, meter}
+
       {:error, err, conn_state} ->
         put_info(conn, conn_state)
         {:error, err, meter}
+
       {:disconnect, err, conn_state} ->
         delete_disconnect(conn, conn_state, err, opts)
         {:error, err, meter}
+
+      {:catch, kind, reason, stack} ->
+        {kind, reason, stack, meter}
+
       other ->
         try do
           raise DBConnection.ConnectionError, "bad return value: #{inspect other}"
@@ -1645,11 +1498,6 @@ defmodule DBConnection do
             delete_stop(conn, conn_state, :error, reason, stack, opts)
             {:error, reason, stack, meter}
         end
-    catch
-      kind, reason ->
-        stack = System.stacktrace()
-        delete_stop(conn, conn_state, kind, reason, stack, opts)
-        {kind, reason, stack, meter}
     end
   end
 
@@ -1735,8 +1583,9 @@ defmodule DBConnection do
   end
 
   defp prepare(conn, conn_state, query, meter, opts) do
-    meter = event(meter, :prepare)
-    handle(conn, conn_state, :handle_prepare, [query], meter, opts)
+    conn
+    |> handle(conn_state, :handle_prepare, [query], opts)
+    |> handle_common_result(conn, conn_state, event(meter, :prepare), opts)
   end
 
   defp run_prepare_execute(conn, conn_state, query, params, meter, opts) do
@@ -1755,7 +1604,15 @@ defmodule DBConnection do
 
   defp run_execute(conn, conn_state, query, params, meter, opts) do
     meter = event(meter, :execute)
-    handle(conn, conn_state, :handle_execute, [query, params], meter, opts)
+
+    case handle(conn, conn_state, :handle_execute, [query, params], opts) do
+      {:ok, query, result, conn_state} ->
+        put_info(conn, conn_state)
+        {:ok, query, result, meter}
+
+      other ->
+        handle_common_result(other, conn, conn_state, meter, opts)
+    end
   end
 
   defp raised_close(conn, query, meter, opts, kind, reason, stack) do
@@ -2015,11 +1872,14 @@ defmodule DBConnection do
 
   defp run_begin(conn, conn_state, meter, opts) do
     meter = event(meter, :begin)
-    case handle(conn, conn_state, :handle_begin, [], meter, opts) do
-      {status, meter} ->
+
+    case handle(conn, conn_state, :handle_begin, [], opts) do
+      {status, conn_state} when status in [:idle, :transaction, :error] ->
+        put_info(conn, conn_state)
         status_disconnect(conn, status, meter, opts)
+
       other ->
-        other
+        handle_common_result(other, conn, conn_state, meter, opts)
     end
   end
 
@@ -2034,11 +1894,14 @@ defmodule DBConnection do
 
   defp run_rollback(conn, conn_state, meter, opts) do
     meter = event(meter, :rollback)
-    case handle(conn, conn_state, :handle_rollback, [], meter, opts) do
-      {status, meter} ->
+
+    case handle(conn, conn_state, :handle_rollback, [], opts) do
+      {status, conn_state} when status in [:idle, :transaction, :error] ->
+        put_info(conn, conn_state)
         status_disconnect(conn, status, meter, opts)
+
       other ->
-        other
+        handle_common_result(other, conn, conn_state, meter, opts)
     end
   end
 
@@ -2062,15 +1925,17 @@ defmodule DBConnection do
 
   defp run_commit(conn, conn_state, meter, opts) do
     meter = event(meter, :commit)
-    case handle(conn, conn_state, :handle_commit, [], meter, opts) do
-      {:error, meter} ->
-        # conn_state must valid as just put there in previous call
-        {:ok, conn_state, meter} = fetch_info(conn, meter)
+
+    case handle(conn, conn_state, :handle_commit, [], opts) do
+      {:error, conn_state} ->
         {:rollback, run_rollback(conn, conn_state, meter, opts)}
-      {status, meter} ->
+
+      {status, conn_state} when status in [:idle, :transaction] ->
+        put_info(conn, conn_state)
         {:commit, status_disconnect(conn, status, meter, opts)}
-      return ->
-        {:commit, return}
+
+      other ->
+        {:commit, handle_common_result(other, conn, conn_state, meter, opts)}
     end
   end
 
@@ -2123,7 +1988,15 @@ defmodule DBConnection do
 
   defp run_declare(conn, conn_state, query, params, meter, opts) do
     meter = event(meter, :declare)
-    handle(conn, conn_state, :handle_declare, [query, params], meter, opts)
+
+    case handle(conn, conn_state, :handle_declare, [query, params], opts) do
+      {:ok, query, result, conn_state} ->
+        put_info(conn, conn_state)
+        {:ok, query, result, meter}
+
+      other ->
+        handle_common_result(other, conn, conn_state, meter, opts)
+    end
   end
 
   defp stream_fetch(conn, {:first, query, cursor}, opts) do
@@ -2158,9 +2031,36 @@ defmodule DBConnection do
     end
   end
 
-  defp run_fetch(conn, conn_state, fun, args, meter, opts) do
+  defp run_fetch(%{conn_mod: mod} = conn, conn_state, fun, args, meter, opts) do
     meter = event(meter, :fetch)
-    handle(conn, conn_state, fun, args, meter, opts)
+
+    apply_fun =
+      if fun != :handle_fetch and not function_exported?(mod, fun, 4) do
+        :handle_fetch
+      else
+        fun
+      end
+
+    case handle(conn, conn_state, apply_fun, args, opts) do
+      {:ok, result, conn_state} when fun in [:handle_first, :handle_next] ->
+        put_info(conn, conn_state)
+        {:cont, result, meter}
+
+      {:deallocate, result, conn_state} when fun in [:handle_first, :handle_next] ->
+        put_info(conn, conn_state)
+        {:halt, result, meter}
+
+      {:cont, result, conn_state}  ->
+        put_info(conn, conn_state)
+        {:cont, result, meter}
+
+      {:halt, result, conn_state}  ->
+        put_info(conn, conn_state)
+        {:halt, result, meter}
+
+      other ->
+        handle_common_result(other, conn, conn_state, meter, opts)
+    end
   end
 
   defp stream_deallocate(conn, {_status, query, cursor}, opts),
@@ -2187,10 +2087,13 @@ defmodule DBConnection do
     case Process.get(key(conn)) do
       {:ok, conn_state} ->
         {:ok, conn_state, meter}
+
       {:failed, _conn_state} ->
         msg = "legacy transaction rolling back"
         {:error, DBConnection.ConnectionError.exception(msg), meter}
+
       nil ->
+
         msg = "connection is closed"
         {:error, DBConnection.ConnectionError.exception(msg), meter}
     end
@@ -2200,6 +2103,7 @@ defmodule DBConnection do
     case Process.get(key(conn)) do
       {status, conn_state} ->
         {status, conn_state, meter}
+
       nil ->
         msg = "connection is closed"
         {:error, DBConnection.ConnectionError.exception(msg), meter}
@@ -2210,8 +2114,10 @@ defmodule DBConnection do
     case Process.delete(key(conn)) do
       {:ok, _conn_state} = ok ->
         ok
+
       {:failed, conn_state} ->
         {:ok, conn_state}
+
       nil ->
         msg = "connection is closed"
         {:error, DBConnection.ConnectionError.exception(msg)}
