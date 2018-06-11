@@ -4,51 +4,6 @@ defmodule DBConnectionTest do
   alias TestConnection, as: C
   alias TestAgent, as: A
 
-  test "__using__ defaults" do
-    defmodule Sample do
-      use DBConnection
-    end
-
-    try do
-      assert_raise RuntimeError, "connect/1 not implemented",
-        fn() -> Sample.connect([]) end
-
-      assert_raise RuntimeError, "disconnect/2 not implemented",
-        fn() -> Sample.disconnect(RuntimeError.exception("oops"), []) end
-
-      assert_raise RuntimeError, "checkout/1 not implemented",
-        fn() -> Sample.checkout(:state) end
-
-      assert_raise RuntimeError, "checkin/1 not implemented",
-        fn() -> Sample.checkin(:state) end
-
-      assert Sample.ping(:state) == {:ok, :state}
-
-      assert_raise RuntimeError, "handle_begin/2 not implemented",
-        fn() -> Sample.handle_begin([], :state) end
-
-      assert_raise RuntimeError, "handle_commit/2 not implemented",
-        fn() -> Sample.handle_commit([], :state) end
-
-      assert_raise RuntimeError, "handle_rollback/2 not implemented",
-        fn() -> Sample.handle_rollback([], :state) end
-
-      assert_raise RuntimeError, "handle_prepare/3 not implemented",
-        fn() -> Sample.handle_prepare(:query, [], :state) end
-
-      assert_raise RuntimeError, "handle_execute/4 not implemented",
-        fn() -> Sample.handle_execute(:query, [], [], :state) end
-
-      assert_raise RuntimeError, "handle_close/3 not implemented",
-        fn() -> Sample.handle_close(:query, [], :state) end
-
-      assert Sample.handle_info(:msg, :state) == {:ok, :state}
-    after
-      :code.purge(Sample)
-      :code.delete(Sample)
-    end
-  end
-
   test "start_link workflow with unregistered name" do
     stack = [{:ok, :state}]
     {:ok, agent} = A.start_link(stack)
