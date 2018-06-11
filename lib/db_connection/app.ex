@@ -7,7 +7,6 @@ defmodule DBConnection.App do
   def start(_, _) do
     children = [
       supervisor(DBConnection.Task, []),
-      supervisor(DBConnection.Sojourn.Supervisor, []),
       supervisor(DBConnection.Ownership.PoolSupervisor, []),
       supervisor(DBConnection.ConnectionPool.PoolSupervisor, []),
       worker(DBConnection.Watcher, [])
