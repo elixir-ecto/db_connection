@@ -19,13 +19,20 @@ defmodule DBConnection.Ownership.Proxy do
   end
 
   def checkout(proxy, opts) do
+    stack =
+      try do
+        raise "x"
+      rescue
+        _ -> System.stacktrace()
+      end
+
     pool_timeout = opts[:pool_timeout] || @pool_timeout
     queue?       = Keyword.get(opts, :queue, true)
     timeout      = opts[:timeout] || @timeout
 
     ref = make_ref()
     try do
-      GenServer.call(proxy, {:checkout, ref, queue?, timeout}, pool_timeout)
+      GenServer.call(proxy, {:checkout, ref, queue?, timeout, stack}, pool_timeout)
     catch
       :exit, {_, {_, :call, [pool | _]}} = reason ->
         GenServer.cast(pool, {:cancel, ref})
@@ -122,6 +129,14 @@ defmodule DBConnection.Ownership.Proxy do
       {:error, exception} = error ->
         {:stop, {:shutdown, exception}, error, state}
     end
+  end
+
+  def handle_call({:checkout, ref, queue?, timeout, stacktrace}, from, state) do
+    handle_call(
+      {:checkout, ref, queue?, timeout},
+      from,
+      Map.put(state, :client_stacktrace, stacktrace)
+    )
   end
 
   def handle_call({:checkout, ref, _, timeout}, from, %{client: nil} = state) do
@@ -244,6 +259,13 @@ defmodule DBConnection.Ownership.Proxy do
   defp down(reason, state) do
     %{pool_mod: pool_mod, pool_ref: pool_ref,
       conn_state: conn_state, pool_opts: pool_opts} = state
+
+    reason =
+      case Map.get(state, :client_stacktrace) do
+        nil -> reason
+        trace -> "#{reason}\n\nconnection started via\n#{Exception.format_stacktrace(trace)}"
+      end
+
     error = DBConnection.ConnectionError.exception(reason)
     pool_mod.disconnect(pool_ref, error, conn_state, pool_opts)
     {:stop, {:shutdown, reason}, state}
