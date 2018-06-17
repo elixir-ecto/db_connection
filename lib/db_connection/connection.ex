@@ -138,17 +138,26 @@ defmodule DBConnection.Connection do
       idle: idle, idle_timeout: idle_timeout} = s
     try do
       apply(mod, :connect, [connect_opts(opts)])
-    rescue e ->
-      stack =
-        case System.stacktrace() do
-          [{_, _, arity, _} | _rest] = stacktrace when is_integer(arity) -> stacktrace
-          [{a, b, params, c} | rest] when is_list(params) ->
-            [{a, b, length(params), c} | rest]
-        end
-      msg = """
-      Connect raised a #{inspect e.__struct__} error. The exception details are hidden, as
-      they may contain sensitive data such as database credentials.
-      """
+    rescue
+      e in KeyError ->
+        stack = cleanup_stacktrace(System.stacktrace())
+        error = Exception.format_banner(:error, %{e | term: nil}, stack)
+        msg = """
+        Connect raised a KeyError error:
+
+          #{error}
+
+        Some exception details are hidden, as they may contain sensitive data such \
+        as database credentials.
+        """
+
+        reraise RuntimeError.exception(msg), stack
+      e ->
+        stack = cleanup_stacktrace(System.stacktrace())
+        msg = """
+        Connect raised a #{inspect e.__struct__} error. The exception details are hidden, as \
+        they may contain sensitive data such as database credentials.
+        """
 
       reraise RuntimeError.exception(msg), stack
     else
@@ -625,6 +634,14 @@ defmodule DBConnection.Connection do
     else
       status ->
         status
+    end
+  end
+
+  defp cleanup_stacktrace(stack) do
+    case stack do
+      [{_, _, arity, _} | _rest] = stacktrace when is_integer(arity) -> stacktrace
+      [{mod, fun, args, info} | rest] when is_list(args) ->
+        [{mod, fun, length(args), info} | rest]
     end
   end
 end
