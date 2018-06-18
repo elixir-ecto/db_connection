@@ -5,25 +5,6 @@ defmodule OwnerTest do
   alias TestAgent, as: A
   alias DBConnection.Ownership
 
-  defmodule BadPool do
-    def checkout(_, _) do
-      {:error, DBConnection.ConnectionError.exception("connection not available")}
-    end
-  end
-
-  test "allows a custom pool than the started one on checkout" do
-    {:ok, pool} = start_pool()
-
-    assert Ownership.ownership_checkout(pool, [ownership_pool: UnknownPool]) ==
-      {:error, %DBConnection.ConnectionError{message: "failed to checkout using UnknownPool"}}
-  end
-
-  test "returns error on checkout" do
-    {:ok, pool} = start_pool()
-    assert {:error, %DBConnection.ConnectionError{}} =
-      Ownership.ownership_checkout(pool, [ownership_pool: BadPool])
-  end
-
   test "reconnects when owner exits during a client checkout" do
     stack = [
       {:ok, :state},
@@ -59,15 +40,7 @@ defmodule OwnerTest do
       {:connect, _}] = A.record(agent)
   end
 
-  defp start_pool do
-    stack = [{:ok, :state}]
-    {:ok, agent} = A.start_link(stack)
-
-    opts = [agent: agent, parent: self()]
-    P.start_link(opts)
-  end
-
-  test "reconnect when ownership times out" do
+  test "reconnects when ownership times out" do
     stack = [
       {:ok, :state},
       :ok,

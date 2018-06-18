@@ -2,19 +2,15 @@ defmodule DBConnection.Ownership.Manager do
   @moduledoc false
   use GenServer
   require Logger
-
-  alias DBConnection.Ownership.PoolSupervisor
-  alias DBConnection.Ownership.ProxySupervisor
-  alias DBConnection.Ownership.Proxy
+  alias DBConnection.Ownership.{Proxy, ProxySupervisor}
 
   @timeout 5_000
 
   @callback start_link(module, opts :: Keyword.t) ::
     GenServer.on_start
   def start_link(module, opts) do
-    pool_mod = Keyword.get(opts, :ownership_pool, DBConnection.Poolboy)
     {owner_opts, pool_opts} = Keyword.split(opts, [:name])
-    GenServer.start_link(__MODULE__, {module, owner_opts, pool_mod, pool_opts}, owner_opts)
+    GenServer.start_link(__MODULE__, {module, owner_opts, pool_opts}, owner_opts)
   end
 
   @spec checkout(GenServer.server, Keyword.t) ::
@@ -68,7 +64,7 @@ defmodule DBConnection.Ownership.Manager do
 
   ## Callbacks
 
-  def init({module, owner_opts, pool_mod, pool_opts}) do
+  def init({module, owner_opts, pool_opts}) do
     ets =
       case Keyword.fetch(owner_opts, :name) do
         {:ok, name} when is_atom(name) ->
@@ -77,11 +73,14 @@ defmodule DBConnection.Ownership.Manager do
           nil
       end
 
-    pool_opts = Keyword.put(pool_opts, :pool, pool_mod)
-    {:ok, pool, owner_sup} = PoolSupervisor.start_pool(module, pool_opts)
+    # We can only start the connection pool directly because
+    # neither the pool's GenServer nor the manager trap exits.
+    # Otherwise we would need a supervisor plus a watcher process.
+    {:ok, pool} = DBConnection.ConnectionPool.start_link(module, pool_opts)
+
     mode = Keyword.get(pool_opts, :ownership_mode, :auto)
     log = Keyword.get(pool_opts, :ownership_log, nil)
-    {:ok, %{pool: pool, owner_sup: owner_sup, checkouts: %{}, owners: %{},
+    {:ok, %{pool: pool, checkouts: %{}, owners: %{},
             mode: mode, mode_ref: nil, ets: ets, log: log}}
   end
 
@@ -172,9 +171,9 @@ defmodule DBConnection.Ownership.Manager do
   end
 
   defp proxy_checkout(state, caller, opts) do
-    %{pool: pool, owner_sup: owner_sup, checkouts: checkouts, owners: owners,
+    %{pool: pool, checkouts: checkouts, owners: owners,
       ets: ets, log: log} = state
-    {:ok, proxy} = ProxySupervisor.start_owner(owner_sup, caller, pool, opts)
+    {:ok, proxy} = ProxySupervisor.start_owner(caller, pool, opts)
     log && Logger.log(log, fn -> [inspect(caller), " owns proxy " | inspect(proxy)] end)
     ref = Process.monitor(proxy)
     checkouts = Map.put(checkouts, caller, {:owner, ref, proxy})

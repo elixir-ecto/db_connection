@@ -11,10 +11,6 @@ defmodule DBConnection.Ownership do
 
   ### Options
 
-    * `:ownership_pool` - The actual pool to use to power the ownership
-      mechanism. The pool is started when the ownership pool is started,
-      although this option may also be given on `ownership_checkout/2`
-      allowing developers to customize the pool checkout/checkin
     * `:ownership_mode` - When mode is `:manual`, all connections must
       be explicitly checked out before by using `ownership_checkout/2`.
       Otherwise, mode is `:auto` and connections are checked out
@@ -25,10 +21,6 @@ defmodule DBConnection.Ownership do
       a connection, default `15_000`.
     * `:ownership_log` - The `Logger.level` to log ownership changes, or `nil`
       not to log, default `nil`.
-
-  If the `:ownership_pool` has an atom name given in the `:name` option,
-  an ETS table will be created and automatically used for lookups whenever
-  the name is used on checkout.
 
   Finally, if the `:caller` option is given on checkout with a pid and no
   pool is assigned to the current process, a connection will be allowed
@@ -104,7 +96,7 @@ defmodule DBConnection.Ownership do
 
   @doc false
   def ensure_all_started(opts, type) do
-    Keyword.get(opts, :ownership_pool, DBConnection.Poolboy).ensure_all_started(opts, type)
+    DBConnection.ConnectionPool.ensure_all_started(opts, type)
   end
 
   @doc false
