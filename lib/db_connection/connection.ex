@@ -141,25 +141,23 @@ defmodule DBConnection.Connection do
     rescue
       e in KeyError ->
         stack = cleanup_stacktrace(System.stacktrace())
-        error = Exception.format_banner(:error, %{e | term: nil}, stack)
-        msg = """
-        Connect raised a KeyError error:
+        message = Exception.message(%{e | term: nil})
 
-          #{error}
+        message =
+          "connect raised #{inspect e.__struct__} exception: #{message}. " <>
+            "Some exception details are hidden, as they may contain sensitive data " <>
+            "such as database credentials"
 
-        Some exception details are hidden, as they may contain sensitive data such \
-        as database credentials.
-        """
-
-        reraise RuntimeError.exception(msg), stack
+        reraise RuntimeError.exception(message), stack
       e ->
         stack = cleanup_stacktrace(System.stacktrace())
-        msg = """
-        Connect raised a #{inspect e.__struct__} error. The exception details are hidden, as \
-        they may contain sensitive data such as database credentials.
-        """
 
-      reraise RuntimeError.exception(msg), stack
+        message =
+          "connect raised #{inspect e.__struct__} exception. " <>
+            "The exception details are hidden, as they may contain sensitive data " <>
+            "such as database credentials"
+
+        reraise RuntimeError.exception(message), stack
     else
       {:ok, state} when after_connect != nil ->
         ref = make_ref()
