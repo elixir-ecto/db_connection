@@ -4,11 +4,8 @@ defmodule DBConnection.Pool do
   using `DBConnection`.
   """
 
-  @doc """
-  Ensure all applications necessary to run the pool are started.
-  """
-  @callback ensure_all_started(opts :: Keyword.t, type :: :application.restart_type) ::
-    {:ok, [atom]} | {:error, atom}
+  # TODO: This behaviour module should no longer be necessary.
+  # Or, at best, it should be private.
 
   @doc """
   Start and link to a pool of `module` connections with options `opts`.

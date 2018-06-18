@@ -95,11 +95,6 @@ defmodule DBConnection.Ownership do
   ## Pool callbacks
 
   @doc false
-  def ensure_all_started(opts, type) do
-    DBConnection.ConnectionPool.ensure_all_started(opts, type)
-  end
-
-  @doc false
   def start_link(module, opts) do
     Manager.start_link(module, opts)
   end

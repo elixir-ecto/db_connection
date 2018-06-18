@@ -12,6 +12,6 @@ defmodule DBConnection.ConnectionPool.Pool do
 
   defp conn(owner, tag, id, mod, opts) do
     child_opts = [id: {mod, owner, id}] ++ Keyword.take(opts, [:shutdown])
-    DBConnection.Connection.child_spec(mod, opts, :connection_pool, {owner, tag}, child_opts)
+    DBConnection.Connection.child_spec(mod, opts, owner, tag, child_opts)
   end
 end

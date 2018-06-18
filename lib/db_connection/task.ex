@@ -3,10 +3,6 @@ defmodule DBConnection.Task do
   @behaviour DBConnection.Pool
   @name __MODULE__
 
-  def ensure_all_started(_opts, _type) do
-    {:ok, []}
-  end
-
   def start_link() do
     Task.Supervisor.start_link(name: @name)
   end
