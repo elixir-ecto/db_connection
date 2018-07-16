@@ -1,7 +1,5 @@
 defmodule DBAgent do
-
   use DBConnection
-
 
   defmodule Query do
     defstruct [:query]
@@ -9,8 +7,7 @@ defmodule DBAgent do
 
   @spec start_link((() -> state :: any), Keyword.t) :: GenServer.on_start
   def start_link(fun, opts \\ []) when is_function(fun, 0) do
-    opts = [init: fun, pool: DBConnection.Connection, sync_connect: true,
-            backoff: nil] ++ opts
+    opts = [init: fun, backoff: nil] ++ opts
     DBConnection.start_link(__MODULE__, opts)
   end
 

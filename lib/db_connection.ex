@@ -348,31 +348,10 @@ defmodule DBConnection do
   end
 
   @doc """
-  Ensures the given pool applications have been started.
-
-  ### Options
-
-    * `:pool` - The `DBConnection.Pool` module to use, (default:
-    `DBConnection.Connection`)
-
-  """
-  @spec ensure_all_started(opts :: Keyword.t, type :: atom) ::
-    {:ok, [atom]} | {:error, atom}
-  def ensure_all_started(opts, type \\ :temporary) do
-    Keyword.get(opts, :pool, DBConnection.Connection).ensure_all_started(opts, type)
-  end
-
-  @doc """
   Start and link to a database connection process.
 
   ### Options
 
-    * `:pool` - The `DBConnection.Pool` module to use, (default:
-    `DBConnection.Connection`)
-    * `:idle` - The idle strategy, `:passive` to avoid checkin when idle and
-    `:active` to checkin when idle (default: `:passive`)
-    * `:idle_timeout` - The idle timeout to ping the database (default:
-    `1_000`)
     * `:backoff_min` - The minimum backoff interval (default: `1_000`)
     * `:backoff_max` - The maximum backoff interval (default: `30_000`)
     * `:backoff_type` - The backoff strategy, `:stop` for no backoff and
@@ -394,7 +373,7 @@ defmodule DBConnection do
   """
   @spec start_link(module, opts :: Keyword.t) :: GenServer.on_start
   def start_link(conn_mod, opts) do
-    pool_mod = Keyword.get(opts, :pool, DBConnection.Connection)
+    pool_mod = Keyword.get(opts, :pool, DBConnection.ConnectionPool)
     apply(pool_mod, :start_link, [conn_mod, opts])
   end
 
@@ -406,7 +385,7 @@ defmodule DBConnection do
   @spec child_spec(module, opts :: Keyword.t, child_opts :: Keyword.t) ::
     Supervisor.Spec.spec
   def child_spec(conn_mod, opts, child_opts \\ []) do
-    pool_mod = Keyword.get(opts, :pool, DBConnection.Connection)
+    pool_mod = Keyword.get(opts, :pool, DBConnection.ConnectionPool)
     apply(pool_mod, :child_spec, [conn_mod, opts, child_opts])
   end
 
@@ -1338,7 +1317,7 @@ defmodule DBConnection do
 
   defp checkout(pool, meter, opts) do
     meter = event(meter, :checkout)
-    pool_mod = Keyword.get(opts, :pool, DBConnection.Connection)
+    pool_mod = Keyword.get(opts, :pool, DBConnection.ConnectionPool)
     try do
       apply(pool_mod, :checkout, [pool, opts])
     catch
