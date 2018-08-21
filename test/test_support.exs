@@ -166,10 +166,6 @@ defmodule TestConnection do
   def handle_deallocate(query, cursor, opts, state) do
     TestAgent.eval(:handle_deallocate, [query, cursor, opts, state])
   end
-
-  def handle_info(msg, state) do
-    TestAgent.eval(:handle_info, [msg, state])
-  end
 end
 
 defmodule TestQuery do
