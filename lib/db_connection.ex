@@ -1035,7 +1035,7 @@ defmodule DBConnection do
 
   The pool and connection module may support other options. All options
   are passed to `handle_prepare/3, `handle_close/3, `handle_declare/4`,
-  `handle_first/4`, `handle_next/4` and `handle_deallocate/4`.
+  and `handle_deallocate/4`.
 
   ### Example
 

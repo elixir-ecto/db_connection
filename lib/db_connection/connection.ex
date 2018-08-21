@@ -160,8 +160,19 @@ defmodule DBConnection.Connection do
     end
   end
 
+  def handle_cast({:checkin, ref, state}, %{client: {ref, :after_connect} = client} = s) do
+    %{backoff: backoff} = s
+    backoff = backoff && Backoff.reset(backoff)
+    demonitor(client)
+    pool_update(state, %{s | client: nil, backoff: backoff})
+  end
+
   def handle_cast({:checkin, ref, state}, %{client: {ref, _}} = s) do
-    handle_next(state, s)
+    pool_update(state, s)
+  end
+
+  def handle_cast({:checkin, _, _}, s) do
+    handle_timeout(s)
   end
 
   def handle_cast({:disconnect, ref, err, state}, %{client: {ref, _}} = s) do
@@ -175,9 +186,6 @@ defmodule DBConnection.Connection do
     {:stop, {err, stack}, %{s | state: state}}
   end
 
-  def handle_cast({:checkin, _, _}, s) do
-    handle_timeout(s)
-  end
   def handle_cast({tag, _, _, _}, s) when tag in [:disconnect, :stop] do
     handle_timeout(s)
   end
@@ -299,16 +307,6 @@ defmodule DBConnection.Connection do
       nil ->
         opts
     end
-  end
-
-  defp handle_next(state, %{client: {_, :after_connect} = client} = s) do
-    %{backoff: backoff} = s
-    backoff = backoff && Backoff.reset(backoff)
-    demonitor(client)
-    handle_next(state, %{s | client: nil, backoff: backoff})
-  end
-  defp handle_next(state, s) do
-    pool_update(state, s)
   end
 
   defp down_log(:normal), do: :nolog
