@@ -221,8 +221,7 @@ defmodule DBConnection.Ownership.Manager do
         Process.demonitor(ref, [:flush])
         entries = [caller|allowed]
         log && Logger.log(log, fn ->
-          [Enum.map_join(entries, ", ", &inspect/1), " lose proxy " |
-            inspect(proxy)]
+          [Enum.map_join(entries, ", ", &inspect/1), " lose proxy " | inspect(proxy)]
         end)
         ets && Enum.each(entries, &:ets.delete(ets, &1))
         update_in(state.checkouts, &Map.drop(&1, entries))

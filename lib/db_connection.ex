@@ -794,7 +794,7 @@ defmodule DBConnection do
 
       {:ok, conn, result} = DBConnection.begin(pool)
       try do
-        res =DBConnection.execute!(conn, "SELECT * FROM table", [])
+        res = DBConnection.execute!(conn, "SELECT * FROM table", [])
         DBConnection.commit(conn)
         res
       after
@@ -1091,7 +1091,7 @@ defmodule DBConnection do
 
       after
         # Make sure transaction is rolled back if anything goes wrong!
-        DBConnection.rollback(coon)
+        DBConnection.rollback(conn)
       end
   """
   @spec stream(t, query, params, opts :: Keyword.t) :: DBConnection.Stream.t

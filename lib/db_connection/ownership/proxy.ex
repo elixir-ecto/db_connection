@@ -2,8 +2,9 @@ defmodule DBConnection.Ownership.Proxy do
   @moduledoc false
 
   use GenServer
+
   @pool_timeout      5_000
-  @ownership_timeout 15_000
+  @ownership_timeout 60_000
   @timeout           15_000
 
   def start_link(caller, pool, pool_opts) do
@@ -90,13 +91,13 @@ defmodule DBConnection.Ownership.Proxy do
 
   def handle_info({:timeout, timer, {__MODULE__, pid, timeout}}, %{timer: timer} = state) do
     message = "client #{inspect pid} timed out because " <>
-    "it checked out the connection for longer than #{timeout}ms"
+    "it checked out the connection for longer than #{timeout}ms (set via the :timeout option)"
     disconnect(message, state)
   end
 
   def handle_info({:timeout, timer, {__MODULE__, pid, timeout}}, %{ownership_timer: timer} = state) do
     message = "owner #{inspect pid} timed out because " <>
-    "it owned the connection for longer than #{timeout}ms"
+    "it owned the connection for longer than #{timeout}ms (set via the :ownership_timeout option)"
     disconnect(message, state)
   end
 
