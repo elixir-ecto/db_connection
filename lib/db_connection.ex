@@ -6,6 +6,7 @@ defmodule DBConnection.Stream do
                          params: any,
                          opts: Keyword.t}
 end
+
 defimpl Enumerable, for: DBConnection.Stream do
   def count(_), do: {:error, __MODULE__}
 
@@ -70,11 +71,10 @@ defmodule DBConnection do
   queries can be prepared or encoded and results decoding without
   blocking the connection or pool.
 
-  By default the `DBConnection` provides a single connection. However
-  the `:pool` option can be set to use a pool of connections. If a
-  pool is used the module must be passed as an option - unless inside a
-  `run/3` or `transaction/3` fun and using the run/transaction
-  connection reference (`t`).
+  By default the `DBConnection` starts a pool with a single connection.
+  The size of the pool can be increased with `:pool_size`. A separate
+  pool can be given with the `:pool` option. If a pool is used the module
+  must be passed as an option on all operations.
   """
   require Logger
 
@@ -373,8 +373,7 @@ defmodule DBConnection do
   """
   @spec start_link(module, opts :: Keyword.t) :: GenServer.on_start
   def start_link(conn_mod, opts) do
-    pool_mod = Keyword.get(opts, :pool, DBConnection.ConnectionPool)
-    apply(pool_mod, :start_link, [conn_mod, opts])
+    apply(pool(opts), :start_link, [conn_mod, opts])
   end
 
   @doc """
@@ -385,8 +384,7 @@ defmodule DBConnection do
   @spec child_spec(module, opts :: Keyword.t, child_opts :: Keyword.t) ::
     Supervisor.Spec.spec
   def child_spec(conn_mod, opts, child_opts \\ []) do
-    pool_mod = Keyword.get(opts, :pool, DBConnection.ConnectionPool)
-    apply(pool_mod, :child_spec, [conn_mod, opts, child_opts])
+    apply(pool(opts), :child_spec, [conn_mod, opts, child_opts])
   end
 
   @doc """
@@ -1315,9 +1313,13 @@ defmodule DBConnection do
 
   ## Helpers
 
+  defp pool(opts) do
+    Keyword.get(opts, :pool, DBConnection.ConnectionPool)
+  end
+
   defp checkout(pool, meter, opts) do
     meter = event(meter, :checkout)
-    pool_mod = Keyword.get(opts, :pool, DBConnection.ConnectionPool)
+    pool_mod = pool(opts)
     try do
       apply(pool_mod, :checkout, [pool, opts])
     catch

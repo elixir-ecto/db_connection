@@ -4,9 +4,6 @@ defmodule DBConnection.Pool do
   using `DBConnection`.
   """
 
-  # TODO: This behaviour module should no longer be necessary.
-  # Or, at best, it should be private.
-
   @doc """
   Start and link to a pool of `module` connections with options `opts`.
   """
