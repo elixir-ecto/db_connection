@@ -1099,190 +1099,6 @@ defmodule DBConnection do
     %DBConnection.Stream{conn: conn, query: query, params: params, opts: opts}
   end
 
-  @doc """
-  Prepare a query and declare a cursor.
-
-  Returns `{:ok, query, cursor}` on success or `{:error, exception}` if there
-  was an error.
-
-  ### Options
-
-  See module documentation. The pool and connection module may support other
-  options. All options are passed to `handle_prepare/3`, handle_declare/4` and
-  `handle_close/3`.
-
-  ### Example
-
-      query = "SELECT id FROM table"
-      {:ok, query, cursor} = DBConnection.prepare_declare(conn, query, [])
-      try do
-        {:cont, result} = DBConnection.fetch!(conn, query, cursor, opts)
-        {:halt, result} = DBConnection.fetch!(conn, query, cursor, opts)
-      after
-        DBConnection.deallocate(conn, query, cursor, opts)
-      end
-  """
-  @spec prepare_declare(conn, query, params, opts :: Keyword.t) ::
-    {:ok, query, cursor} | {:error, Exception.t}
-  def prepare_declare(conn, query, params, opts \\ []) do
-    result =
-      with {:ok, query, meter} <- parse(query, meter(opts), opts) do
-           run(conn, &run_prepare_declare/6, query, params, meter, opts)
-      end
-    log(result, :prepare_declare, query, params)
-  end
-
-  @spec prepare_declare!(conn, query, params, opts :: Keyword.t) :: cursor
-  def prepare_declare!(conn, query, params, opts \\ []) do
-    case prepare_declare(conn, query, params, opts) do
-      {:ok, query, cursor} ->
-        {query, cursor}
-      {:error, err} ->
-        raise err
-    end
-  end
-
-  @doc """
-  Declare a cursor.
-
-  Returns `{:ok, cursor}` or `{:ok, query, cursor}` on success or
-  `{:error, exception}` if there was an error.
-
-  ### Options
-
-  See module documentation. The pool and connection module may support other
-  options. All options are passed to `handle_declare/4`.
-
-  ### Example
-
-      query = "SELECT id FROM table"
-      {:ok, cursor} = DBConnection.declare(conn, query, [])
-      try do
-        {:cont, result} = DBConnection.fetch!(conn, query, cursor, opts)
-        {:halt, result} = DBConnection.fetch!(conn, query, cursor, opts)
-      after
-        DBConnection.deallocate(conn, query, cursor, opts)
-      end
-  """
-  @spec declare(conn, query, params, opts :: Keyword.t) ::
-    {:ok, cursor} | {:ok, query, cursor} | {:error, Exception.t}
-  def declare(conn, query, params, opts \\ []) do
-    result =
-      with {:ok, params, meter} <- encode(query, params, meter(opts), opts) do
-        run(conn, &run_declare/6, query, params, meter, opts)
-      end
-    log(result, :declare, query, params)
-  end
-
-  @doc """
-  Declare a cursor.
-
-  Returns `cursor` on success or `{:error, exception}` if there was an error.
-
-  See `declare/4`.
-  """
-  @spec declare!(conn, query, params, opts :: Keyword.t) ::
-    cursor | {query, cursor}
-  def declare!(conn, query, params, opts \\ []) do
-    case declare(conn, query, params, opts) do
-      {:ok, cursor} ->
-        cursor
-      {:ok, query, cursor} ->
-        {query, cursor}
-      {:error, err} ->
-        raise err
-    end
-  end
-
-  @doc """
-  Fetch using a cursor.
-
-  Returns `{:cont, result}` on success and the cursor can be used to fetch
-  again, `{:halt, result}` on success and the cursor is closed, or
-  `{:error, exception}` if there was an error.
-
-  On `:halt` tuple the cursor does needs to be deallocated with `deallocate/4`.
-
-  ### Options
-
-  See module documentation. The pool and connection module may support other
-  options. All options are passed to `handle_fetch/4`.
-
-  See `declare/4`.
-  """
-  @spec fetch(conn, query, cursor, opts :: Keyword.t) ::
-    {:cont | :halt, result} | {:error, Exception.t}
-  def fetch(conn, query, cursor, opts \\ []) do
-    result =
-      with {ok, result, meter} when ok in [:cont, :halt] <-
-             run(conn, &run_fetch/5, [query, cursor], meter(opts), opts),
-           {:ok, result, meter} <- decode(query, result, meter, opts) do
-        {ok, result, meter}
-      end
-
-    log(result, :fetch, query, cursor)
-  end
-
-  @doc """
-  Fetch using a cursor.
-
-  Returns `{:cont, result}` on success and the cursor can be used to fetch
-  again, `{:halt, result}` on success and the cursor is closed, or raises an
-  exception if there was an error.
-
-  See `fetch/4`.
-  """
-  @spec fetch!(conn, query, cursor, opts :: Keyword.t) ::
-    {:cont | :halt, result}
-  def fetch!(conn, query, cursor, opts \\ []) do
-    case fetch(conn, query, cursor, opts) do
-      {:cont, _} = cont ->
-        cont
-      {:halt, _} = halt ->
-        halt
-      {:error, err} ->
-        raise err
-    end
-  end
-
-  @doc """
-  Deallocate a cursor.
-
-  Returns `{:ok, result}` on success or `{:error, exception}` if there was an
-  error.
-
-  ### Options
-
-  See module documentation. The pool and connection module may support other
-  options. All options are passed to `handle_deallocate/4`.
-
-  See `declare/4`.
-  """
-  @spec deallocate(conn, query, cursor, opts :: Keyword.t) ::
-    {:ok, result} | {:error, Exception.t}
-  def deallocate(conn, query, cursor, opts \\ []) do
-    conn
-    |> cleanup(&run_deallocate/6, [query, cursor], meter(opts), opts)
-    |> log(:deallocate, query, cursor)
-  end
-
-  @doc """
-  Deallocate a cursor.
-
-  Returns `result` on success or raises an exception if there was an error.
-
-  See `deallocate/4`.
-  """
-  @spec deallocate!(conn, query, cursor, opts :: Keyword.t) :: result
-  def deallocate!(conn, query, cursor, opts \\ []) do
-    case deallocate(conn, query, cursor, opts) do
-      {:ok, result} ->
-        result
-      {:error, err} ->
-        raise err
-    end
-  end
-
   @doc false
   def reduce(%DBConnection.PrepareStream{} = stream, acc, fun) do
     %DBConnection.PrepareStream{conn: conn, query: query, params: params,
@@ -1509,6 +1325,37 @@ defmodule DBConnection do
       other ->
         other
     end
+  end
+
+  defp prepare_declare(conn, query, params, opts) do
+    result =
+      with {:ok, query, meter} <- parse(query, meter(opts), opts) do
+        run(conn, &run_prepare_declare/6, query, params, meter, opts)
+      end
+    log(result, :prepare_declare, query, params)
+  end
+
+  defp prepare_declare!(conn, query, params, opts) do
+    case prepare_declare(conn, query, params, opts) do
+      {:ok, query, cursor} ->
+        {query, cursor}
+      {:error, err} ->
+        raise err
+    end
+  end
+
+  defp declare(conn, query, params, opts) do
+    result =
+      with {:ok, params, meter} <- encode(query, params, meter(opts), opts) do
+        run(conn, &run_declare/6, query, params, meter, opts)
+      end
+    log(result, :declare, query, params)
+  end
+
+  defp deallocate(conn, query, cursor, opts) do
+    conn
+    |> cleanup(&run_deallocate/6, [query, cursor], meter(opts), opts)
+    |> log(:deallocate, query, cursor)
   end
 
   defp run_prepare(conn, conn_state, query, meter, opts) do
