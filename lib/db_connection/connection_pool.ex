@@ -69,7 +69,7 @@ defmodule DBConnection.ConnectionPool do
   end
 
   ## GenServer api
-    
+
   def init({mod, opts}) do
     queue = :ets.new(__MODULE__.Queue, [:private, :ordered_set])
     {:ok, _} = PoolSupervisor.start_pool(queue, mod, opts)
@@ -97,7 +97,7 @@ defmodule DBConnection.ConnectionPool do
   end
 
   def handle_info({:db_connection, from, {:checkout, _now, _queue?}} = checkout, ready) do
-    {:ready, queue, _codel} = ready 
+    {:ready, queue, _codel} = ready
     case :ets.first(queue) do
       {_time, holder} = key ->
         checkout_holder(holder, from, queue) and :ets.delete(queue, key)
@@ -214,11 +214,11 @@ defmodule DBConnection.ConnectionPool do
     :ets.insert(queue, {{now, holder}})
     {:noreply, data}
   end
-  
+
   defp handle_checkin(holder, now, {:busy, queue, codel}) do
     dequeue(now, holder, queue, codel)
   end
- 
+
   defp dequeue(time, holder, queue, codel) do
     case codel do
       %{next: next, delay: delay, target: target} when time >= next  ->
@@ -254,7 +254,7 @@ defmodule DBConnection.ConnectionPool do
       :"$end_of_table" ->
         :ets.insert(queue, {{time, holder}})
         {:noreply, {:ready, queue, %{codel | delay: 0}}}
-    end     
+    end
   end
 
   defp dequeue_slow(time, timeout, holder, queue, codel) do
@@ -422,4 +422,3 @@ defmodule DBConnection.ConnectionPool do
     stop.({conn, holder}, err, state, [])
   end
 end
-    
