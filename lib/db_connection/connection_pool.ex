@@ -10,6 +10,12 @@ defmodule DBConnection.ConnectionPool do
     * `:queue_target`
     * `:queue_interval`
     * `:idle_interval`
+    * `:max_restarts`
+    * `:max_seconds`
+    * `:backoff_min`
+    * `:backoff_max`
+    * `:backoff_type`
+
   """
 
   @behaviour DBConnection.Pool
