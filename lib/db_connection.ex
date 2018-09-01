@@ -80,15 +80,19 @@ defmodule DBConnection do
 
   defstruct [:pool_mod, :pool_ref, :conn_mod, :conn_ref, :conn_mode]
 
+  defmodule EncodeError do
+    defexception [:message]
+  end
+
   defmodule TransactionError do
     defexception [:status, :message]
 
-      def exception(:idle),
-        do: %__MODULE__{status: :idle, message: "transaction is not started"}
-      def exception(:transaction),
-        do: %__MODULE__{status: :transaction, message: "transaction is already started"}
-      def exception(:error),
-        do: %__MODULE__{status: :error, message: "transaction is aborted"}
+    def exception(:idle),
+      do: %__MODULE__{status: :idle, message: "transaction is not started"}
+    def exception(:transaction),
+      do: %__MODULE__{status: :transaction, message: "transaction is already started"}
+    def exception(:error),
+      do: %__MODULE__{status: :error, message: "transaction is aborted"}
   end
 
   @typedoc """
@@ -459,14 +463,18 @@ defmodule DBConnection do
     {:ok, query, result} |
     {:error, Exception.t}
   def prepare_execute(conn, query, params, opts \\ []) do
-    result =
-      with {:ok, query, meter} <- parse(query, meter(opts), opts),
-           {:ok, query, result, meter}
-            <- run(conn, &run_prepare_execute/6, query, params, meter, opts),
-           {:ok, result, meter} <- decode(query, result, meter, opts) do
-        {:ok, query, result, meter}
-      end
-    log(result, :prepare_execute, query, params)
+    conn
+    |> no_log_prepare_execute(query, params, opts)
+    |> log(:prepare_execute, query, params)
+  end
+
+  defp no_log_prepare_execute(conn, query, params, opts) do
+    with {:ok, query, meter} <- parse(query, meter(opts), opts),
+         {:ok, query, result, meter}
+          <- run(conn, &run_prepare_execute/6, query, params, meter, opts),
+         {:ok, result, meter} <- decode(query, result, meter, opts) do
+      {:ok, query, result, meter}
+    end
   end
 
   @doc """
@@ -513,16 +521,24 @@ defmodule DBConnection do
     {:ok, result} | {:ok, query, result} | {:error, Exception.t}
   def execute(conn, query, params, opts \\ []) do
     result =
-      with {:ok, params, meter} <- encode(query, params, meter(opts), opts) do
-        case run(conn, &run_execute/6, query, params, meter, opts) do
-          {:ok, result, meter} ->
-            decode(query, result, meter, opts)
-          {:ok, new_query, result, meter} ->
-            altered_decode(new_query, result, meter, opts)
-          other ->
-            other
-        end
+      case maybe_encode(query, params, meter(opts), opts) do
+        :retry ->
+          no_log_prepare_execute(conn, query, params, opts)
+
+        {:ok, params, meter} ->
+          case run(conn, &run_execute/6, query, params, meter, opts) do
+            {:ok, result, meter} ->
+              decode(query, result, meter, opts)
+            {:ok, new_query, result, meter} ->
+              altered_decode(new_query, result, meter, opts)
+            other ->
+              other
+          end
+
+        {_, _, _, _} = error ->
+          error
       end
+
     log(result, :execute, query, params)
   end
 
@@ -1075,9 +1091,11 @@ defmodule DBConnection do
     end
   end
 
-  defp encode(query, params, meter, opts) do
+  defp maybe_encode(query, params, meter, opts) do
     try do
       DBConnection.Query.encode(query, params, opts)
+    rescue
+      DBConnection.EncodeError -> :retry
     catch
       kind, reason ->
         stack = System.stacktrace()
@@ -1112,11 +1130,15 @@ defmodule DBConnection do
   end
 
   defp prepare_declare(conn, query, params, opts) do
-    result =
-      with {:ok, query, meter} <- parse(query, meter(opts), opts) do
-        run(conn, &run_prepare_declare/6, query, params, meter, opts)
-      end
-    log(result, :prepare_declare, query, params)
+    conn
+    |> no_log_prepare_declare(query, params, opts)
+    |> log(:prepare_declare, query, params)
+  end
+
+  defp no_log_prepare_declare(conn, query, params, opts) do
+    with {:ok, query, meter} <- parse(query, meter(opts), opts) do
+      run(conn, &run_prepare_declare/6, query, params, meter, opts)
+    end
   end
 
   defp prepare_declare!(conn, query, params, opts) do
@@ -1130,9 +1152,17 @@ defmodule DBConnection do
 
   defp declare(conn, query, params, opts) do
     result =
-      with {:ok, params, meter} <- encode(query, params, meter(opts), opts) do
-        run(conn, &run_declare/6, query, params, meter, opts)
+      case maybe_encode(query, params, meter(opts), opts) do
+        :retry ->
+          no_log_prepare_declare(conn, query, params, opts)
+
+        {:ok, params, meter} ->
+          run(conn, &run_declare/6, query, params, meter, opts)
+
+        {_, _, _, _} = error ->
+          error
       end
+
     log(result, :declare, query, params)
   end
 

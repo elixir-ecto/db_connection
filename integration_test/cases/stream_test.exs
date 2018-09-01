@@ -72,6 +72,48 @@ defmodule StreamTest do
       ] = A.record(agent)
   end
 
+  test "stream reprapres query on encode error" do
+    stack = [
+      {:ok, :state},
+      {:ok, :began, :begin_state},
+      {:ok, %Q{state: :prepared}, :new_state},
+      {:ok, %C{}, :newer_state},
+      {:halt, %R{}, :newest_state},
+      {:ok, :deallocated, :state2},
+      {:ok, :committed, :new_state2}
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    fail_encode_once = fn [:param] ->
+      if Process.put(DBConnection.EncodeError, true) do
+        :encoded
+      else
+        raise DBConnection.EncodeError, "oops"
+      end
+    end
+
+    opts = [agent: agent, parent: self()]
+    {:ok, pool} = P.start_link(opts)
+
+    assert P.transaction(pool, fn(conn) ->
+      opts2 = [encode: fail_encode_once,
+               decode: fn(%R{}) -> :decoded end]
+      stream = P.stream(conn, %Q{}, [:param], opts2)
+      assert Enum.to_list(stream) == [:decoded]
+      :hi
+    end) == {:ok, :hi}
+
+    assert [
+      connect: [_],
+      handle_begin: [_, :state],
+      handle_prepare: [%Q{state: nil}, _, :begin_state],
+      handle_declare: [%Q{state: :prepared}, :encoded, _, :new_state],
+      handle_fetch: [%Q{}, %C{}, _, :newer_state],
+      handle_deallocate: [%Q{}, %C{}, _, :newest_state],
+      handle_commit: [_, :state2]
+      ] = A.record(agent)
+  end
+
   test "stream replaces query and decodes result" do
     stack = [
       {:ok, :state},
