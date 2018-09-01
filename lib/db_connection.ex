@@ -6,6 +6,7 @@ defmodule DBConnection.Stream do
                          params: any,
                          opts: Keyword.t}
 end
+
 defimpl Enumerable, for: DBConnection.Stream do
   def count(_), do: {:error, __MODULE__}
 
@@ -70,11 +71,10 @@ defmodule DBConnection do
   queries can be prepared or encoded and results decoding without
   blocking the connection or pool.
 
-  By default the `DBConnection` provides a single connection. However
-  the `:pool` option can be set to use a pool of connections. If a
-  pool is used the module must be passed as an option - unless inside a
-  `run/3` or `transaction/3` fun and using the run/transaction
-  connection reference (`t`).
+  By default the `DBConnection` starts a pool with a single connection.
+  The size of the pool can be increased with `:pool_size`. A separate
+  pool can be given with the `:pool` option. If a pool is used the module
+  must be passed as an option on all operations.
   """
   require Logger
 
@@ -124,9 +124,6 @@ defmodule DBConnection do
   This callback is called when the control of the state is passed to
   another process. `checkin/1` is called with the new state when control
   is returned to the connection process.
-
-  Messages are discarded, instead of being passed to `handle_info/2`,
-  when the state is checked out.
 
   This callback is called in the connection process.
   """
@@ -309,20 +306,6 @@ defmodule DBConnection do
     {:error | :disconnect, Exception.t, new_state :: any}
 
   @doc """
-  Handle a message received by the connection process when checked in.
-  Return `{:ok, state}` to continue or `{:disconnect, exception,
-  state}` to disconnect.
-
-  Messages received by the connection process when checked out will be
-  logged and discared.
-
-  This callback is called in the connection process.
-  """
-  @callback handle_info(msg :: any, state :: any) ::
-    {:ok, new_state :: any} |
-    {:disconnect, Exception.t, new_state :: any}
-
-  @doc """
   Disconnect from the database. Return `:ok`.
 
   The exception as first argument is the exception from a `:disconnect`
@@ -335,8 +318,6 @@ defmodule DBConnection do
   This callback is called in the connection process.
   """
   @callback disconnect(err :: Exception.t, state :: any) :: :ok
-
-  @optional_callbacks handle_info: 2
 
   @doc """
   Use `DBConnection` to set the behaviour.
@@ -373,8 +354,7 @@ defmodule DBConnection do
   """
   @spec start_link(module, opts :: Keyword.t) :: GenServer.on_start
   def start_link(conn_mod, opts) do
-    pool_mod = Keyword.get(opts, :pool, DBConnection.ConnectionPool)
-    apply(pool_mod, :start_link, [conn_mod, opts])
+    apply(pool(opts), :start_link, [conn_mod, opts])
   end
 
   @doc """
@@ -385,8 +365,7 @@ defmodule DBConnection do
   @spec child_spec(module, opts :: Keyword.t, child_opts :: Keyword.t) ::
     Supervisor.Spec.spec
   def child_spec(conn_mod, opts, child_opts \\ []) do
-    pool_mod = Keyword.get(opts, :pool, DBConnection.ConnectionPool)
-    apply(pool_mod, :child_spec, [conn_mod, opts, child_opts])
+    apply(pool(opts), :child_spec, [conn_mod, opts, child_opts])
   end
 
   @doc """
@@ -414,18 +393,15 @@ defmodule DBConnection do
 
   ### Example
 
-      {conn, _} = DBConnection.begin!(pool)
-      try do
+      DBConnection.transaction(pool, fn conn ->
         query = DBConnection.prepare!(conn)
         try do
           DBConnection.execute!(conn, "SELECT * FROM table", [])
         after
           DBConnection.close(conn, query)
         end
-        DBConnection.commit!(conn)
-      after
-        DBConnection.rollback(conn)
-      end
+      end)
+
   """
   @spec prepare(conn, query, opts :: Keyword.t) ::
     {:ok, query} | {:error, Exception.t}
@@ -754,217 +730,30 @@ defmodule DBConnection do
   end
 
   @doc """
-  Acquire a lock on a connection and begin a database transaction.
-
-  Return `{:ok, conn, result}` on success or `{:error, exception}` if there was
-  an error. If a new lock was acquired and there is an error, it is released.
-
-  It is possible to issue begin requests without a later `commit/2` or
-  `rollback/2` as transaction might be concluded by other actions. The semantics
-  are left to the callback implementation. However it is strongly advised to
-  ensure a matching `rollback/2` call always occur, even if `commit/2` should
-  occur beforehand. This ensures that on failure that the transaction is rolled
-  back and the lock on connection released. If the lock has been released before
-  a rollback call then `rollback/2` will return an error tuple.
-
-      {:ok, conn, _result} = DBConnection.begin(pool)
-      try do
-        # transaction goes here!
-        DBConnection.commit!(conn)
-      after
-        DBConnection.rollback(conn)
-      end
-
-  The callback implementation should determine (using transaction status of the
-  database) the state of a transaction. If a transaction is already started,
-  according to the callback implementation, then an error tuple with a
-  `DBConnection.TransactionError` is returned.
-
-  This function will return a error tuple with a `DBConnection.ConnectionError`
-  when called inside a deprecated `transaction/3`.
-
-  ### Options
-
-  See module documentation. The pool and connection module may support other
-  options. All options are passed to `handle_begin/2`.
-
-  See `commit/2` and `rollback/2`.
-
-  ### Example
-
-      {:ok, conn, result} = DBConnection.begin(pool)
-      try do
-        res =DBConnection.execute!(conn, "SELECT * FROM table", [])
-        DBConnection.commit(conn)
-        res
-      after
-        DBConnection.rollback(conn)
-      end
-  """
-  @spec begin(conn, opts :: Keyword.t) ::
-    {:ok, t, result} | {:error, Exception.t}
-  def begin(conn, opts \\ []) do
-    begin(conn, &checkout/4, opts)
-  end
-
-  @doc """
-  Acquire a lock on a connection and begin a database transaction.
-
-  Returns `{conn, result}` on success, otherwise raises an exception on error.
-
-  This function will raise a `DBConnection.ConnectionError` when called inside a
-  deprecated `transaction/3`.
-
-  See `begin/2`.
-  """
-  @spec begin!(conn, opts :: Keyword.t) :: {t, result}
-  def begin!(conn, opts \\ []) do
-    case begin(conn, opts) do
-      {:ok, conn, result} ->
-        {conn, result}
-      {:error, err} ->
-        raise err
-    end
-  end
-
-  @doc """
   Rollback a database transaction and release lock on connection.
-
-  When outside of a `transaction/3` call returns `{:ok, result}` on success or
-  `{:error, exception}` if there was an error. The lock on the connection is
-  always released.
-
-  It is possible to issue rollbacks requests without a `begin/2` as transaction
-  might be started by other actions. The semantics are left to the callback
-  implementation.
-
-  The callback implementation should determine (using transaction status of the
-  database) the state of a transaction  If a transaction is not started,
-  according to callback implmentation, then an error tuple with a
-  `DBConnection.TransactionError` is returned.
 
   When inside of a `transaction/3` call does a non-local return, using a
   `throw/1` to cause the transaction to enter a failed state and the
   `transaction/3` call returns `{:error, reason}`. If `transaction/3` calls are
   nested the connection is marked as failed until the outermost transaction call
-  does the database rollback. Note that `transaction/3` is deprecated.
-
-  ### Options
-
-  See module documentation. The pool and connection module may support other
-  options. All options are passed to `handle_rollback/2`.
-
-  See `begin/2`, `commit/2`, and `transaction/3`.
+  does the database rollback.
 
   ### Example
-
-      {:ok, conn, result} = DBConnection.begin(pool)
-      try do
-        res = DBConnection.execute!(conn, "SELECT * FROM table", [])
-        DBConnection.commit(conn)
-        res
-      after
-        DBConnection.rollback(conn)
-      end
-
-  ### Deprecated Example
 
       {:error, :oops} = DBConnection.transaction(pool, fun(conn) ->
         DBConnection.rollback(conn, :oops)
       end)
   """
-  @spec rollback(conn, (opts :: Keyword.t) | reason :: term) ::
-    {:ok, result} | {:error, Exception.t}
-  def rollback(conn) do
-    rollback(conn, &checkin/4, [])
-  end
-  def rollback(%DBConnection{conn_mode: :transaction} = conn, reason) do
-    %DBConnection{conn_ref: conn_ref}  = conn
-    throw({__MODULE__, conn_ref, reason})
-  end
-  def rollback(conn, opts) do
-    rollback(conn, &checkin/4, opts)
-  end
-
-  @doc """
-  Rollback a database transaction and release lock on connection.
-
-  Returns `result` on success, otherwise raises an exception on error.
-
-  This function will raise a `DBConnection.ConnectionError` when called inside a
-  deprecated `transaction/3`.
-
-  See `rollback/2`.
-  """
-  @spec rollback!(conn, opts :: Keyword.t) :: result
-  def rollback!(conn, opts \\ []) do
-    case rollback(conn, &checkin/4, opts) do
-      {:ok, result} ->
-        result
-      {:error, err} ->
+  @spec rollback(t, reason :: any) :: no_return
+  def rollback(conn, reason) do
+    %DBConnection{conn_ref: conn_ref, conn_mode: mode} = conn
+    case get_info(conn, nil) do
+      {:error, err, _meter} ->
         raise err
-    end
-  end
-
-  @doc """
-  Commit a database transaction and release lock on connection.
-
-  Return `{:ok, result}` on success or `{:error, exception}` if there was an
-  error.
-
-  It is possible to issue commit requests without a `begin/2` as transaction
-  might be started by other actions. The semantics are left to the callback
-  implementation.
-
-  The callback implementation should determine (using transaction status of the
-  database) the state of a transaction  If the transaction is aborted or not
-  started, according to callback implmentation, then an error tuple with a
-  `DBConnection.TransactionError` is returned. In the aborted case a rollback
-  will be attempted and if it errors, that error will be returned instead.
-
-  This function will return a error tuple with a `DBConnection.ConnectionError`
-  when called inside a deprecated `transaction/3`.
-
-  ### Options
-
-  See module documentation. The pool and connection module may support other
-  options. All options are passed to `handle_commit/2` and `handle_rollback/2`.
-
-  See `begin/2` and `rollback/2`.
-
-  ### Example
-
-      {:ok, conn, result} = DBConnection.begin(pool)
-      try do
-        res = DBConnection.execute!(conn, "SELECT * FROM table", [])
-        DBConnection.commit(conn)
-        res
-      after
-        DBConnection.rollback(conn)
-      end
-  """
-  @spec commit(conn, opts :: Keyword.t) :: {:ok, result} | {:error, Exception.t}
-  def commit(conn, opts \\ []) do
-    commit(conn, &checkin/4, opts)
-  end
-
-  @doc """
-  Commit a database transaction.
-
-  Returns `result` on success, otherwise raises an exception on error.
-
-  This function will raise a `DBConnection.ConnectionError` when called inside a
-  deprecated `transaction/3`.
-
-  See `commit/2`.
-  """
-  @spec commit!(conn, opts :: Keyword.t) :: result
-  def commit!(conn, opts \\ []) do
-    case commit(conn, opts) do
-      {:ok, result} ->
-        result
-      {:error, err} ->
-        raise err
+      {_status, _conn_state, _meter} when mode == :transaction ->
+        throw({__MODULE__, conn_ref, reason})
+      {_status, _conn_state, _meter} ->
+        raise "not inside transaction"
     end
   end
 
@@ -1000,12 +789,7 @@ defmodule DBConnection do
       end
   """
   @spec status(conn, opts :: Keyword.t) :: status
-  def status(conn, opts \\ [])
-  def status(%DBConnection{conn_mode: :transaction}, _opts) do
-    raise DBConnection.ConnectionError,
-      "can not get status inside legacy transaction"
-  end
-  def status(conn, opts) do
+  def status(conn, opts \\ []) do
     case run(conn, &run_status/4, nil, opts) do
       {status, _meter} ->
         status
@@ -1074,25 +858,17 @@ defmodule DBConnection do
 
   ### Example
 
-      {conn, _} = DBConnection.begin!(pool)
-      try do
-
+      DBConnection.transaction(pool, fn conn ->
         query = %Query{statement: "SELECT id FROM table"}
         query = DBConnection.prepare!(conn, query)
         try do
           stream = DBConnection.stream(conn, query, [])
-          res = Enum.to_list(stream)
-          DBConnection.commit!(conn)
-          res
+          Enum.to_list(stream)
         after
           # Make sure query is closed!
           DBConnection.close(conn, query)
         end
-
-      after
-        # Make sure transaction is rolled back if anything goes wrong!
-        DBConnection.rollback(coon)
-      end
+      end)
   """
   @spec stream(t, query, params, opts :: Keyword.t) :: DBConnection.Stream.t
   def stream(%DBConnection{} = conn, query, params, opts \\ []) do
@@ -1315,9 +1091,13 @@ defmodule DBConnection do
 
   ## Helpers
 
+  defp pool(opts) do
+    Keyword.get(opts, :pool, DBConnection.ConnectionPool)
+  end
+
   defp checkout(pool, meter, opts) do
     meter = event(meter, :checkout)
-    pool_mod = Keyword.get(opts, :pool, DBConnection.ConnectionPool)
+    pool_mod = pool(opts)
     try do
       apply(pool_mod, :checkout, [pool, opts])
     catch
@@ -1722,7 +1502,7 @@ defmodule DBConnection do
   defp run_transaction(conn, fun, run, opts) do
     %DBConnection{conn_ref: conn_ref} = conn
     try do
-      result = fun.(%DBConnection{conn | conn_mode: :transaction})
+      result = fun.(%{conn | conn_mode: :transaction})
       conclude(conn, result)
     catch
       :throw, {__MODULE__, ^conn_ref, reason} ->
@@ -1784,21 +1564,6 @@ defmodule DBConnection do
     end
   end
 
-  defp transaction_error(conn, query, opts) do
-    run(conn, &run_transaction_error/5, query, meter(opts), opts)
-  end
-
-  defp run_transaction_error(conn, _conn_state, query, meter, _opts) do
-    meter = event(meter, query)
-    msg = "can not #{query} inside legacy transaction"
-    err = DBConnection.ConnectionError.exception(msg)
-    fail(conn)
-    log(meter, query, query, nil, {:error, err})
-  end
-
-  defp begin(%DBConnection{conn_mode: :transaction} = conn, _, opts) do
-    transaction_error(conn, :begin, opts)
-  end
   defp begin(conn, run, opts) do
     conn
     |> run.(&run_begin/4, meter(opts), opts)
@@ -1818,9 +1583,6 @@ defmodule DBConnection do
     end
   end
 
-  defp rollback(%DBConnection{conn_mode: :transaction} = conn, _, opts) do
-    transaction_error(conn, :rollback, opts)
-  end
   defp rollback(conn, run, opts) do
     conn
     |> run.(&run_rollback/4, meter(opts), opts)
@@ -1840,9 +1602,6 @@ defmodule DBConnection do
     end
   end
 
-  defp commit(%DBConnection{conn_mode: :transaction} = conn, _, opts) do
-    transaction_error(conn, :commit, opts)
-  end
   defp commit(conn, run, opts) do
     case run.(conn, &run_commit/4, meter(opts), opts) do
       {:rollback, {:ok, result, meter}} ->
@@ -2003,7 +1762,7 @@ defmodule DBConnection do
         {:ok, conn_state, meter}
 
       {:failed, _conn_state} ->
-        msg = "legacy transaction rolling back"
+        msg = "transaction rolling back"
         {:error, DBConnection.ConnectionError.exception(msg), meter}
 
       nil ->

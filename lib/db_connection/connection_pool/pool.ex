@@ -2,7 +2,7 @@ defmodule DBConnection.ConnectionPool.Pool do
   @moduledoc false
 
   def start_link(owner, tag, mod, opts) do
-    size = Keyword.get(opts, :pool_size, 20)
+    size = Keyword.get(opts, :pool_size, 1)
     children = for id <- 1..size, do: conn(owner, tag, id, mod, opts)
     sup_opts = [strategy: :one_for_one] ++ Keyword.take(opts, [:max_restarts, :max_seconds])
     Supervisor.start_link(children, sup_opts)

@@ -83,18 +83,6 @@ defmodule TestConnection do
         DBConnection.close!(pool, query, opts2 ++ unquote(opts))
       end
 
-      def begin!(pool, opts2 \\ []) do
-        DBConnection.begin!(pool, opts2 ++ unquote(opts))
-      end
-
-      def rollback!(pool, opts2 \\ []) do
-        DBConnection.rollback!(pool, opts2 ++ unquote(opts))
-      end
-
-      def commit!(pool, opts2 \\ []) do
-        DBConnection.commit!(pool, opts2 ++ unquote(opts))
-      end
-
       def status(pool, opts2 \\ []) do
         DBConnection.status(pool, opts2 ++ unquote(opts))
       end
@@ -165,10 +153,6 @@ defmodule TestConnection do
 
   def handle_deallocate(query, cursor, opts, state) do
     TestAgent.eval(:handle_deallocate, [query, cursor, opts, state])
-  end
-
-  def handle_info(msg, state) do
-    TestAgent.eval(:handle_info, [msg, state])
   end
 end
 

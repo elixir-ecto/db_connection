@@ -235,9 +235,6 @@ defmodule DBConnection.Connection do
     err = DBConnection.ConnectionError.exception(message)
     {:disconnect, {down_log(reason), err}, %{s | client: {ref, nil}}}
   end
-  def handle_info({:DOWN, _, :process, _, _} = msg, s) do
-    do_handle_info(msg, s)
-  end
 
   def handle_info({:timeout, timer, {__MODULE__, pid, timeout}}, %{timer: timer} = s)
       when is_reference(timer) do
@@ -259,18 +256,12 @@ defmodule DBConnection.Connection do
     end
   end
 
-  def handle_info(msg, %{client: nil} = s) do
-    do_handle_info(msg, s)
-  end
-  def handle_info(msg, %{client: {_, :connect}} = s) do
-    do_handle_info(msg, s)
-  end
   def handle_info(msg, %{mod: mod} = s) do
     Logger.info(fn() ->
-      [inspect(mod), ?\s, ?(, inspect(self()), ") missed message: " |
-        inspect(msg)]
+      [inspect(mod), ?\s, ?(, inspect(self()), ") missed message: " | inspect(msg)]
     end)
-    {:noreply, s}
+
+    handle_timeout(s)
   end
 
   @doc false
@@ -313,20 +304,6 @@ defmodule DBConnection.Connection do
   defp down_log(:shutdown), do: :nolog
   defp down_log({:shutdown, _}), do: :nolog
   defp down_log(_), do: :log
-
-  defp do_handle_info(msg, %{mod: mod, state: state} = s) do
-    if function_exported?(mod, :handle_info, 2) do
-      case apply(mod, :handle_info, [msg, state]) do
-        {:ok, state} ->
-          handle_timeout(%{s | state: state})
-
-        {:disconnect, err, state} ->
-          {:disconnect, {:log, err}, %{s | state: state}}
-      end
-    else
-      handle_timeout(s)
-    end
-  end
 
   defp handle_timeout(s), do: {:noreply, s}
 
