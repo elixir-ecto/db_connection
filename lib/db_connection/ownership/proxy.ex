@@ -53,6 +53,7 @@ defmodule DBConnection.Ownership.Proxy do
   # Callbacks
 
   def init({caller, pool, pool_opts}) do
+    ownership_pool = Keyword.get(pool_opts, :ownership_pool, DBConnection.ConnectionPool)
     pool_opts = Keyword.put(pool_opts, :timeout, :infinity)
     owner_ref = Process.monitor(caller)
     pool_ref = Process.monitor(pool)
@@ -60,7 +61,7 @@ defmodule DBConnection.Ownership.Proxy do
     state = %{client: nil, timer: nil, conn_state: nil, conn_module: nil,
               owner_ref: owner_ref, pool: pool, pool_ref: pool_ref,
               pool_opts: pool_opts, conn_ref: nil, queue: :queue.new,
-              ownership_timer: nil}
+              ownership_timer: nil, ownership_pool: ownership_pool}
 
     {:ok, state}
   end
@@ -106,14 +107,14 @@ defmodule DBConnection.Ownership.Proxy do
   end
 
   def handle_call({:init, ownership_timeout}, {pid, _} = from, state) do
-    %{pool: pool, pool_opts: pool_opts} = state
+    %{pool: pool, pool_opts: pool_opts, ownership_pool: ownership_pool} = state
 
     try do
-      DBConnection.ConnectionPool.checkout(pool, pool_opts)
+      ownership_pool.checkout(pool, pool_opts)
     catch
       kind, reason ->
         stack = System.stacktrace()
-        msg = "failed to checkout using DBConnection.ConnectionPool"
+        msg = "failed to checkout using #{inspect(ownership_pool)}"
         err = DBConnection.ConnectionError.exception(msg)
         GenServer.reply(from, {:error, err})
         :erlang.raise(kind, reason, stack)
@@ -158,8 +159,8 @@ defmodule DBConnection.Ownership.Proxy do
 
   def handle_cast({tag, ref, error, conn_state}, %{client: {_, ref, _}} = state)
       when tag in [:stop, :disconnect] do
-    %{conn_ref: conn_ref, pool_opts: pool_opts} = state
-    apply(DBConnection.ConnectionPool, tag, [conn_ref, error, conn_state, pool_opts])
+    %{conn_ref: conn_ref, pool_opts: pool_opts, ownership_pool: ownership_pool} = state
+    apply(ownership_pool, tag, [conn_ref, error, conn_state, pool_opts])
     {:stop, {:shutdown, error}, state}
   end
 
@@ -238,23 +239,23 @@ defmodule DBConnection.Ownership.Proxy do
 
   # If it is down but it has no client, checkin
   defp down(reason, %{client: nil} = state) do
-    %{conn_ref: conn_ref, conn_state: conn_state, pool_opts: pool_opts} = state
-    DBConnection.ConnectionPool.checkin(conn_ref, conn_state, pool_opts)
+    %{conn_ref: conn_ref, conn_state: conn_state, pool_opts: pool_opts, ownership_pool: ownership_pool} = state
+    ownership_pool.checkin(conn_ref, conn_state, pool_opts)
     {:stop, {:shutdown, reason}, state}
   end
 
   # If it is down but it has a client, disconnect
   defp down(reason, state) do
-    %{conn_ref: conn_ref, conn_state: conn_state, pool_opts: pool_opts} = state
+    %{conn_ref: conn_ref, conn_state: conn_state, pool_opts: pool_opts, ownership_pool: ownership_pool} = state
     error = DBConnection.ConnectionError.exception(reason)
-    DBConnection.ConnectionPool.disconnect(conn_ref, error, conn_state, pool_opts)
+    ownership_pool.disconnect(conn_ref, error, conn_state, pool_opts)
     {:stop, {:shutdown, reason}, state}
   end
 
   defp disconnect(reason, state) do
-    %{conn_state: conn_state, pool_opts: pool_opts, conn_ref: conn_ref} = state
+    %{conn_state: conn_state, pool_opts: pool_opts, conn_ref: conn_ref, ownership_pool: ownership_pool} = state
     error = DBConnection.ConnectionError.exception(reason)
-    DBConnection.ConnectionPool.disconnect(conn_ref, error, conn_state, pool_opts)
+    ownership_pool.disconnect(conn_ref, error, conn_state, pool_opts)
     {:stop, {:shutdown, reason}, state}
   end
 end
