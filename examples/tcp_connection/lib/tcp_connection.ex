@@ -1,5 +1,4 @@
 defmodule TCPConnection do
-
   use DBConnection
 
   defmodule Query do
@@ -53,31 +52,6 @@ defmodule TCPConnection do
         {:ok, {sock, <<>>}}
       {:error, reason} ->
         {:error, TCPConnection.Error.exception({:connect, reason})}
-    end
-  end
-
-  def checkout({sock, _} = state) do
-    # Socket is going to be used by another process, deactive it and
-    # then flush the message queue for any socket messages.
-    case :inet.setopts(sock, [active: false]) do
-      :ok ->
-        flush(state)
-      {:error, reason} ->
-        # Errors are always exceptions
-        {:disconnect, TCPConnection.Error.exception({:setopts, reason}), state}
-    end
-  end
-
-  def checkin({sock, _} = state) do
-    # Socket is back with the owning process, activate it to use the
-    # buffer and to handle error/closed messages. It is not required for
-    # the socket to be in active mode when checked in as `:idle_timeout`
-    # can be used to ping the database with `ping/1`.
-    case :inet.setopts(sock, [active: :once]) do
-      :ok ->
-        {:ok, state}
-      {:error, reason} ->
-        {:disconnect, TCPConnection.Error.exception({:setopts, reason}), state}
     end
   end
 
@@ -138,25 +112,6 @@ defmodule TCPConnection do
     {:ok, nil, s}
   end
 
-  def handle_info({:tcp, sock, data}, {sock, buffer}) do
-    # If active while checked in data may accumlate in a buffer, at some
-    # point may need to crash if the buffer gets too big.
-    state = {sock, buffer <> data}
-    case :inet.setopts(sock, [active: :once]) do
-      :ok ->
-        {:ok, state}
-      {:error, reason} ->
-        {:disconnect, TCPConnection.Error.exception({:setopts, reason}), state}
-    end
-  end
-  def handle_info({:tcp_closed, sock}, {sock, _} = state) do
-    {:disconnect, TCPConnection.Error.exception({:recv, :closed}), state}
-  end
-  def handle_info({:tcp_error, sock, reason}, {sock, _} = state) do
-    {:disconnect, TCPConnection.Error.exception({:recv, reason}), state}
-  end
-  def handle_info(_, state), do: {:ok, state}
-
   def disconnect(_, {sock, _} = state) do
     :ok = :gen_tcp.close(sock)
     # If socket is active we flush any socket messages so the next
@@ -184,7 +139,6 @@ defmodule TCPConnection do
 end
 
 defimpl DBConnection.Query, for: TCPConnection.Query do
-
   alias TCPConnection.Query
 
   def parse(%Query{query: tag} = query, _) when tag in [:send, :recv], do: query

@@ -125,9 +125,6 @@ defmodule DBConnection do
   another process. `checkin/1` is called with the new state when control
   is returned to the connection process.
 
-  Messages are discarded, instead of being passed to `handle_info/2`,
-  when the state is checked out.
-
   This callback is called in the connection process.
   """
   @callback checkout(state :: any) ::
@@ -309,20 +306,6 @@ defmodule DBConnection do
     {:error | :disconnect, Exception.t, new_state :: any}
 
   @doc """
-  Handle a message received by the connection process when checked in.
-  Return `{:ok, state}` to continue or `{:disconnect, exception,
-  state}` to disconnect.
-
-  Messages received by the connection process when checked out will be
-  logged and discared.
-
-  This callback is called in the connection process.
-  """
-  @callback handle_info(msg :: any, state :: any) ::
-    {:ok, new_state :: any} |
-    {:disconnect, Exception.t, new_state :: any}
-
-  @doc """
   Disconnect from the database. Return `:ok`.
 
   The exception as first argument is the exception from a `:disconnect`
@@ -335,8 +318,6 @@ defmodule DBConnection do
   This callback is called in the connection process.
   """
   @callback disconnect(err :: Exception.t, state :: any) :: :ok
-
-  @optional_callbacks handle_info: 2
 
   @doc """
   Use `DBConnection` to set the behaviour.

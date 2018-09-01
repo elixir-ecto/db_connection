@@ -3,6 +3,7 @@ defmodule ConnectTest do
 
   alias TestPool, as: P
   alias TestAgent, as: A
+  alias TestQuery, as: Q
 
   test "backoff after failed initial connection attempt" do
     err = RuntimeError.exception("oops")
@@ -94,7 +95,6 @@ defmodule ConnectTest do
     stack = [
       fn(opts) ->
         send(opts[:parent], {:hi1, self()})
-        send(self(), :hello)
         {:ok, :state}
       end,
       {:disconnect, err, :discon},
@@ -107,13 +107,14 @@ defmodule ConnectTest do
     {:ok, agent} = A.start_link(stack)
 
     opts = [agent: agent, parent: self(), backoff_min: 10]
-    {:ok, _} = P.start_link(opts)
+    {:ok, pool} = P.start_link(opts)
+    assert P.close(pool, %Q{})
     assert_receive {:hi1, conn}
     assert_receive {:hi2, ^conn}
 
     assert [
       connect: [opts2],
-      handle_info: [:hello, :state],
+      handle_close: _,
       disconnect: [^err, :discon],
       connect: [opts2],
       connect: [opts2]] = A.record(agent)
@@ -145,7 +146,6 @@ defmodule ConnectTest do
       fn(opts) ->
         send(opts[:parent], {:hi, self()})
         Process.link(opts[:parent])
-        send(self(), :hello)
         {:ok, :state}
       end,
       {:disconnect, err, :discon},
@@ -155,13 +155,15 @@ defmodule ConnectTest do
 
     opts = [agent: agent, parent: self(), backoff_type: :stop]
     Process.flag(:trap_exit, true)
-    {:ok, _} = P.start_link(opts)
+    {:ok, pool} = P.start_link(opts)
+    assert P.close(pool, %Q{})
+
     assert_receive {:hi, conn}
     assert_receive {:EXIT, ^conn, {:shutdown, ^err}}
 
     assert [
       {:connect, [_]},
-      {:handle_info, [:hello, :state]} | _] = A.record(agent)
+      {:handle_close, _} | _] = A.record(agent)
   end
 
   test "backoff after failed after_connect" do
