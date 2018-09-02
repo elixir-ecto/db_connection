@@ -32,6 +32,9 @@ defprotocol DBConnection.Query do
   This function is called to encode a query before it is executed using a
   connection callback module.
 
+  If this function raises `DBConnection.EncodeError`, then the query is
+  prepared once again.
+
   See `DBConnection.execute/3`.
   """
   @spec encode(any, any, Keyword.t) :: any

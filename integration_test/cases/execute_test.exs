@@ -45,6 +45,44 @@ defmodule ExecuteTest do
       handle_execute: [_, :encoded, _, :state]] = A.record(agent)
   end
 
+  test "execute reprepares query on encode error" do
+    stack = [
+      {:ok, :state},
+      {:ok, %Q{state: :prepared}, :new_state},
+      {:ok, %R{}, :newer_state},
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    parse_once = fn query ->
+      if Process.put(DBConnection.Query, true) do
+        query
+      else
+        raise "parsing twice"
+      end
+    end
+
+    fail_encode_once = fn [:param] ->
+      if Process.put(DBConnection.EncodeError, true) do
+        :encoded
+      else
+        raise DBConnection.EncodeError, "oops"
+      end
+    end
+
+    opts = [agent: agent, parent: self()]
+    {:ok, pool} = P.start_link(opts)
+
+    opts = [parse: parse_once,
+            encode: fail_encode_once,
+            decode: fn(%R{}) -> :decoded end]
+    assert P.execute(pool, %Q{}, [:param], opts) == {:ok, %Q{state: :prepared}, :decoded}
+
+    assert [
+      connect: [_],
+      handle_prepare: [%Q{state: nil}, _, :state],
+      handle_execute: [%Q{state: :prepared}, :encoded, _, :new_state]] = A.record(agent)
+  end
+
   test "execute replaces query and decodes result" do
     stack = [
       {:ok, :state},
