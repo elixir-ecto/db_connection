@@ -72,7 +72,7 @@ defmodule StreamTest do
       ] = A.record(agent)
   end
 
-  test "stream reprapres query on encode error" do
+  test "stream reprepares query on encode error" do
     stack = [
       {:ok, :state},
       {:ok, :began, :begin_state},
