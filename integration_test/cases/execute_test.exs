@@ -53,6 +53,14 @@ defmodule ExecuteTest do
       ]
     {:ok, agent} = A.start_link(stack)
 
+    parse_once = fn query ->
+      if Process.put(DBConnection.Query, true) do
+        query
+      else
+        raise "parsing twice"
+      end
+    end
+
     fail_encode_once = fn [:param] ->
       if Process.put(DBConnection.EncodeError, true) do
         :encoded
@@ -64,7 +72,8 @@ defmodule ExecuteTest do
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
 
-    opts = [encode: fail_encode_once,
+    opts = [parse: parse_once,
+            encode: fail_encode_once,
             decode: fn(%R{}) -> :decoded end]
     assert P.execute(pool, %Q{}, [:param], opts) == {:ok, %Q{state: :prepared}, :decoded}
 

@@ -463,15 +463,16 @@ defmodule DBConnection do
     {:ok, query, result} |
     {:error, Exception.t}
   def prepare_execute(conn, query, params, opts \\ []) do
-    conn
-    |> no_log_prepare_execute(query, params, opts)
-    |> log(:prepare_execute, query, params)
+    result =
+      with {:ok, query, meter} <- parse(query, meter(opts), opts) do
+        parsed_prepare_execute(conn, query, params, meter, opts)
+      end
+
+    log(result, :prepare_execute, query, params)
   end
 
-  defp no_log_prepare_execute(conn, query, params, opts) do
-    with {:ok, query, meter} <- parse(query, meter(opts), opts),
-         {:ok, query, result, meter}
-          <- run(conn, &run_prepare_execute/6, query, params, meter, opts),
+  defp parsed_prepare_execute(conn, query, params, meter, opts) do
+    with {:ok, query, result, meter} <- run(conn, &run_prepare_execute/6, query, params, meter, opts),
          {:ok, result, meter} <- decode(query, result, meter, opts) do
       {:ok, query, result, meter}
     end
@@ -522,8 +523,8 @@ defmodule DBConnection do
   def execute(conn, query, params, opts \\ []) do
     result =
       case maybe_encode(query, params, meter(opts), opts) do
-        :retry ->
-          no_log_prepare_execute(conn, query, params, opts)
+        {:prepare, meter} ->
+          parsed_prepare_execute(conn, query, params, meter, opts)
 
         {:ok, params, meter} ->
           case run(conn, &run_execute/6, query, params, meter, opts) do
@@ -1095,7 +1096,7 @@ defmodule DBConnection do
     try do
       DBConnection.Query.encode(query, params, opts)
     rescue
-      DBConnection.EncodeError -> :retry
+      DBConnection.EncodeError -> {:prepare, meter}
     catch
       kind, reason ->
         stack = System.stacktrace()
@@ -1130,15 +1131,16 @@ defmodule DBConnection do
   end
 
   defp prepare_declare(conn, query, params, opts) do
-    conn
-    |> no_log_prepare_declare(query, params, opts)
-    |> log(:prepare_declare, query, params)
+    result =
+      with {:ok, query, meter} <- parse(query, meter(opts), opts) do
+        parsed_prepare_declare(conn, query, params, meter, opts)
+      end
+
+    log(result, :prepare_declare, query, params)
   end
 
-  defp no_log_prepare_declare(conn, query, params, opts) do
-    with {:ok, query, meter} <- parse(query, meter(opts), opts) do
-      run(conn, &run_prepare_declare/6, query, params, meter, opts)
-    end
+  defp parsed_prepare_declare(conn, query, params, meter, opts) do
+    run(conn, &run_prepare_declare/6, query, params, meter, opts)
   end
 
   defp prepare_declare!(conn, query, params, opts) do
@@ -1153,8 +1155,8 @@ defmodule DBConnection do
   defp declare(conn, query, params, opts) do
     result =
       case maybe_encode(query, params, meter(opts), opts) do
-        :retry ->
-          no_log_prepare_declare(conn, query, params, opts)
+        {:prepare, meter} ->
+          parsed_prepare_declare(conn, query, params, meter, opts)
 
         {:ok, params, meter} ->
           run(conn, &run_declare/6, query, params, meter, opts)

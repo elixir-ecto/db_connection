@@ -84,6 +84,14 @@ defmodule StreamTest do
       ]
     {:ok, agent} = A.start_link(stack)
 
+    parse_once = fn query ->
+      if Process.put(DBConnection.Query, true) do
+        query
+      else
+        raise "parsing twice"
+      end
+    end
+
     fail_encode_once = fn [:param] ->
       if Process.put(DBConnection.EncodeError, true) do
         :encoded
@@ -96,7 +104,8 @@ defmodule StreamTest do
     {:ok, pool} = P.start_link(opts)
 
     assert P.transaction(pool, fn(conn) ->
-      opts2 = [encode: fail_encode_once,
+      opts2 = [parse: parse_once,
+               encode: fail_encode_once,
                decode: fn(%R{}) -> :decoded end]
       stream = P.stream(conn, %Q{}, [:param], opts2)
       assert Enum.to_list(stream) == [:decoded]
