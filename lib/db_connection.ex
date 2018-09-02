@@ -745,13 +745,17 @@ defmodule DBConnection do
       end)
   """
   @spec rollback(t, reason :: any) :: no_return
-  def rollback(conn, reason) do
-    %DBConnection{conn_ref: conn_ref, conn_mode: mode} = conn
+  def rollback(conn, reason)
+
+  def rollback(%DBConnection{conn_mode: :transaction} = conn, reason) do
+    %DBConnection{conn_ref: conn_ref}  = conn
+    throw({__MODULE__, conn_ref, reason})
+  end
+
+  def rollback(%DBConnection{} = conn, _reason) do
     case get_info(conn, nil) do
       {:error, err, _meter} ->
         raise err
-      {_status, _conn_state, _meter} when mode == :transaction ->
-        throw({__MODULE__, conn_ref, reason})
       {_status, _conn_state, _meter} ->
         raise "not inside transaction"
     end
