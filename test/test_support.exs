@@ -94,8 +94,7 @@ defmodule TestConnection do
   def start_link(opts), do: DBConnection.start_link(__MODULE__, opts)
 
   def connect(opts) do
-    agent = Keyword.fetch!(opts, :agent)
-    _ = Process.put(:agent, agent)
+    put_agent_from_opts(opts)
     TestAgent.eval(:connect, [opts])
   end
 
@@ -128,6 +127,7 @@ defmodule TestConnection do
   end
 
   def handle_status(opts, state) do
+    put_agent_from_opts(opts)
     TestAgent.eval(:handle_status, [opts, state])
   end
 
@@ -153,6 +153,10 @@ defmodule TestConnection do
 
   def handle_deallocate(query, cursor, opts, state) do
     TestAgent.eval(:handle_deallocate, [query, cursor, opts, state])
+  end
+
+  defp put_agent_from_opts(opts) do
+    Process.get(:agent) || Process.put(:agent, Keyword.fetch!(opts, :agent))
   end
 end
 
@@ -201,7 +205,8 @@ defmodule TestAgent do
     ok
   end
 
-  def eval(agent \\ Process.get(:agent), fun, args) do
+  def eval(fun, args) do
+    agent = Process.get(:agent) || raise "no agent in process dictionary"
     action = {fun, args}
     case Agent.get_and_update(agent, &get_and_update(&1, action)) do
       fun when is_function(fun) ->

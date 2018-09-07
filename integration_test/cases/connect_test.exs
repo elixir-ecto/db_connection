@@ -169,8 +169,10 @@ defmodule ConnectTest do
   test "backoff after failed after_connect" do
     stack = [
       {:ok, :state},
+      {:idle, :state},
       :ok,
       {:ok, :state2},
+      {:idle, :state},
       :ok
       ]
     {:ok, agent} = A.start_link(stack)
@@ -189,7 +191,9 @@ defmodule ConnectTest do
 
     assert [
       {:connect, [_]},
+      {:handle_status, _},
       {:disconnect, [%DBConnection.ConnectionError{}, :state]},
-      {:connect, [_]} | _] = A.record(agent)
+      {:connect, [_]},
+      {:handle_status, _} | _] = A.record(agent)
   end
 end

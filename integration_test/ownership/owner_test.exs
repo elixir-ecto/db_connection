@@ -8,11 +8,13 @@ defmodule OwnerTest do
   test "reconnects when owner exits during a client checkout" do
     stack = [
       {:ok, :state},
+      {:idle, :state},
       :ok,
       fn(opts) ->
         send(opts[:parent], :reconnected)
         {:ok, :state}
-      end]
+      end,
+      {:idle, :state}]
     {:ok, agent} = A.start_link(stack)
 
     opts = [agent: agent, parent: self(), ownership_mode: :manual]
@@ -36,18 +38,24 @@ defmodule OwnerTest do
 
     assert [
       {:connect, _},
+      {:handle_status, _},
       {:disconnect, _},
-      {:connect, _}] = A.record(agent)
+      {:connect, _},
+      {:handle_status, _}] = A.record(agent)
   end
 
   test "reconnects when ownership times out" do
     stack = [
       {:ok, :state},
+      {:idle, :state},
       :ok,
       fn(opts) ->
         send(opts[:parent], :reconnected)
         {:ok, :state}
-      end]
+      end,
+      {:idle, :state},
+      {:idle, :state},
+      {:idle, :state}]
     {:ok, agent} = A.start_link(stack)
 
     parent = self()
@@ -56,7 +64,7 @@ defmodule OwnerTest do
 
     pid = spawn_link(fn() ->
       assert_receive {:go, ^parent}
-      assert P.run(pool, fn(_) -> :result end) == :result
+      assert P.run(pool, fn(_) -> :result end, opts) == :result
       send(parent, {:done, self()})
     end)
 
@@ -69,7 +77,11 @@ defmodule OwnerTest do
 
     assert [
       {:connect, _},
+      {:handle_status, _},
       {:disconnect, _},
-      {:connect, _}] = A.record(agent)
+      {:connect, _},
+      {:handle_status, _},
+      {:handle_status, _},
+      {:handle_status, _}] = A.record(agent)
   end
 end

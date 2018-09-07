@@ -9,8 +9,10 @@ defmodule AfterConnectTest do
   test "after_connect execute" do
     stack = [
       {:ok, :state},
+      {:idle, :state},
       {:ok, %R{}, :new_state},
       {:ok, %R{}, :newer_state},
+      {:idle, :newer_state},
       {:ok, %R{}, :newest_state}
       ]
     {:ok, agent} = A.start_link(stack)
@@ -28,17 +30,21 @@ defmodule AfterConnectTest do
 
     assert [
       connect: [_],
+      handle_status: _,
       handle_execute: [%Q{}, [:after_connect], _, :state],
       handle_execute: [%Q{}, [:after_connect],
         [{:key, :value} | _], :new_state],
+      handle_status: _,
       handle_execute: [%Q{}, [:client], _, :newer_state]] = A.record(agent)
   end
 
   test "after_connect execute with mfargs" do
     stack = [
       {:ok, :state},
+      {:idle, :state},
       {:ok, %R{}, :new_state},
       {:ok, %R{}, :newer_state},
+      {:idle, :newer_state},
       {:ok, %R{}, :newest_state}
       ]
     {:ok, agent} = A.start_link(stack)
@@ -51,18 +57,21 @@ defmodule AfterConnectTest do
          :ok
       end
     end
+
     after_connect = {AfterCon, :after_connect, [:arg, agent]}
     opts = [after_connect: after_connect, agent: agent, parent: self()]
+
     try do
       {:ok, pool} = P.start_link(opts)
-
       assert P.execute(pool, %Q{}, [:client])
 
       assert [
         connect: [_],
+        handle_status: _,
         handle_execute: [%Q{}, [:after_connect], _, :state],
         handle_execute: [%Q{}, [:after_connect],
           [{:key, :value} | _], :new_state],
+        handle_status: _,
         handle_execute: [%Q{}, [:client], _, :newer_state]] = A.record(agent)
     after
       :code.purge(AfterConn)
@@ -74,8 +83,10 @@ defmodule AfterConnectTest do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
+      {:idle, :state},
       {:error, err, :new_state},
       {:ok, %R{}, :newer_state},
+      {:idle, :newer_state},
       {:ok, %R{}, :newest_state}
       ]
     {:ok, agent} = A.start_link(stack)
@@ -93,8 +104,10 @@ defmodule AfterConnectTest do
 
     assert [
       connect: [_],
+      handle_status: _,
       handle_execute: [%Q{}, [:after_connect], _, :state],
       handle_execute: [%Q{}, [:after_connect], _, :new_state],
+      handle_status: _,
       handle_execute: [%Q{}, [:client], _, :newer_state]] = A.record(agent)
   end
 
@@ -102,10 +115,13 @@ defmodule AfterConnectTest do
     err = RuntimeError.exception("oops")
     stack = [
       {:ok, :state},
+      {:idle, :state},
       {:disconnect, err, :new_state},
       :ok,
       {:ok, :state2},
+      {:idle, :state2},
       {:ok, %R{}, :new_state2},
+      {:idle, :new_state2},
       {:ok, %R{}, :newer_state2}
       ]
     {:ok, agent} = A.start_link(stack)
@@ -132,10 +148,13 @@ defmodule AfterConnectTest do
 
     assert [
       connect: [_],
+      handle_status: _,
       handle_execute: [%Q{}, [:after_connect], _, :state],
       disconnect: [^err, :new_state],
       connect: [_],
+      handle_status: _,
       handle_execute: [%Q{}, [:after_connect], _, :state2],
+      handle_status: _,
       handle_execute: [%Q{}, [:client], _, :new_state2]] = A.record(agent)
   end
 
@@ -146,6 +165,7 @@ defmodule AfterConnectTest do
         Process.link(opts[:parent])
         {:ok, :state}
       end,
+      {:idle, :state},
       :oops,
       fn(_) ->
         :timer.sleep(:infinity)
@@ -177,6 +197,7 @@ defmodule AfterConnectTest do
 
     assert [
       {:connect, _},
+      {:handle_status, _},
       {:handle_execute, [%Q{}, [:after_connect], _, :state]}| _] = A.record(agent)
   end
 
@@ -187,6 +208,7 @@ defmodule AfterConnectTest do
         Process.link(opts[:parent])
         {:ok, :state}
       end,
+      {:idle, :state},
       fn(_, _, _, _) ->
         raise "oops"
       end,
@@ -219,12 +241,14 @@ defmodule AfterConnectTest do
 
     assert [
       {:connect, _},
+      {:handle_status, _},
       {:handle_execute, [%Q{}, [:after_connect], _, :state]}| _] = A.record(agent)
   end
 
   test "after_connect exit and reconnect" do
     stack = [
       {:ok, :state},
+      {:idle, :state},
       fn(_, _, _, _) ->
         Process.exit(self(), :shutdown)
       end,
@@ -233,7 +257,9 @@ defmodule AfterConnectTest do
         send(opts[:parent], :reconnected)
         {:ok, :state2}
       end,
+      {:idle, :state2},
       {:ok, %R{}, :new_state2},
+      {:idle, :new_state2},
       {:ok, %R{}, :newer_state2}
       ]
     {:ok, agent} = A.start_link(stack)
@@ -251,10 +277,13 @@ defmodule AfterConnectTest do
 
     assert [
       {:connect, _},
+      {:handle_status, _},
       {:handle_execute, [%Q{}, [:after_connect], _, :state]},
       {:disconnect, [%DBConnection.ConnectionError{}, :state]},
       {:connect, _},
+      {:handle_status, _},
       {:handle_execute, [%Q{}, [:after_connect], _, :state2]},
+      {:handle_status, _},
       {:handle_execute, [%Q{}, [:client], _, :new_state2]}|
       _] = A.record(agent)
   end
@@ -262,8 +291,10 @@ defmodule AfterConnectTest do
   test "after_connect prepare" do
     stack = [
       {:ok, :state},
+      {:idle, :state},
       {:ok, %Q{}, :new_state},
       {:ok, %Q{}, :newer_state},
+      {:idle, :newer_state},
       {:ok, %Q{}, :newest_state}
       ]
     {:ok, agent} = A.start_link(stack)
@@ -281,8 +312,10 @@ defmodule AfterConnectTest do
 
     assert [
       connect: [_],
+      handle_status: _,
       handle_prepare: [%Q{}, _, :state],
       handle_prepare: [%Q{}, [{:key, :value} | _], :new_state],
+      handle_status: _,
       handle_prepare: [%Q{}, _, :newer_state]] = A.record(agent)
   end
 end

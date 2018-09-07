@@ -25,6 +25,7 @@ defmodule DBConnection.PrepareStream do
                          params: any,
                          opts: Keyword.t}
 end
+
 defimpl Enumerable, for: DBConnection.PrepareStream do
   def count(_), do: {:error, __MODULE__}
 
@@ -651,12 +652,36 @@ defmodule DBConnection do
     case checkout(pool, nil, opts) do
       {:ok, conn, _, _} ->
         try do
-          fun.(conn)
-        after
-          checkin(conn, opts)
+          status = status(conn, opts)
+          {fun.(conn), status, status(conn, opts)}
+        catch
+          kind, error ->
+            stacktrace = System.stacktrace()
+            checkin(conn, opts)
+            :erlang.raise(kind, error, stacktrace)
+        else
+          {result, status, status} ->
+            checkin(conn, opts)
+            result
+
+          {result, old_status, new_status} ->
+            case fetch_info(conn, nil) do
+              {:ok, conn_state, _meter} ->
+                err = DBConnection.ConnectionError.exception(
+                  "connection was checked out with status #{inspect(old_status)} " <>
+                    "but it was checked in with status #{inspect(new_status)}"
+                )
+                delete_disconnect(conn, conn_state, err, opts)
+                raise err
+
+              {:error, _, _} ->
+                result
+            end
         end
+
       {:error, err, _} ->
         raise err
+
       {kind, reason, stack, _} ->
         :erlang.raise(kind, reason, stack)
     end
