@@ -70,7 +70,7 @@ defmodule ClientTest do
       assert_receive :reconnected
       send(pid, {:go, parent})
       assert_receive {:done, ^pid}
-    end, [timeout: 0])
+    end, [timeout: 100])
 
     assert [
       {:connect, _},
@@ -104,14 +104,14 @@ defmodule ClientTest do
 
     assert P.run(pool, fn(conn) ->
       assert_receive :reconnected
+      assert {:error, %RuntimeError{}} = P.execute(conn, %Q{}, [:param])
       spawn_link(fn() ->
         _ = Process.put(:agent, agent)
         assert P.run(pool, fn(_) -> :result end) == :result
         send(parent, :done)
       end)
-      assert {:error, %RuntimeError{}} = P.execute(conn, %Q{}, [:param])
       :result
-    end, [timeout: 0]) == :result
+    end, [timeout: 100]) == :result
 
     assert_receive :done
     assert P.execute(pool, %Q{}, [:param]) == {:ok, %R{}}
@@ -152,19 +152,20 @@ defmodule ClientTest do
     try do
       P.run(pool, fn(conn) ->
         assert_receive :reconnected
-        spawn_link(fn() ->
-          _ = Process.put(:agent, agent)
-          assert P.run(pool, fn(_) -> :result end) == :result
-          send(parent, :done)
-        end)
         P.execute(conn, %Q{}, [:param])
-      end, [timeout: 0])
+      end, [timeout: 100])
     catch
       :throw, :oops ->
         :ok
     end
 
-    assert_receive :done
+    spawn_link(fn ->
+      _ = Process.put(:agent, agent)
+      assert P.run(pool, fn(_) -> :result end) == :result
+      send(parent, :done)
+    end)
+
+    assert_receive :done, 1000
     assert P.execute(pool, %Q{}, [:param]) == {:ok, %R{}}
 
     assert [

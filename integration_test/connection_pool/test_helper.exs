@@ -1,4 +1,8 @@
-ExUnit.start(capture_log: true, assert_receive_timeout: 500, exclude: [:queue_timeout_exit])
+ExUnit.start(
+  capture_log: true,
+  assert_receive_timeout: 1000,
+  exclude: [:queue_timeout_exit]
+)
 
 Code.require_file("../../test/test_support.exs", __DIR__)
 

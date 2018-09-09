@@ -1,6 +1,6 @@
 ExUnit.start(
   capture_log: true,
-  assert_receive_timeout: 500,
+  assert_receive_timeout: 1000,
   exclude: [:idle_timeout, :queue_timeout_exit]
 )
 
