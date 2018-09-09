@@ -1039,6 +1039,11 @@ defmodule TransactionTest do
       {:ok, :state},
       {:idle, :new_state},
       {:transaction, :newest_state},
+      :ok,
+      fn(opts) ->
+        send(opts[:parent], :reconnected)
+        {:ok, :last_state}
+      end
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -1049,10 +1054,14 @@ defmodule TransactionTest do
       P.run(pool, fn _ -> :ok  end)
     end
 
+    assert_receive :reconnected
+
     assert [
       connect: [_],
       handle_status: [ _, :state],
       handle_status: [_, :new_state],
+      disconnect: [_, :newest_state],
+      connect: _
       ]  = A.record(agent)
   end
 end
