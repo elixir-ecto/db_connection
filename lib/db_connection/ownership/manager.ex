@@ -14,10 +14,9 @@ defmodule DBConnection.Ownership.Manager do
   end
 
   @spec checkout(GenServer.server, Keyword.t) ::
-    {:init, pid} | {:already, :owner | :allowed}
+    :ok | {:already, :owner | :allowed}
   def checkout(manager, opts) do
-    timeout = Keyword.get(opts, :pool_timeout, @timeout)
-    GenServer.call(manager, {:checkout, opts}, timeout)
+    GenServer.call(manager, {:checkout, opts}, :infinity)
   end
 
   @spec checkin(GenServer.server, Keyword.t) ::
@@ -41,25 +40,6 @@ defmodule DBConnection.Ownership.Manager do
   def allow(manager, parent, allow, opts) do
     timeout = Keyword.get(opts, :pool_timeout, @timeout)
     GenServer.call(manager, {:allow, parent, allow}, timeout)
-  end
-
-  @spec lookup(GenServer.server, Keyword.t) ::
-    {:ok, pid} | {:init, pid} | :not_found
-  def lookup(manager, opts) when is_atom(manager) do
-    client = self()
-    case :ets.lookup(manager, client) do
-      [{^client, proxy}] -> {:ok, proxy}
-      [] -> server_lookup(manager, opts)
-    end
-  end
-
-  def lookup(manager, opts) do
-    server_lookup(manager, opts)
-  end
-
-  defp server_lookup(manager, opts) do
-    timeout = Keyword.get(opts, :pool_timeout, @timeout)
-    GenServer.call(manager, {:lookup, opts}, timeout)
   end
 
   ## Callbacks
@@ -129,8 +109,8 @@ defmodule DBConnection.Ownership.Manager do
     if kind = already_checked_out(checkouts, caller) do
       {:reply, {:already, kind}, state}
     else
-       {pool, state} = proxy_checkout(state, caller, opts)
-      {:reply, {:init, pool}, state}
+      {_, state} = proxy_checkout(state, caller, opts)
+      {:reply, :ok, state}
     end
   end
 
@@ -142,14 +122,7 @@ defmodule DBConnection.Ownership.Manager do
         {:noreply, state}
       :not_found when mode == :auto ->
         {proxy, state} = proxy_checkout(state, caller, [queue: queue?])
-        Task.start_link(fn ->
-          case Proxy.init(proxy, []) do
-            :ok ->
-              send(proxy, msg)
-            {:error, _} = error ->
-              GenServer.reply(from, error)
-          end
-        end)
+        send(proxy, msg)
         {:noreply, state}
       :not_found when mode == :manual ->
         not_found(from)

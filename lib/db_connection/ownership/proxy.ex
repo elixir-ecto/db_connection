@@ -4,18 +4,13 @@ defmodule DBConnection.Ownership.Proxy do
   alias DBConnection.Holder
   use GenServer
 
+  @time_unit 1000
   @ownership_timeout 60_000
+  @queue_target 50
+  @queue_interval 1000
 
   def start_link(caller, pool, pool_opts) do
     GenServer.start_link(__MODULE__, {caller, pool, pool_opts}, [])
-  end
-
-  def init(proxy, opts) do
-    ownership_timeout = opts[:ownership_timeout] || @ownership_timeout
-    case GenServer.call(proxy, {:init, ownership_timeout}, :infinity) do
-      :ok                 -> :ok
-      {:error, _} = error -> error
-   end
   end
 
   def stop(proxy, caller) do
@@ -30,13 +25,18 @@ defmodule DBConnection.Ownership.Proxy do
       |> Keyword.put(:timeout, :infinity)
       |> Keyword.delete(:deadline)
     owner_ref = Process.monitor(caller)
+    ownership_timeout = Keyword.get(pool_opts, :ownership_timeout, @ownership_timeout)
+    timeout = Keyword.get(pool_opts, :queue_target, @queue_target) * 2
+    interval = Keyword.get(pool_opts, :queue_interval, @queue_interval)
 
-    state = %{client: nil, timer: nil, holder: nil, owner: caller,
+    state = %{client: nil, timer: nil, holder: nil,
+              timeout: timeout, interval: interval, poll: nil,
               owner_ref: owner_ref, pool: pool, pool_ref: nil,
               pool_opts: pool_opts,  queue: :queue.new,
-              ownership_timer: nil}
+              ownership_timer: start_timer(caller, ownership_timeout)}
 
-    {:ok, state}
+    now = System.monotonic_time(@time_unit)
+    {:ok, start_poll(now, state)}
   end
 
   def handle_info({:DOWN, ref, _, pid, reason},
@@ -68,14 +68,33 @@ defmodule DBConnection.Ownership.Proxy do
     end
   end
 
+  def handle_info({:timeout, poll, time}, %{poll: poll} = state) do
+    state = timeout(time, state)
+    {:noreply, start_poll(time, state)}
+  end
+
+  def handle_info({:db_connection, from, {:checkout, _caller, _now, _queue?}}, %{holder: nil} = state) do
+    %{pool: pool, pool_opts: pool_opts, owner_ref: owner_ref} = state
+
+    case Holder.checkout(pool, pool_opts) do
+      {:ok, pool_ref, mod, conn_state} ->
+        holder = Holder.new(self(), owner_ref, mod, conn_state)
+        state = %{state | pool_ref: pool_ref, holder: holder}
+        checkout(from, state)
+      {:error, _} = error ->
+        GenServer.reply(from, error)
+        {:stop, :normal, state}
+    end
+  end
+
   def handle_info({:db_connection, from, {:checkout, _caller, _now, _queue?}}, %{client: nil} = state) do
     checkout(from, state)
   end
 
-  def handle_info({:db_connection, from, {:checkout, _caller, _now, queue?}}, state) do
+  def handle_info({:db_connection, from, {:checkout, _caller, now, queue?}}, state) do
     if queue? do
       %{queue: queue} = state
-      queue = :queue.in(from, queue)
+      queue = :queue.in({now, from}, queue)
       {:noreply, %{state | queue: queue}}
     else
       message = "connection not available and queuing is disabled"
@@ -100,20 +119,6 @@ defmodule DBConnection.Ownership.Proxy do
     down("client #{inspect pid} exited", state)
   end
 
-  def handle_call({:init, ownership_timeout}, _from, state) do
-    %{pool: pool, pool_opts: pool_opts, owner: owner, owner_ref: owner_ref} = state
-
-    case Holder.checkout(pool, pool_opts) do
-      {:ok, pool_ref, mod, conn_state} ->
-        holder = Holder.new(self(), owner_ref, mod, conn_state)
-        state = %{state | pool_ref: pool_ref, holder: holder,
-                          ownership_timer: start_timer(owner, ownership_timeout)}
-        {:reply, :ok, state}
-      {:error, _} = error ->
-        {:stop, :normal, error, state}
-    end
-  end
-
   def handle_cast({:stop, pid}, state) do
     down("owner #{inspect pid} checked in the connection", state)
   end
@@ -132,7 +137,7 @@ defmodule DBConnection.Ownership.Proxy do
 
   defp next(%{queue: queue} = state) do
    case :queue.out(queue) do
-      {{:value, from}, queue} ->
+      {{:value, {_, from}}, queue} ->
         checkout(from, %{state | queue: queue})
       {:empty, queue} ->
         {:noreply, %{state | queue: queue}}
@@ -173,8 +178,33 @@ defmodule DBConnection.Ownership.Proxy do
 
   defp pool_done(done, err, state) do
     %{holder: holder, pool_ref: pool_ref, pool_opts: pool_opts} = state
-    conn_state = Holder.get_state(holder)
-    done.(pool_ref, err, conn_state, pool_opts)
+    if holder do
+      conn_state = Holder.get_state(holder)
+      done.(pool_ref, err, conn_state, pool_opts)
+    end
     {:stop, :normal, state}
+  end
+
+  defp start_poll(now, %{interval: interval} = state) do
+    timeout = now + interval
+    poll = :erlang.start_timer(timeout, self(), timeout, [abs: true])
+    %{state | poll: poll}
+  end
+
+  defp timeout(time, %{queue: queue, timeout: timeout} = state) do
+    case :queue.out(queue) do
+      {{:value, {sent, from}}, queue} when sent + timeout < time ->
+        drop(time - sent, from)
+        timeout(time, %{state | queue: queue})
+      {_, _} ->
+        state
+    end
+  end
+
+  defp drop(delay, from) do
+    message = "connection not available " <>
+      "and request was dropped from queue after #{delay}ms"
+    err = DBConnection.ConnectionError.exception(message)
+    GenServer.reply(from, {:error, err})
   end
 end

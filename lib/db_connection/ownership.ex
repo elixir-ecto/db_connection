@@ -34,7 +34,6 @@ defmodule DBConnection.Ownership do
   @behaviour DBConnection.Pool
 
   alias DBConnection.Ownership.Manager
-  alias DBConnection.Ownership.Proxy
   alias DBConnection.Holder
 
   ## Ownership API
@@ -48,13 +47,8 @@ defmodule DBConnection.Ownership do
   raise if there was an error.
   """
   @spec ownership_checkout(GenServer.server, Keyword.t) ::
-    :ok | {:already, :owner | :allowed} | :error | no_return
-  def ownership_checkout(manager, opts) do
-     case Manager.checkout(manager, opts) do
-      {:init, proxy}          -> Proxy.init(proxy, opts)
-      {:already, _} = already -> already
-    end
-  end
+    :ok | {:already, :owner | :allowed}
+  defdelegate ownership_checkout(manager, opts), to: Manager, as: :checkout
 
   @doc """
   Changes the ownership mode.
