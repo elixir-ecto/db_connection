@@ -114,15 +114,15 @@ defmodule DBConnection.Ownership.Manager do
     end
   end
 
-  def handle_info({:db_connection, from, {:checkout, caller, _now, queue?}} = msg, state) do
+  def handle_info({:db_connection, from, {:checkout, caller, _now, queue?}}, state) do
     %{checkouts: checkouts, mode: mode} = state
     case Map.get(checkouts, caller, :not_found) do
       {status, _ref, proxy} when status in [:owner, :allowed] ->
-        send(proxy, msg)
+        redirect(from, proxy)
         {:noreply, state}
       :not_found when mode == :auto ->
         {proxy, state} = proxy_checkout(state, caller, [queue: queue?])
-        send(proxy, msg)
+        redirect(from, proxy)
         {:noreply, state}
       :not_found when mode == :manual ->
         not_found(from)
@@ -130,7 +130,7 @@ defmodule DBConnection.Ownership.Manager do
       :not_found ->
         {:shared, shared} = mode
         {:owner, ref, proxy} = Map.fetch!(checkouts, shared)
-        send(proxy, msg)
+        redirect(from, proxy)
         {:noreply, owner_allow(state, caller, ref, proxy)}
     end
   end
@@ -228,6 +228,10 @@ defmodule DBConnection.Ownership.Manager do
   end
   defp unshare(state, _ref) do
     state
+  end
+
+  defp redirect(from, proxy) do
+    GenServer.reply(from, {:redirect, proxy})
   end
 
   defp not_found({pid, _} = from) do

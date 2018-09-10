@@ -32,6 +32,8 @@ defmodule DBConnection.Holder do
         ok
       {:error, _} = error ->
         error
+      {:redirect, proxy} ->
+        checkout(proxy, opts)
       {:exit, reason} ->
         exit({reason, {__MODULE__, :checkout, [pool, opts]}})
     end
