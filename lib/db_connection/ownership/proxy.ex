@@ -81,9 +81,9 @@ defmodule DBConnection.Ownership.Proxy do
         holder = Holder.new(self(), owner_ref, mod, conn_state)
         state = %{state | pool_ref: pool_ref, holder: holder}
         checkout(from, state)
-      {:error, _} = error ->
+      {:error, err} = error ->
         GenServer.reply(from, error)
-        {:stop, :normal, state}
+        {:stop, {:shutdown, err}, state}
     end
   end
 
@@ -150,16 +150,16 @@ defmodule DBConnection.Ownership.Proxy do
   end
 
   # It is down but never checked out from pool
-  defp down(_reason, %{holder: nil} = state) do
-    {:stop, :normal, state}
+  defp down(reason, %{holder: nil} = state) do
+    {:stop, {:shutdown, reason}, state}
   end
 
   # If it is down but it has no client, checkin
-  defp down(_reason, %{client: nil} = state) do
+  defp down(reason, %{client: nil} = state) do
     %{pool_ref: pool_ref, pool_opts: pool_opts, holder: holder} = state
     conn_state = Holder.get_state(holder)
     Holder.checkin(pool_ref, conn_state, pool_opts)
-    {:stop, :normal, state}
+    {:stop, {:shutdown, reason}, state}
   end
 
   # If it is down but it has a client, disconnect
@@ -182,7 +182,7 @@ defmodule DBConnection.Ownership.Proxy do
       conn_state = Holder.get_state(holder)
       done.(pool_ref, err, conn_state, pool_opts)
     end
-    {:stop, :normal, state}
+    {:stop, {:shutdown, err}, state}
   end
 
   defp start_poll(now, %{interval: interval} = state) do
