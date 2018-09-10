@@ -48,7 +48,16 @@ defmodule DBConnection.Ownership do
   """
   @spec ownership_checkout(GenServer.server, Keyword.t) ::
     :ok | {:already, :owner | :allowed}
-  defdelegate ownership_checkout(manager, opts), to: Manager, as: :checkout
+  def ownership_checkout(manager, opts) do
+    with {:ok, pid} <- Manager.checkout(manager, opts) do
+      case Holder.checkout(pid, opts) do
+        {:ok, pool_ref, _module, state} ->
+          Holder.checkin(pool_ref, state, opts)
+        {:error, err} ->
+          raise err
+      end
+    end
+  end
 
   @doc """
   Changes the ownership mode.
