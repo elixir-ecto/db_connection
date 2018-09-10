@@ -2,7 +2,7 @@ defmodule DBConnection.Ownership.Manager do
   @moduledoc false
   use GenServer
   require Logger
-  alias DBConnection.Ownership.{Proxy, ProxySupervisor}
+  alias DBConnection.Ownership.Proxy
 
   @timeout 5_000
 
@@ -105,26 +105,6 @@ defmodule DBConnection.Ownership.Manager do
     {:reply, :ok, %{state | mode: mode, mode_ref: nil}}
   end
 
-  def handle_call({:lookup, opts}, {pid, _},
-                  %{checkouts: checkouts, mode: mode} = state) do
-    caller = Keyword.get(opts, :caller, pid)
-    case Map.get(checkouts, caller, :not_found) do
-      {:owner, _, proxy} ->
-        {:reply, {:ok, proxy}, state}
-      {:allowed, _, proxy} ->
-        {:reply, {:ok, proxy}, state}
-      :not_found when mode == :manual ->
-        {:reply, :not_found, state}
-      :not_found when mode == :auto ->
-        {proxy, state} = proxy_checkout(state, caller, opts)
-        {:reply, {:init, proxy}, state}
-      :not_found ->
-        {:shared, shared} = mode
-        {:owner, ref, proxy} = Map.fetch!(checkouts, shared)
-        {:reply, {:ok, proxy}, owner_allow(state, caller, ref, proxy)}
-    end
-  end
-
   def handle_call(:checkin, {caller, _}, state) do
     {reply, state} = proxy_checkin(state, caller)
     {:reply, reply, state}
@@ -149,8 +129,36 @@ defmodule DBConnection.Ownership.Manager do
     if kind = already_checked_out(checkouts, caller) do
       {:reply, {:already, kind}, state}
     else
-      {proxy, state} = proxy_checkout(state, caller, opts)
-      {:reply, {:init, proxy}, state}
+       {pool, state} = proxy_checkout(state, caller, opts)
+      {:reply, {:init, pool}, state}
+    end
+  end
+
+  def handle_info({:db_connection, from, {:checkout, caller, _now, queue?}} = msg, state) do
+    %{checkouts: checkouts, mode: mode} = state
+    case Map.get(checkouts, caller, :not_found) do
+      {status, _ref, proxy} when status in [:owner, :allowed] ->
+        send(proxy, msg)
+        {:noreply, state}
+      :not_found when mode == :auto ->
+        {proxy, state} = proxy_checkout(state, caller, [queue: queue?])
+        Task.start_link(fn ->
+          case Proxy.init(proxy, []) do
+            :ok ->
+              send(proxy, msg)
+            {:error, _} = error ->
+              GenServer.reply(from, error)
+          end
+        end)
+        {:noreply, state}
+      :not_found when mode == :manual ->
+        not_found(from)
+        {:noreply, state}
+      :not_found ->
+        {:shared, shared} = mode
+        {:owner, ref, proxy} = Map.fetch!(checkouts, shared)
+        send(proxy, msg)
+        {:noreply, owner_allow(state, caller, ref, proxy)}
     end
   end
 
@@ -173,7 +181,7 @@ defmodule DBConnection.Ownership.Manager do
   defp proxy_checkout(state, caller, opts) do
     %{pool: pool, checkouts: checkouts, owners: owners,
       ets: ets, log: log} = state
-    {:ok, proxy} = ProxySupervisor.start_owner(caller, pool, opts)
+    {:ok, proxy} = Proxy.start_link(caller, pool, opts)
     log && Logger.log(log, fn -> [inspect(caller), " owns proxy " | inspect(proxy)] end)
     ref = Process.monitor(proxy)
     checkouts = Map.put(checkouts, caller, {:owner, ref, proxy})
@@ -247,5 +255,35 @@ defmodule DBConnection.Ownership.Manager do
   end
   defp unshare(state, _ref) do
     state
+  end
+
+  defp not_found({pid, _} = from) do
+    msg = """
+        cannot find ownership process for #{inspect pid}.
+
+        When using ownership, you must manage connections in one
+        of the four ways:
+
+        * By explicitly checking out a connection
+        * By explicitly allowing a spawned process
+        * By running the pool in shared mode
+        * By using :caller option with allowed process
+
+        The first two options require every new process to explicitly
+        check a connection out or be allowed by calling checkout or
+        allow respectively.
+
+        The third option requires a {:shared, pid} mode to be set.
+        If using shared mode in tests, make sure your tests are not
+        async.
+
+        The fourth option requires [caller: pid] to be used when
+        checking out a connection from the pool. The caller process
+        should already be allowed on a connection.
+
+        If you are reading this error, it means you have not done one
+        of the steps above or that the owner process has crashed.
+        """
+    GenServer.reply(from, {:error, DBConnection.OwnershipError.exception(msg)})
   end
 end
