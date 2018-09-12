@@ -128,25 +128,6 @@ defmodule QueueTest do
     assert queue_time <= 1_000_000, "request was queued"
   end
 
-  @tag :queue_timeout_exit
-  test "queue exits on timeout" do
-    stack = [{:ok, :state}, {:idle, :state}, {:idle, :state}, {:idle, :state}, {:idle, :state}]
-    {:ok, agent} = A.start_link(stack)
-
-    opts = [agent: agent, parent: self(), backoff_start: 30_000,
-      queue_timeout: 10, pool_timeout: 10, queue_target: 10,
-      queue_interval: 10]
-    {:ok, pool} = P.start_link(opts)
-
-    P.run(pool, fn(_) ->
-      assert {:timeout, {_, _, _}} = catch_exit(P.run(pool, fn() ->
-        flunk("got connection")
-      end, opts))
-    end)
-
-    assert P.run(pool, fn(_) -> :hi end) == :hi
-  end
-
   @tag :queue_timeout_raise
   test "queue raise on timeout" do
     stack = [{:ok, :state}, {:idle, :state}, {:idle, :state}, {:idle, :state}, {:idle, :state}]
