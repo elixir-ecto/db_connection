@@ -8,7 +8,7 @@ defmodule DBConnection.Connection do
   use Connection
   require Logger
   alias DBConnection.Backoff
-  alias DBConnection.ConnectionPool
+  alias DBConnection.Holder
 
   @timeout 15_000
 
@@ -340,7 +340,7 @@ defmodule DBConnection.Connection do
   end
 
   defp pool_update(state, %{pool: pool, tag: tag, mod: mod} = s) do
-    ref = ConnectionPool.update(pool, tag, mod, state)
+    ref = Holder.update(pool, tag, mod, state)
     {:noreply, %{s | client: {ref, :pool}, state: state}, :hibernate}
   end
 

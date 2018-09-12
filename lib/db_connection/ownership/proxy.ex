@@ -1,49 +1,16 @@
 defmodule DBConnection.Ownership.Proxy do
   @moduledoc false
 
+  alias DBConnection.Holder
   use GenServer
 
-  @pool_timeout      5_000
+  @time_unit 1000
   @ownership_timeout 60_000
-  @timeout           15_000
+  @queue_target 50
+  @queue_interval 1000
 
   def start_link(caller, pool, pool_opts) do
     GenServer.start_link(__MODULE__, {caller, pool, pool_opts}, [])
-  end
-
-  def init(proxy, opts) do
-    ownership_timeout = opts[:ownership_timeout] || @ownership_timeout
-    case GenServer.call(proxy, {:init, ownership_timeout}, :infinity) do
-      :ok                 -> :ok
-      {:error, _} = error -> error
-   end
-  end
-
-  def checkout(proxy, opts) do
-    pool_timeout = opts[:pool_timeout] || @pool_timeout
-    queue?       = Keyword.get(opts, :queue, true)
-    timeout      = opts[:timeout] || @timeout
-
-    ref = make_ref()
-    try do
-      GenServer.call(proxy, {:checkout, ref, queue?, timeout}, pool_timeout)
-    catch
-      :exit, {_, {_, :call, [pool | _]}} = reason ->
-        GenServer.cast(pool, {:cancel, ref})
-        exit(reason)
-    end
-  end
-
-  def checkin({proxy, ref}, state, _opts) do
-    GenServer.cast(proxy, {:checkin, ref, state})
-  end
-
-  def disconnect({proxy, ref}, exception, state, _opts) do
-    GenServer.cast(proxy, {:disconnect, ref, exception, state})
-  end
-
-  def stop({proxy, ref}, exception, state, _opts) do
-    GenServer.cast(proxy, {:stop, ref, exception, state})
   end
 
   def stop(proxy, caller) do
@@ -53,23 +20,23 @@ defmodule DBConnection.Ownership.Proxy do
   # Callbacks
 
   def init({caller, pool, pool_opts}) do
-    ownership_pool = Keyword.get(pool_opts, :ownership_pool, DBConnection.ConnectionPool)
-    pool_opts = Keyword.put(pool_opts, :timeout, :infinity)
+    pool_opts =
+      pool_opts
+      |> Keyword.put(:timeout, :infinity)
+      |> Keyword.delete(:deadline)
     owner_ref = Process.monitor(caller)
-    pool_ref = Process.monitor(pool)
+    ownership_timeout = Keyword.get(pool_opts, :ownership_timeout, @ownership_timeout)
+    timeout = Keyword.get(pool_opts, :queue_target, @queue_target) * 2
+    interval = Keyword.get(pool_opts, :queue_interval, @queue_interval)
 
-    state = %{client: nil, timer: nil, conn_state: nil, conn_module: nil,
-              owner_ref: owner_ref, pool: pool, pool_ref: pool_ref,
-              pool_opts: pool_opts, conn_ref: nil, queue: :queue.new,
-              ownership_timer: nil, ownership_pool: ownership_pool}
+    state = %{client: nil, timer: nil, holder: nil,
+              timeout: timeout, interval: interval, poll: nil,
+              owner_ref: owner_ref, pool: pool, pool_ref: nil,
+              pool_opts: pool_opts,  queue: :queue.new,
+              ownership_timer: start_timer(caller, ownership_timeout)}
 
-    {:ok, state}
-  end
-
-  def handle_info({:DOWN, mon, _, pid, reason},
-                  %{client: {_, _, mon}} = state) do
-    message = "client #{inspect pid} exited with: " <> Exception.format_exit(reason)
-    disconnect(message, state)
+    now = System.monotonic_time(@time_unit)
+    {:ok, start_poll(now, state)}
   end
 
   def handle_info({:DOWN, ref, _, pid, reason},
@@ -79,131 +46,99 @@ defmodule DBConnection.Ownership.Proxy do
   end
 
   def handle_info({:DOWN, ref, _, pid, reason},
-                  %{owner_ref: ref, client: {client, _, _}} = state) do
+                  %{owner_ref: ref, client: {client, _}} = state) do
     message = "owner #{inspect pid} exited while client #{inspect client} is still running with: " <> Exception.format_exit(reason)
     down(message, state)
-  end
-
-  # The pool is down. We just exit as the user will get reports
-  # and there is nothing we can do.
-  def handle_info({:DOWN, ref, _, _, _}, %{pool_ref: ref} = state) do
-    {:stop, :shutdown, state}
-  end
-
-  def handle_info({:timeout, timer, {__MODULE__, pid, timeout}}, %{timer: timer} = state) do
-    message = "client #{inspect pid} timed out because " <>
-    "it checked out the connection for longer than #{timeout}ms (set via the :timeout option)"
-    disconnect(message, state)
   end
 
   def handle_info({:timeout, timer, {__MODULE__, pid, timeout}}, %{ownership_timer: timer} = state) do
     message = "owner #{inspect pid} timed out because " <>
     "it owned the connection for longer than #{timeout}ms (set via the :ownership_timeout option)"
-    disconnect(message, state)
+    pool_disconnect(DBConnection.ConnectionError.exception(message), state)
   end
 
-  def handle_info(_msg, state) do
-    {:noreply, state}
-  end
-
-  def handle_call({:init, ownership_timeout}, {pid, _} = from, state) do
-    %{pool: pool, pool_opts: pool_opts, ownership_pool: ownership_pool} = state
-
-    try do
-      ownership_pool.checkout(pool, pool_opts)
-    catch
-      kind, reason ->
-        stack = System.stacktrace()
-        msg = "failed to checkout using #{inspect(ownership_pool)}"
-        err = DBConnection.ConnectionError.exception(msg)
-        GenServer.reply(from, {:error, err})
-        :erlang.raise(kind, reason, stack)
+  def handle_info({:timeout, deadline, {_ref, holder, pid, len}}, %{holder: holder} = state) do
+    if Holder.handle_deadline(holder, deadline) do
+      message = "client #{inspect pid} timed out because " <>
+        "it queued and checked out the connection for longer than #{len}ms"
+      err = DBConnection.ConnectionError.exception(message)
+      pool_disconnect(err, state)
     else
-      {:ok, conn_ref, conn_module, conn_state} ->
-        state =  %{state | conn_state: conn_state, conn_module: conn_module,
-                           ownership_timer: start_timer(pid, ownership_timeout),
-                           conn_ref: conn_ref}
-        {:reply, :ok, state}
-      {:error, exception} = error ->
-        {:stop, {:shutdown, exception}, error, state}
+      {:noreply, state}
     end
   end
 
-  def handle_call({:checkout, ref, _, timeout}, from, %{client: nil} = state) do
-    {pid, _} = from
-    client = {ref, Process.monitor(pid)}
-    handle_checkout(client, timeout, from, state)
+  def handle_info({:timeout, poll, time}, %{poll: poll} = state) do
+    state = timeout(time, state)
+    {:noreply, start_poll(time, state)}
   end
 
-  def handle_call({:checkout, ref, queue?, timeout}, from, state) do
+  def handle_info({:db_connection, from, {:checkout, _caller, _now, _queue?}}, %{holder: nil} = state) do
+    %{pool: pool, pool_opts: pool_opts, owner_ref: owner_ref} = state
+
+    case Holder.checkout(pool, pool_opts) do
+      {:ok, pool_ref, mod, conn_state} ->
+        holder = Holder.new(self(), owner_ref, mod, conn_state)
+        state = %{state | pool_ref: pool_ref, holder: holder}
+        checkout(from, state)
+      {:error, err} = error ->
+        GenServer.reply(from, error)
+        {:stop, {:shutdown, err}, state}
+    end
+  end
+
+  def handle_info({:db_connection, from, {:checkout, _caller, _now, _queue?}}, %{client: nil} = state) do
+    checkout(from, state)
+  end
+
+  def handle_info({:db_connection, from, {:checkout, _caller, now, queue?}}, state) do
     if queue? do
       %{queue: queue} = state
-      {pid, _} = from
-      client = {ref, Process.monitor(pid)}
-      queue = :queue.in({client, timeout, from}, queue)
+      queue = :queue.in({now, from}, queue)
       {:noreply, %{state | queue: queue}}
     else
       message = "connection not available and queuing is disabled"
       err = DBConnection.ConnectionError.exception(message)
-      {:reply, {:error, err}, state}
+      GenServer.reply(from, {:error, err})
+      {:noreply, state}
     end
   end
 
-  def handle_cast({:checkin, ref, conn_state}, %{client: {_, ref, _}} = state) do
-    handle_checkin(conn_state, state)
+  def handle_info({:"ETS-TRANSFER", holder, _, {msg, ref, extra}}, %{holder: holder, client: {_, ref}} = state) do
+    case msg do
+      :checkin ->
+        checkin(state)
+      :disconnect ->
+        pool_disconnect(extra, state)
+      :stop ->
+        pool_stop(extra, state)
+    end
   end
 
-  def handle_cast({:checkin, _, _}, state) do
-    {:noreply, state}
-  end
-
-  def handle_cast({tag, ref, error, conn_state}, %{client: {_, ref, _}} = state)
-      when tag in [:stop, :disconnect] do
-    %{conn_ref: conn_ref, pool_opts: pool_opts, ownership_pool: ownership_pool} = state
-    apply(ownership_pool, tag, [conn_ref, error, conn_state, pool_opts])
-    {:stop, {:shutdown, error}, state}
-  end
-
-  def handle_cast({:cancel, ref}, %{client: {_, ref, _}} = state) do
-    %{conn_state: conn_state} = state
-    handle_checkin(conn_state, state)
-  end
-
-  def handle_cast({:cancel, ref}, %{queue: queue} = state) do
-    cancel =
-      fn({{ref2, mon}, _timeout, _from}) ->
-        if ref === ref2 do
-          Process.demonitor(mon, [:flush])
-          false
-        else
-          true
-        end
-      end
-    {:noreply, %{state | queue: :queue.filter(cancel, queue)}}
+  def handle_info({:"ETS-TRANSFER", holder, pid, ref}, %{holder: holder, owner_ref: ref} = state) do
+    down("client #{inspect pid} exited", state)
   end
 
   def handle_cast({:stop, pid}, state) do
     down("owner #{inspect pid} checked in the connection", state)
   end
 
-  defp handle_checkout({ref, mon}, timeout, {pid, _} = from, state) do
-    %{conn_module: conn_module, conn_state: conn_state} = state
-    GenServer.reply(from, {:ok, {self(), ref}, conn_module, conn_state})
-    state = %{state | client: {pid, ref, mon}, timer: start_timer(pid, timeout)}
-    {:noreply, state}
+  defp checkout({_pid, ref} = from, %{holder: holder} = state) do
+    if Holder.handle_checkout(holder, from, ref) do
+      {:noreply, %{state | client: from}}
+    else
+      next(state)
+    end
   end
 
-  defp handle_checkin(conn_state, state) do
-    %{timer: timer, client: {_, _, mon}} = state
-    cancel_timer(timer)
-    Process.demonitor(mon, [:flush])
-    next(%{state | timer: nil, client: nil, conn_state: conn_state})
+  defp checkin(state) do
+    next(%{state | client: nil})
   end
 
   defp next(%{queue: queue} = state) do
-    case :queue.out(queue) do
-      {{:value, {client, timeout, from}}, queue} ->
-        handle_checkout(client, timeout, from, %{state | queue: queue})
+   case :queue.out(queue) do
+      {{:value, {_, from}}, queue} ->
+        checkout(from, %{state | queue: queue})
       {:empty, queue} ->
         {:noreply, %{state | queue: queue}}
     end
@@ -214,48 +149,62 @@ defmodule DBConnection.Ownership.Proxy do
     :erlang.start_timer(timeout, self(), {__MODULE__, pid, timeout})
   end
 
-  defp cancel_timer(nil), do: :ok
-  defp cancel_timer(timer) do
-    case :erlang.cancel_timer(timer) do
-      false -> flush_timer(timer)
-      _     -> :ok
-    end
-  end
-
-  defp flush_timer(timer) do
-    receive do
-      {:timeout, ^timer, {__MODULE__, _, _}} ->
-        :ok
-    after
-      0 ->
-        raise ArgumentError, "timer #{inspect(timer)} does not exist"
-    end
-  end
-
   # It is down but never checked out from pool
-  defp down(reason, %{conn_module: nil} = state) do
+  defp down(reason, %{holder: nil} = state) do
     {:stop, {:shutdown, reason}, state}
   end
 
   # If it is down but it has no client, checkin
   defp down(reason, %{client: nil} = state) do
-    %{conn_ref: conn_ref, conn_state: conn_state, pool_opts: pool_opts, ownership_pool: ownership_pool} = state
-    ownership_pool.checkin(conn_ref, conn_state, pool_opts)
+    %{pool_ref: pool_ref, pool_opts: pool_opts, holder: holder} = state
+    conn_state = Holder.get_state(holder)
+    Holder.checkin(pool_ref, conn_state, pool_opts)
     {:stop, {:shutdown, reason}, state}
   end
 
   # If it is down but it has a client, disconnect
   defp down(reason, state) do
-    %{conn_ref: conn_ref, conn_state: conn_state, pool_opts: pool_opts, ownership_pool: ownership_pool} = state
-    error = DBConnection.ConnectionError.exception(reason)
-    ownership_pool.disconnect(conn_ref, error, conn_state, pool_opts)
-    {:stop, {:shutdown, reason}, state}
+    err = DBConnection.ConnectionError.exception(reason)
+    pool_disconnect(err, state)
   end
 
-  defp disconnect(reason, state) do
-    %{conn_state: conn_state, pool_opts: pool_opts, conn_ref: conn_ref, ownership_pool: ownership_pool} = state
-    error = DBConnection.ConnectionError.exception(reason)
-    ownership_pool.disconnect(conn_ref, error, conn_state, pool_opts)
-    {:stop, {:shutdown, reason}, state}
+  defp pool_disconnect(err, state) do
+    pool_done(&Holder.disconnect/4, err, state)
+  end
+
+  defp pool_stop(reason, state) do
+    pool_done(&Holder.stop/4, reason, state)
+  end
+
+  defp pool_done(done, err, state) do
+    %{holder: holder, pool_ref: pool_ref, pool_opts: pool_opts} = state
+    if holder do
+      conn_state = Holder.get_state(holder)
+      done.(pool_ref, err, conn_state, pool_opts)
+    end
+    {:stop, {:shutdown, err}, state}
+  end
+
+  defp start_poll(now, %{interval: interval} = state) do
+    timeout = now + interval
+    poll = :erlang.start_timer(timeout, self(), timeout, [abs: true])
+    %{state | poll: poll}
+  end
+
+  defp timeout(time, %{queue: queue, timeout: timeout} = state) do
+    case :queue.out(queue) do
+      {{:value, {sent, from}}, queue} when sent + timeout < time ->
+        drop(time - sent, from)
+        timeout(time, %{state | queue: queue})
+      {_, _} ->
+        state
+    end
+  end
+
+  defp drop(delay, from) do
+    message = "connection not available " <>
+      "and request was dropped from queue after #{delay}ms"
+    err = DBConnection.ConnectionError.exception(message)
+    GenServer.reply(from, {:error, err})
   end
 end

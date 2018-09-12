@@ -22,14 +22,12 @@ defmodule DBConnection.ConnectionPool do
 
   use GenServer
   alias DBConnection.ConnectionPool.PoolSupervisor
+  alias DBConnection.Holder
 
-  @timeout 5000
-  @queue true
   @queue_target 50
   @queue_interval 1000
   @idle_interval 1000
   @time_unit 1000
-  @holder_key :__info__
 
   ## DBConnection.Pool API
 
@@ -44,48 +42,16 @@ defmodule DBConnection.ConnectionPool do
   end
 
   @doc false
-  def checkout(pool, opts) do
-    queue? = Keyword.get(opts, :queue, @queue)
-    now = System.monotonic_time(@time_unit)
-    timeout = abs_timeout(now, opts)
-    case checkout(pool, queue?, now, timeout) do
-      {:ok, _, _, _} = ok ->
-        ok
-      {:error, _} = error ->
-        error
-      {:exit, reason} ->
-        exit({reason, {__MODULE__, :checkout, [pool, opts]}})
-    end
-  end
+  defdelegate checkout(pool, opts), to: Holder
 
   @doc false
-  def checkin({pool, ref, deadline, holder}, conn, _) do
-    cancel_deadline(deadline)
-    now = System.monotonic_time(@time_unit)
-    checkin_holder(holder, pool, conn, {:checkin, ref, now})
-  end
+  defdelegate checkin(pool_ref, conn, opts), to: Holder
 
   @doc false
-  def disconnect({pool, ref, deadline, holder}, err, conn, _) do
-    cancel_deadline(deadline)
-    checkin_holder(holder, pool, conn, {:disconnect, ref, err})
-  end
+  defdelegate disconnect(pool_ref, err, conn, opts), to: Holder
 
   @doc false
-  def stop({pool, ref, deadline, holder}, err, conn, _) do
-    cancel_deadline(deadline)
-    checkin_holder(holder, pool, conn, {:stop, ref, err})
-  end
-
-  ## Holder api
-
-  @doc false
-  def update(pool, ref, mod, state) do
-    holder = start_holder(pool, ref, mod, state)
-    now = System.monotonic_time(@time_unit)
-    checkin_holder(holder, pool, state, {:checkin, ref, now})
-    holder
-  end
+  defdelegate stop(pool_ref, reason, conn, opts), to: Holder
 
   ## GenServer api
 
@@ -102,7 +68,7 @@ defmodule DBConnection.ConnectionPool do
     {:ok, {:busy, queue, codel}}
   end
 
-  def handle_info({:db_connection, from, {:checkout, now, queue?}}, {:busy, queue, _} = busy) do
+  def handle_info({:db_connection, from, {:checkout, _caller, now, queue?}}, {:busy, queue, _} = busy) do
     case queue? do
       true ->
         :ets.insert(queue, {{now, System.unique_integer(), from}})
@@ -115,11 +81,11 @@ defmodule DBConnection.ConnectionPool do
     end
   end
 
-  def handle_info({:db_connection, from, {:checkout, _now, _queue?}} = checkout, ready) do
+  def handle_info({:db_connection, from, {:checkout, _caller, _now, _queue?}} = checkout, ready) do
     {:ready, queue, _codel} = ready
     case :ets.first(queue) do
       {_time, holder} = key ->
-        checkout_holder(holder, from, queue) and :ets.delete(queue, key)
+        Holder.handle_checkout(holder, from, queue) and :ets.delete(queue, key)
         {:noreply, ready}
       :"$end_of_table" ->
         handle_info(checkout, put_elem(ready, 0, :busy))
@@ -129,7 +95,7 @@ defmodule DBConnection.ConnectionPool do
   def handle_info({:"ETS-TRANSFER", holder, pid, queue}, {_, queue, _} = data) do
     message = "client #{inspect pid} exited"
     err = DBConnection.ConnectionError.exception(message)
-    disconnect_holder(holder, err)
+    Holder.handle_disconnect(holder, err)
     {:noreply, data}
   end
 
@@ -138,30 +104,21 @@ defmodule DBConnection.ConnectionPool do
       :checkin ->
         handle_checkin(holder, extra, data)
       :disconnect ->
-        disconnect_holder(holder, extra)
+        Holder.handle_disconnect(holder, extra)
         {:noreply, data}
       :stop ->
-        stop_holder(holder, extra)
+        Holder.handle_stop(holder, extra)
         {:noreply, data}
     end
   end
 
   def handle_info({:timeout, deadline, {queue, holder, pid, len}}, {_, queue, _} = data) do
     # Check that timeout refers to current holder (and not previous)
-    try do
-      :ets.lookup_element(holder, @holder_key, 3)
-    rescue
-      ArgumentError ->
-        :ok
-    else
-      ^deadline ->
-        :ets.update_element(holder, @holder_key, {3, nil})
-        message = "client #{inspect pid} timed out because " <>
-            "it queued and checked out the connection for longer than #{len}ms"
-        err = DBConnection.ConnectionError.exception(message)
-        disconnect_holder(holder, err)
-      _ ->
-        :ok
+    if Holder.handle_deadline(holder, deadline) do
+      message = "client #{inspect pid} timed out because " <>
+        "it queued and checked out the connection for longer than #{len}ms"
+      err = DBConnection.ConnectionError.exception(message)
+      Holder.handle_disconnect(holder, err)
     end
     {:noreply, data}
   end
@@ -223,9 +180,7 @@ defmodule DBConnection.ConnectionPool do
   end
 
   defp ping(holder, queue, codel) do
-    [{_, conn, _, _, state}] = :ets.lookup(holder, @holder_key)
-    DBConnection.Connection.ping({conn, holder}, state)
-    :ets.delete(holder)
+    Holder.handle_ping(holder)
     {:noreply, {:ready, queue, codel}}
   end
 
@@ -292,7 +247,7 @@ defmodule DBConnection.ConnectionPool do
   end
 
   defp go(delay, from, time, holder, queue, %{delay: min} = codel) do
-    case checkout_holder(holder, from, queue) do
+    case Holder.handle_checkout(holder, from, queue) do
       true when delay < min ->
         {:noreply, {:busy, queue, %{codel | delay: delay}}}
       true ->
@@ -313,32 +268,6 @@ defmodule DBConnection.ConnectionPool do
     Keyword.take(opts, [:name, :spawn_opt])
   end
 
-  defp abs_timeout(now, opts) do
-    case Keyword.get(opts, :timeout, @timeout) do
-      :infinity ->
-        Keyword.get(opts, :deadline)
-      timeout ->
-        min(now + timeout, Keyword.get(opts, :deadline))
-    end
-  end
-
-  defp start_deadline(nil, _, _, _, _) do
-    nil
-  end
-  defp start_deadline(timeout, pid, ref, holder, start) do
-    deadline = :erlang.start_timer(timeout, pid, {ref, holder, self(), timeout-start}, [abs: true])
-    :ets.update_element(holder, @holder_key, {3, deadline})
-    deadline
-  end
-
-  defp cancel_deadline(nil) do
-    :ok
-  end
-
-  defp cancel_deadline(deadline) do
-    :erlang.cancel_timer(deadline, [async: true, info: false])
-  end
-
   defp start_poll(now, last_sent, %{interval: interval} = codel) do
     timeout = now + interval
     poll = :erlang.start_timer(timeout, self(), {timeout, last_sent}, [abs: true])
@@ -349,95 +278,5 @@ defmodule DBConnection.ConnectionPool do
     timeout = now + interval
     idle = :erlang.start_timer(timeout, self(), {timeout, last_sent}, [abs: true])
     %{codel | idle: idle}
-  end
-
-  defp start_holder(pool, ref, mod, state) do
-    # Insert before setting heir so that pool can't receive empty table
-    holder = :ets.new(__MODULE__.Holder, [:public, :ordered_set])
-    :true = :ets.insert_new(holder, {@holder_key, self(), nil, mod, state})
-    :ets.setopts(holder, {:heir, pool, ref})
-    holder
-  end
-
-  defp checkout_holder(holder, {pid, mref}, ref) do
-    try do
-      :ets.give_away(holder, pid, {mref, ref})
-    rescue
-      ArgumentError ->
-        # pid is not alive
-        false
-    end
-  end
-
-  defp checkout(pool, queue?, start, timeout) do
-    case GenServer.whereis(pool) do
-      pid when node(pid) == node() ->
-        checkout_call(pid, queue?, start, timeout)
-      pid when node(pid) != node() ->
-        {:exit, {:badnode, node(pid)}}
-      {_name, node} ->
-        {:exit, {:badnode, node}}
-      nil ->
-        {:exit, :noproc}
-    end
-  end
-
-  defp checkout_call(pid, queue?, start, timeout) do
-    mref = Process.monitor(pid)
-    send(pid, {:db_connection, {self(), mref}, {:checkout, start, queue?}})
-    receive do
-      {:"ETS-TRANSFER", holder, owner, {^mref, ref}} ->
-        Process.demonitor(mref, [:flush])
-        deadline = start_deadline(timeout, owner, ref, holder, start)
-        pool_ref = {owner, ref, deadline, holder}
-        checkout_info(holder, pool_ref)
-      {^mref, reply} ->
-        Process.demonitor(mref, [:flush])
-        reply
-      {:DOWN, ^mref, _, _, reason} ->
-        {:exit, reason}
-    end
-  end
-
-  defp checkout_info(holder, pool_ref) do
-    try do
-      :ets.lookup(holder, @holder_key)
-    rescue
-      ArgumentError ->
-        # Deadline could hit and by handled pool before using connection
-        msg = "connection not available because deadline reached while in queue"
-        {:error, DBConnection.ConnectionError.exception(msg)}
-    else
-      [{_, _, _, mod, state}] ->
-        {:ok, pool_ref, mod, state}
-    end
-  end
-
-  defp checkin_holder(holder, pool, state, msg) do
-    try do
-      :ets.update_element(holder, @holder_key, [{3, nil}, {5, state}])
-      :ets.give_away(holder, pool, msg)
-    rescue
-      ArgumentError ->
-        :ok
-    else
-      true ->
-        :ok
-    end
-  end
-
-  defp disconnect_holder(holder, err) do
-    delete_holder(holder, &DBConnection.Connection.disconnect/4, err)
-  end
-
-  defp stop_holder(holder, err) do
-    delete_holder(holder, &DBConnection.Connection.stop/4, err)
-  end
-
-  defp delete_holder(holder, stop, err) do
-    [{_, conn, deadline, _, state}] = :ets.lookup(holder, @holder_key)
-    :ets.delete(holder)
-    cancel_deadline(deadline)
-    stop.({conn, holder}, err, state, [])
   end
 end

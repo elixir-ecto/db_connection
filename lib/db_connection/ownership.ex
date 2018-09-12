@@ -34,7 +34,7 @@ defmodule DBConnection.Ownership do
   @behaviour DBConnection.Pool
 
   alias DBConnection.Ownership.Manager
-  alias DBConnection.Ownership.Proxy
+  alias DBConnection.Holder
 
   ## Ownership API
 
@@ -47,11 +47,15 @@ defmodule DBConnection.Ownership do
   raise if there was an error.
   """
   @spec ownership_checkout(GenServer.server, Keyword.t) ::
-    :ok | {:already, :owner | :allowed} | :error | no_return
+    :ok | {:already, :owner | :allowed}
   def ownership_checkout(manager, opts) do
-     case Manager.checkout(manager, opts) do
-      {:init, proxy} -> Proxy.init(proxy, opts)
-      {:already, _} = already -> already
+    with {:ok, pid} <- Manager.checkout(manager, opts) do
+      case Holder.checkout(pid, opts) do
+        {:ok, pool_ref, _module, state} ->
+          Holder.checkin(pool_ref, state, opts)
+        {:error, err} ->
+          raise err
+      end
     end
   end
 
@@ -107,58 +111,14 @@ defmodule DBConnection.Ownership do
   end
 
   @doc false
-  def checkout(manager, opts) do
-    case Manager.lookup(manager, opts) do
-      {:init, proxy} ->
-        case Proxy.init(proxy, opts) do
-          :ok                 -> Proxy.checkout(proxy, opts)
-          {:error, _} = error -> error
-        end
-      {:ok, proxy} ->
-        Proxy.checkout(proxy, opts)
-      :not_found ->
-        msg = """
-        cannot find ownership process for #{inspect self()}.
-
-        When using ownership, you must manage connections in one
-        of the four ways:
-
-        * By explicitly checking out a connection
-        * By explicitly allowing a spawned process
-        * By running the pool in shared mode
-        * By using :caller option with allowed process
-
-        The first two options require every new process to explicitly
-        check a connection out or be allowed by calling checkout or
-        allow respectively.
-
-        The third option requires a {:shared, pid} mode to be set.
-        If using shared mode in tests, make sure your tests are not
-        async.
-
-        The fourth option requires [caller: pid] to be used when
-        checking out a connection from the pool. The caller process
-        should already be allowed on a connection.
-
-        If you are reading this error, it means you have not done one
-        of the steps above or that the owner process has crashed.
-        """
-        {:error, DBConnection.OwnershipError.exception(msg)}
-    end
-  end
+  defdelegate checkout(manager, opts), to: Holder
 
   @doc false
-  def checkin(proxy, state, opts) do
-    Proxy.checkin(proxy, state, opts)
-  end
+  defdelegate checkin(proxy, state, opts), to: Holder
 
   @doc false
-  def disconnect(proxy, exception, state, opts) do
-    Proxy.disconnect(proxy, exception, state, opts)
-  end
+  defdelegate disconnect(proxy, err, state, opts), to: Holder
 
   @doc false
-  def stop(proxy, err, state, opts) do
-    Proxy.stop(proxy, err, state, opts)
-  end
+  defdelegate stop(proxy, err, state, opts), to: Holder
 end

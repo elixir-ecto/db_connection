@@ -60,11 +60,12 @@ defmodule OwnerTest do
       send(parent, {:done, self()})
     end)
 
+    :ok = Ownership.ownership_checkout(pool, [ownership_timeout: 100])
     P.run(pool, fn(_) ->
       assert_receive :reconnected
       send(pid, {:go, parent})
       assert_receive {:done, ^pid}
-    end, [ownership_timeout: 0])
+    end)
 
     assert [
       {:connect, _},
