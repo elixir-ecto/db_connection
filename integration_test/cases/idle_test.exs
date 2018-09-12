@@ -22,6 +22,8 @@ defmodule TestIdle do
         assert_receive {:continue, ^parent}
         {:ok, :state}
       end,
+      {:idle, :state},
+      {:idle, :state},
       fn(_) ->
         send(parent, {:pong, self()})
         :timer.sleep(:infinity)
@@ -29,17 +31,20 @@ defmodule TestIdle do
     {:ok, agent} = A.start_link(stack)
 
     opts = [agent: agent, parent: self(), idle_timeout: 50, idle_interval: 50]
-    {:ok, _} = P.start_link(opts)
+    {:ok, pool} = P.start_link(opts)
     assert_receive {:hi, conn}
     assert_receive {:pong, ^conn}
     assert_receive {:pong, ^conn}
     send(conn, {:continue, self()})
+    P.run(pool, fn(_) -> :ok end)
     assert_receive {:pong, ^conn}
 
     assert [
       connect: [_],
       ping: [:state],
       ping: [:state],
+      handle_status: _,
+      handle_status: _,
       ping: [:state]] = A.record(agent)
   end
 end
