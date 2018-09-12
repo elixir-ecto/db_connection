@@ -965,10 +965,7 @@ defmodule TransactionTest do
 
     assert P.status(pool, opts) == :idle
     assert P.status(pool, opts) == :transaction
-    assert P.run(pool, fn(conn) ->
-      assert P.status(pool, [queue: false] ++ opts) == :error
-      assert P.status(conn, opts)
-    end, opts)
+    assert P.status(pool, [queue: false] ++ opts) == :error
     assert P.status(pool, opts) == :error
 
     assert_receive :reconnected
@@ -981,6 +978,90 @@ defmodule TransactionTest do
       handle_status: [_, :newest_state],
       disconnect: [^err, :state2],
       connect: [_]
+      ]  = A.record(agent)
+  end
+
+  test "status returns result on successful run" do
+    stack = [
+      {:ok, :state},
+      {:transaction, :new_state},
+      {:transaction, :newest_state},
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self()]
+    {:ok, pool} = P.start_link(opts)
+
+    assert P.run(pool, fn _ -> :ok end, opts) == :ok
+
+    assert [
+      connect: [_],
+      handle_status: [ _, :state],
+      handle_status: [_, :new_state]
+      ]  = A.record(agent)
+  end
+
+  test "status returns result on disconnect run" do
+    err = RuntimeError.exception("oops")
+    stack = [
+      {:ok, :state},
+      {:error, :newest_state},
+      {:disconnect, err, :state2},
+      :ok,
+      fn(opts) ->
+        send(opts[:parent], :reconnected)
+        {:ok, :new_state2}
+      end,
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self()]
+    {:ok, pool} = P.start_link(opts)
+
+    assert P.run(pool, fn conn ->
+      assert P.status(pool, [queue: false] ++ opts) == :error
+      assert P.status(conn, opts)
+    end, opts)
+
+    assert_receive :reconnected
+
+    assert [
+      connect: [_],
+      handle_status: [ _, :state],
+      handle_status: [_, :newest_state],
+      disconnect: [^err, :state2],
+      connect: [_]
+      ]  = A.record(agent)
+  end
+
+  test "status errors on unmatched run" do
+    stack = [
+      {:ok, :state},
+      {:idle, :new_state},
+      {:transaction, :newest_state},
+      :ok,
+      fn(opts) ->
+        send(opts[:parent], :reconnected)
+        {:ok, :last_state}
+      end
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self()]
+    {:ok, pool} = P.start_link(opts)
+
+    assert_raise DBConnection.ConnectionError, "connection was checked out with status :idle but it was checked in with status :transaction", fn ->
+      P.run(pool, fn _ -> :ok  end)
+    end
+
+    assert_receive :reconnected
+
+    assert [
+      connect: [_],
+      handle_status: [ _, :state],
+      handle_status: [_, :new_state],
+      disconnect: [_, :newest_state],
+      connect: _
       ]  = A.record(agent)
   end
 end

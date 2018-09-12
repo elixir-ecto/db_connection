@@ -22,6 +22,8 @@ defmodule TestIdle do
         assert_receive {:continue, ^parent}
         {:ok, :state}
       end,
+      {:idle, :state},
+      {:idle, :state},
       fn(_) ->
         send(parent, {:pong, self()})
         :timer.sleep(:infinity)
@@ -41,6 +43,8 @@ defmodule TestIdle do
       connect: [_],
       ping: [:state],
       ping: [:state],
+      handle_status: _,
+      handle_status: _,
       ping: [:state]] = A.record(agent)
   end
 end

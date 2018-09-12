@@ -5,7 +5,7 @@ defmodule QueueTest do
   alias TestAgent, as: A
 
   test "queue: false raises on busy" do
-    stack = [{:ok, :state}]
+    stack = [{:ok, :state}, {:idle, :state}, {:idle, :state}]
     {:ok, agent} = A.start_link(stack)
 
     opts = [agent: agent, parent: self()]
@@ -23,14 +23,15 @@ defmodule QueueTest do
   end
 
   test "queue many async" do
-    stack = [{:ok, :state}]
+    stack = [{:ok, :state}] ++ List.duplicate({:idle, :state}, 20)
     {:ok, agent} = A.start_link(stack)
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
 
     run = fn() ->
-      P.run(pool, fn(_) -> :timer.sleep(20) end)
+      Process.put(:agent, agent)
+      P.run(pool, fn(_) -> :timer.sleep(20) end, opts)
     end
 
     for task <- Enum.map(1..10, fn(_) -> Task.async(run) end) do
@@ -39,7 +40,7 @@ defmodule QueueTest do
   end
 
   test "queue many async timeouts" do
-    stack = [{:ok, :state}]
+    stack = [{:ok, :state}] ++ List.duplicate({:idle, :state}, 20)
     {:ok, agent} = A.start_link(stack)
 
     opts = [agent: agent, parent: self(), queue_timeout: 50, queue_target: 50,
@@ -48,6 +49,7 @@ defmodule QueueTest do
 
     parent = self()
     runner = spawn_link(fn() ->
+      Process.put(:agent, agent)
       P.run(pool, fn(_) ->
         send(parent, {:go, self()})
         receive do
@@ -77,7 +79,7 @@ defmodule QueueTest do
   end
 
   test "queue many async exits" do
-    stack = [{:ok, :state}]
+    stack = [{:ok, :state}] ++ List.duplicate({:idle, :state}, 20)
     {:ok, agent} = A.start_link(stack)
 
     opts = [agent: agent, parent: self()]
@@ -85,6 +87,7 @@ defmodule QueueTest do
 
     parent = self()
     runner = spawn_link(fn() ->
+      Process.put(:agent, agent)
       P.run(pool, fn(_) ->
         send(parent, {:go, self()})
         receive do
@@ -127,7 +130,7 @@ defmodule QueueTest do
 
   @tag :queue_timeout_exit
   test "queue exits on timeout" do
-    stack = [{:ok, :state}]
+    stack = [{:ok, :state}, {:idle, :state}, {:idle, :state}, {:idle, :state}, {:idle, :state}]
     {:ok, agent} = A.start_link(stack)
 
     opts = [agent: agent, parent: self(), backoff_start: 30_000,
@@ -146,7 +149,7 @@ defmodule QueueTest do
 
   @tag :queue_timeout_raise
   test "queue raise on timeout" do
-    stack = [{:ok, :state}]
+    stack = [{:ok, :state}, {:idle, :state}, {:idle, :state}, {:idle, :state}, {:idle, :state}]
     {:ok, agent} = A.start_link(stack)
 
     opts = [agent: agent, parent: self(), backoff_start: 30_000,
