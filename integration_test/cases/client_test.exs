@@ -136,11 +136,11 @@ defmodule ClientTest do
         send(opts[:parent], :reconnected)
         {:ok, :new_state}
       end,
+      {:idle, :new_state},
+      {:idle, :new_state},
       fn(_, _, _, _) ->
         throw(:oops)
       end,
-      {:idle, :new_state},
-      {:idle, :new_state},
       {:ok, %R{}, :newer_state}]
     {:ok, agent} = A.start_link(stack)
 
@@ -152,6 +152,14 @@ defmodule ClientTest do
     try do
       P.run(pool, fn(conn) ->
         assert_receive :reconnected
+
+        spawn_link(fn ->
+          _ = Process.put(:agent, agent)
+          assert P.run(pool, fn(_) -> :result end) == :result
+          send(parent, :done)
+        end)
+
+        assert_receive :done
         P.execute(conn, %Q{}, [:param])
       end, [timeout: 100])
     catch
@@ -159,13 +167,6 @@ defmodule ClientTest do
         :ok
     end
 
-    spawn_link(fn ->
-      _ = Process.put(:agent, agent)
-      assert P.run(pool, fn(_) -> :result end) == :result
-      send(parent, :done)
-    end)
-
-    assert_receive :done, 1000
     assert P.execute(pool, %Q{}, [:param]) == {:ok, %R{}}
 
     assert [
@@ -173,9 +174,9 @@ defmodule ClientTest do
       {:handle_status, _},
       {:disconnect, _},
       {:connect, _},
+      {:handle_status, _},
+      {:handle_status, _},
       {:handle_execute, [%Q{}, [:param], _, :state]},
-      {:handle_status, _},
-      {:handle_status, _},
       {:handle_execute, [%Q{}, [:param], _, :new_state]}] = A.record(agent)
   end
 end
