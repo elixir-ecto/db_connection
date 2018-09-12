@@ -10,8 +10,8 @@ defmodule TransactionExecuteTest do
     stack = [
       {:ok, :state},
       {:ok, :began, :new_state},
-      {:ok, %R{}, :newer_state},
-      {:ok, %R{}, :newest_state},
+      {:ok, %Q{}, %R{}, :newer_state},
+      {:ok, %Q{}, %R{}, :newest_state},
       {:ok, :committed, :newest_state}
       ]
     {:ok, agent} = A.start_link(stack)
@@ -19,8 +19,8 @@ defmodule TransactionExecuteTest do
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
     assert P.transaction(pool, fn(conn) ->
-      assert P.execute(conn, %Q{}, [:param]) == {:ok, %R{}}
-      assert P.execute(conn, %Q{}, [:param], [key: :value]) == {:ok, %R{}}
+      assert P.execute(conn, %Q{}, [:param]) == {:ok, %Q{}, %R{}}
+      assert P.execute(conn, %Q{}, [:param], [key: :value]) == {:ok, %Q{}, %R{}}
       :hi
     end) == {:ok, :hi}
 
@@ -37,7 +37,7 @@ defmodule TransactionExecuteTest do
     stack = [
       {:ok, :state},
       {:ok, :began, :new_state},
-      {:ok, %R{}, :newer_state},
+      {:ok, %Q{}, %R{}, :newer_state},
       {:ok, :committed, :newest_state}
       ]
     {:ok, agent} = A.start_link(stack)
@@ -49,7 +49,7 @@ defmodule TransactionExecuteTest do
     log = fn(entry) ->
       assert %DBConnection.LogEntry{call: :execute, query: %Q{},
                                     params: [:param],
-                                    result: {:ok, %R{}}} = entry
+                                    result: {:ok, %Q{}, %R{}}} = entry
       assert is_nil(entry.pool_time)
       assert is_integer(entry.connection_time)
       assert entry.connection_time >= 0
@@ -58,7 +58,7 @@ defmodule TransactionExecuteTest do
       send(parent, :logged)
     end
     assert P.transaction(pool, fn(conn) ->
-      assert P.execute(conn, %Q{}, [:param], [log: log]) == {:ok, %R{}}
+      assert P.execute(conn, %Q{}, [:param], [log: log]) == {:ok, %Q{}, %R{}}
       :hi
     end) == {:ok, :hi}
 
@@ -101,7 +101,7 @@ defmodule TransactionExecuteTest do
       {:ok, :state},
       {:ok, :began, :new_state},
       {:error, err, :newer_state},
-      {:ok,  %R{}, :newest_state},
+      {:ok, %Q{}, %R{}, :newest_state},
       {:ok, :committed, :newest_state}
       ]
     {:ok, agent} = A.start_link(stack)
@@ -113,7 +113,7 @@ defmodule TransactionExecuteTest do
       assert_raise RuntimeError, "oops",
         fn() -> P.execute!(conn, %Q{}, [:param]) end
 
-      assert P.execute(conn, %Q{}, [:param]) == {:ok, %R{}}
+      assert P.execute(conn, %Q{}, [:param]) == {:ok, %Q{}, %R{}}
       :hi
     end) == {:ok, :hi}
 
