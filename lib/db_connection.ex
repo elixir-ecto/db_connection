@@ -919,7 +919,9 @@ defmodule DBConnection do
     %DBConnection.Stream{conn: conn, query: query, params: params, opts: opts}
   end
 
-  @doc false
+  @doc """
+  Reduces a previously built stream or prepared stream.
+  """
   def reduce(%DBConnection.PrepareStream{} = stream, acc, fun) do
     %DBConnection.PrepareStream{conn: conn, query: query, params: params,
                                 opts: opts} = stream

@@ -70,6 +70,18 @@ defmodule DBConnection.Holder do
     holder
   end
 
+  @spec reply_redirect({pid, reference}, GenServer.server()) :: :ok
+  def reply_redirect(from, redirect) do
+    GenServer.reply(from, {:redirect, redirect})
+    :ok
+  end
+
+  @spec reply_error({pid, reference}, Exception.t) :: :ok
+  def reply_error(from, exception) do
+    GenServer.reply(from, {:error, exception})
+    :ok
+  end
+
   @spec get_state(t) :: term
   def get_state(holder) do
     :ets.lookup_element(holder, :conn, conn(:state) + 1)

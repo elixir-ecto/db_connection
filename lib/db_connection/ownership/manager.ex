@@ -120,11 +120,11 @@ defmodule DBConnection.Ownership.Manager do
     %{checkouts: checkouts, mode: mode} = state
     case Map.get(checkouts, caller, :not_found) do
       {status, _ref, proxy} when status in [:owner, :allowed] ->
-        redirect(from, proxy)
+        DBConnection.Holder.reply_redirect(from, proxy)
         {:noreply, state}
       :not_found when mode == :auto ->
         {proxy, state} = proxy_checkout(state, caller, [queue: queue?])
-        redirect(from, proxy)
+        DBConnection.Holder.reply_redirect(from, proxy)
         {:noreply, state}
       :not_found when mode == :manual ->
         not_found(from)
@@ -132,7 +132,7 @@ defmodule DBConnection.Ownership.Manager do
       :not_found ->
         {:shared, shared} = mode
         {:owner, ref, proxy} = Map.fetch!(checkouts, shared)
-        redirect(from, proxy)
+        DBConnection.Holder.reply_redirect(from, proxy)
         {:noreply, owner_allow(state, caller, ref, proxy)}
     end
   end
@@ -232,37 +232,34 @@ defmodule DBConnection.Ownership.Manager do
     state
   end
 
-  defp redirect(from, proxy) do
-    GenServer.reply(from, {:redirect, proxy})
-  end
-
   defp not_found({pid, _} = from) do
     msg = """
-        cannot find ownership process for #{inspect pid}.
+    cannot find ownership process for #{inspect pid}.
 
-        When using ownership, you must manage connections in one
-        of the four ways:
+    When using ownership, you must manage connections in one
+    of the four ways:
 
-        * By explicitly checking out a connection
-        * By explicitly allowing a spawned process
-        * By running the pool in shared mode
-        * By using :caller option with allowed process
+    * By explicitly checking out a connection
+    * By explicitly allowing a spawned process
+    * By running the pool in shared mode
+    * By using :caller option with allowed process
 
-        The first two options require every new process to explicitly
-        check a connection out or be allowed by calling checkout or
-        allow respectively.
+    The first two options require every new process to explicitly
+    check a connection out or be allowed by calling checkout or
+    allow respectively.
 
-        The third option requires a {:shared, pid} mode to be set.
-        If using shared mode in tests, make sure your tests are not
-        async.
+    The third option requires a {:shared, pid} mode to be set.
+    If using shared mode in tests, make sure your tests are not
+    async.
 
-        The fourth option requires [caller: pid] to be used when
-        checking out a connection from the pool. The caller process
-        should already be allowed on a connection.
+    The fourth option requires [caller: pid] to be used when
+    checking out a connection from the pool. The caller process
+    should already be allowed on a connection.
 
-        If you are reading this error, it means you have not done one
-        of the steps above or that the owner process has crashed.
-        """
-    GenServer.reply(from, {:error, DBConnection.OwnershipError.exception(msg)})
+    If you are reading this error, it means you have not done one
+    of the steps above or that the owner process has crashed.
+    """
+
+    DBConnection.Holder.reply_error(from, DBConnection.OwnershipError.exception(msg))
   end
 end
