@@ -18,8 +18,6 @@ defmodule DBConnection.ConnectionPool do
 
   """
 
-  @behaviour DBConnection.Pool
-
   use GenServer
   alias DBConnection.ConnectionPool.PoolSupervisor
   alias DBConnection.Holder
@@ -29,29 +27,17 @@ defmodule DBConnection.ConnectionPool do
   @idle_interval 1000
   @time_unit 1000
 
-  ## DBConnection.Pool API
+  ## child_spec API
 
   @doc false
-  def start_link(mod, opts) do
+  def child_spec(args) do
+    Supervisor.Spec.worker(__MODULE__, [args])
+  end
+
+  @doc false
+  def start_link({mod, opts}) do
     GenServer.start_link(__MODULE__, {mod, opts}, start_opts(opts))
   end
-
-  @doc false
-  def child_spec(mod, opts, child_opts \\ []) do
-    Supervisor.Spec.worker(__MODULE__, [mod, opts], child_opts)
-  end
-
-  @doc false
-  defdelegate checkout(pool, opts), to: Holder
-
-  @doc false
-  defdelegate checkin(pool_ref, conn, opts), to: Holder
-
-  @doc false
-  defdelegate disconnect(pool_ref, err, conn, opts), to: Holder
-
-  @doc false
-  defdelegate stop(pool_ref, reason, conn, opts), to: Holder
 
   ## GenServer api
 

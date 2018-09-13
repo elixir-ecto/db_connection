@@ -6,9 +6,9 @@ defmodule DBConnection.Ownership.Manager do
 
   @timeout 5_000
 
-  @callback start_link(module, opts :: Keyword.t) ::
+  @callback start_link({module, opts :: Keyword.t}) ::
     GenServer.on_start
-  def start_link(module, opts) do
+  def start_link({module, opts}) do
     {owner_opts, pool_opts} = Keyword.split(opts, [:name])
     GenServer.start_link(__MODULE__, {module, owner_opts, pool_opts}, owner_opts)
   end
@@ -56,10 +56,12 @@ defmodule DBConnection.Ownership.Manager do
     # We can only start the connection pool directly because
     # neither the pool's GenServer nor the manager trap exits.
     # Otherwise we would need a supervisor plus a watcher process.
-    {:ok, pool} = DBConnection.ConnectionPool.start_link(module, pool_opts)
+    pool_opts = Keyword.delete(pool_opts, :pool)
+    {:ok, pool} = DBConnection.start_link(module, pool_opts)
 
     mode = Keyword.get(pool_opts, :ownership_mode, :auto)
     log = Keyword.get(pool_opts, :ownership_log, nil)
+
     {:ok, %{pool: pool, checkouts: %{}, owners: %{},
             mode: mode, mode_ref: nil, ets: ets, log: log}}
   end

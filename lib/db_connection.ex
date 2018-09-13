@@ -71,15 +71,10 @@ defmodule DBConnection do
   The `DBConnection.Query` protocol provide utility functions so that
   queries can be prepared or encoded and results decoding without
   blocking the connection or pool.
-
-  By default the `DBConnection` starts a pool with a single connection.
-  The size of the pool can be increased with `:pool_size`. A separate
-  pool can be given with the `:pool` option. If a pool is used the module
-  must be passed as an option on all operations.
   """
   require Logger
 
-  defstruct [:pool_mod, :pool_ref, :conn_mod, :conn_ref, :conn_mode]
+  defstruct [:holder, :pool_ref, :conn_mod, :conn_ref, :conn_mode]
 
   defmodule EncodeError do
     defexception [:message]
@@ -99,7 +94,7 @@ defmodule DBConnection do
   @typedoc """
   Run or transaction connection reference.
   """
-  @type t :: %__MODULE__{pool_mod: module,
+  @type t :: %__MODULE__{holder: module,
                          pool_ref: any,
                          conn_mod: any,
                          conn_ref: reference}
@@ -334,7 +329,11 @@ defmodule DBConnection do
   end
 
   @doc """
-  Start and link to a database connection process.
+  Starts and links to a database connection process.
+
+  By default the `DBConnection` starts a pool with a single connection.
+  The size of the pool can be increased with `:pool_size`. A separate
+  pool can be given with the `:pool` option.
 
   ### Options
 
@@ -351,7 +350,9 @@ defmodule DBConnection do
     a 1-arity fun, `{module, function, args}` with `DBConnection.t` prepended
     to `args` or `nil` (default: `nil`)
     * `:name` - A name to register the started process (see the `:name` option
-    in `GenServer.start_link/3`).
+    in `GenServer.start_link/3`)
+    * `:pool` - Chooses the pool to be started
+    * `:pool_size` - Chooses the size of the pool
 
   ### Example
 
@@ -359,23 +360,27 @@ defmodule DBConnection do
   """
   @spec start_link(module, opts :: Keyword.t) :: GenServer.on_start
   def start_link(conn_mod, opts) do
-    apply(pool(opts), :start_link, [conn_mod, opts])
+    case child_spec(conn_mod, opts) do
+      {_, {m, f, args}, _, _, _, _} -> apply(m, f, args)
+      %{start: {m, f, args}} -> apply(m, f, args)
+    end
   end
 
   @doc """
-  Create a supervisor child specification for a pool of connections.
+  Creates a supervisor child specification for a pool of connections.
 
-  See `Supervisor.Spec` for child options (`child_opts`).
+  See `start_link/2` for options.
   """
-  @spec child_spec(module, opts :: Keyword.t, child_opts :: Keyword.t) ::
-    Supervisor.Spec.spec
-  def child_spec(conn_mod, opts, child_opts \\ []) do
-    apply(pool(opts), :child_spec, [conn_mod, opts, child_opts])
+  @spec child_spec(module, opts :: Keyword.t) :: :supervisor.child_spec()
+  def child_spec(conn_mod, opts) do
+    pool = Keyword.get(opts, :pool, DBConnection.ConnectionPool)
+    pool.child_spec({conn_mod, opts})
   end
 
   @doc """
-  Prepare a query with a database connection for later execution and
-  returns `{:ok, query}` on success or `{:error, exception}` if there was
+  Prepare a query with a database connection for later execution.
+
+  It returns `{:ok, query}` on success or `{:error, exception}` if there was
   an error.
 
   The returned `query` can then be passed to `execute/3` and/or `close/3`
@@ -651,11 +656,11 @@ defmodule DBConnection do
         catch
           kind, error ->
             stacktrace = System.stacktrace()
-            checkin(conn, opts)
+            checkin(conn)
             :erlang.raise(kind, error, stacktrace)
         else
           {result, status, status} ->
-            checkin(conn, opts)
+            checkin(conn)
             result
 
           {result, old_status, new_status} ->
@@ -665,7 +670,7 @@ defmodule DBConnection do
                   "connection was checked out with status #{inspect(old_status)} " <>
                     "but it was checked in with status #{inspect(new_status)}"
                 )
-                delete_disconnect(conn, conn_state, err, opts)
+                delete_disconnect(conn, conn_state, err)
                 raise err
 
               {:error, _, _} ->
@@ -947,23 +952,27 @@ defmodule DBConnection do
 
   ## Helpers
 
-  defp pool(opts) do
-    Keyword.get(opts, :pool, DBConnection.ConnectionPool)
-  end
-
   defp checkout(pool, meter, opts) do
     meter = event(meter, :checkout)
-    pool_mod = pool(opts)
+
+    # The holder is only used internally by DBConnection.Task
+    holder = Keyword.get(opts, :holder, DBConnection.Holder)
+
     try do
-      apply(pool_mod, :checkout, [pool, opts])
+      holder.checkout(pool, opts)
     catch
       kind, reason ->
         stack = System.stacktrace()
         {kind, reason, stack, meter}
     else
       {:ok, pool_ref, conn_mod, conn_state} ->
-        conn = %DBConnection{pool_mod: pool_mod, pool_ref: pool_ref,
-          conn_mod: conn_mod, conn_ref: make_ref()}
+        conn = %DBConnection{
+          holder: holder,
+          pool_ref: pool_ref,
+          conn_mod: conn_mod,
+          conn_ref: make_ref()
+        }
+
         put_info(conn, conn_state)
         {:ok, conn, conn_state, meter}
       {:error, err} ->
@@ -983,17 +992,17 @@ defmodule DBConnection do
         {:ok, result, meter} ->
           {:ok, conn, result, meter}
         error ->
-          checkin(conn, opts)
+          checkin(conn)
           error
       end
     end
   end
 
-  defp checkin(conn, opts) do
+  defp checkin(conn) do
     case delete_info(conn) do
       {:ok, conn_state} ->
-        %DBConnection{pool_mod: pool_mod, pool_ref: pool_ref} = conn
-        _ = apply(pool_mod, :checkin, [pool_ref, conn_state, opts])
+        %DBConnection{holder: holder, pool_ref: pool_ref} = conn
+        _ = holder.checkin(pool_ref, conn_state)
         :ok
       {:error, _} = error ->
         error
@@ -1003,7 +1012,7 @@ defmodule DBConnection do
   defp checkin(%DBConnection{} = conn, fun, meter, opts) do
     with {:ok, conn_state, meter} <- fetch_info(conn, meter) do
       return = fun.(conn, conn_state, meter, opts)
-      checkin(conn, opts)
+      checkin(conn)
       return
     end
   end
@@ -1011,22 +1020,20 @@ defmodule DBConnection do
     run(pool, fun, meter, opts)
   end
 
-  defp delete_disconnect(conn, conn_state, err, opts) do
+  defp delete_disconnect(conn, conn_state, err) do
     _ = delete_info(conn)
-    %DBConnection{pool_mod: pool_mod, pool_ref: pool_ref} = conn
-    args = [pool_ref, err, conn_state, opts]
-    _ = apply(pool_mod, :disconnect, args)
+    %DBConnection{holder: holder, pool_ref: pool_ref} = conn
+    _ = holder.disconnect(pool_ref, err, conn_state)
     :ok
   end
 
-  defp delete_stop(conn, conn_state, kind, reason, stack, opts) do
+  defp delete_stop(conn, conn_state, kind, reason, stack) do
     _ = delete_info(conn)
     msg = "client #{inspect self()} stopped: " <>
       Exception.format(kind, reason, stack)
     exception = DBConnection.ConnectionError.exception(msg)
-    %DBConnection{pool_mod: pool_mod, pool_ref: pool_ref} = conn
-    args = [pool_ref, exception, conn_state, opts]
-    _ = apply(pool_mod, :stop, args)
+    %DBConnection{holder: holder, pool_ref: pool_ref} = conn
+    _ = holder.stop(pool_ref, exception, conn_state)
     :ok
   end
 
@@ -1038,12 +1045,12 @@ defmodule DBConnection do
     catch
       kind, reason ->
         stack = System.stacktrace()
-        delete_stop(conn, conn_state, kind, reason, stack, opts)
+        delete_stop(conn, conn_state, kind, reason, stack)
         {:catch, kind, reason, stack}
     end
   end
 
-  defp handle_common_result(return, conn, conn_state, meter, opts) do
+  defp handle_common_result(return, conn, conn_state, meter) do
     case return do
       {:ok, result, conn_state} ->
         put_info(conn, conn_state)
@@ -1054,24 +1061,24 @@ defmodule DBConnection do
         {:error, err, meter}
 
       {:disconnect, err, conn_state} ->
-        delete_disconnect(conn, conn_state, err, opts)
+        delete_disconnect(conn, conn_state, err)
         {:error, err, meter}
 
       {:catch, kind, reason, stack} ->
         {kind, reason, stack, meter}
 
       other ->
-        bad_return!(other, conn, conn_state, meter, opts)
+        bad_return!(other, conn, conn_state, meter)
     end
   end
 
-  defp bad_return!(other, conn, conn_state, meter, opts) do
+  defp bad_return!(other, conn, conn_state, meter) do
     try do
       raise DBConnection.ConnectionError, "bad return value: #{inspect other}"
     catch
       :error, reason ->
         stack = System.stacktrace()
-        delete_stop(conn, conn_state, :error, reason, stack, opts)
+        delete_stop(conn, conn_state, :error, reason, stack)
         {:error, reason, stack, meter}
     end
   end
@@ -1197,7 +1204,7 @@ defmodule DBConnection do
   defp prepare(conn, conn_state, query, meter, opts) do
     conn
     |> handle(conn_state, :handle_prepare, [query], opts)
-    |> handle_common_result(conn, conn_state, event(meter, :prepare), opts)
+    |> handle_common_result(conn, conn_state, event(meter, :prepare))
   end
 
   defp run_prepare_execute(conn, conn_state, query, params, meter, opts) do
@@ -1223,10 +1230,10 @@ defmodule DBConnection do
         {:ok, query, result, meter}
 
       {:ok, _, _} = other ->
-        bad_return!(other, conn, conn_state, meter, opts)
+        bad_return!(other, conn, conn_state, meter)
 
       other ->
-        handle_common_result(other, conn, conn_state, meter, opts)
+        handle_common_result(other, conn, conn_state, meter)
     end
   end
 
@@ -1255,7 +1262,7 @@ defmodule DBConnection do
       try do
         fun.(conn, :ok, conn_state, args, meter, opts)
       after
-        checkin(conn, opts)
+        checkin(conn)
       end
     end
   end
@@ -1272,7 +1279,7 @@ defmodule DBConnection do
         put_info(conn, status, conn_state)
         {:error, err, meter}
       {:disconnect, err, conn_state} ->
-        delete_disconnect(conn, conn_state, err, opts)
+        delete_disconnect(conn, conn_state, err)
         {:error, err, meter}
       other ->
         try do
@@ -1280,13 +1287,13 @@ defmodule DBConnection do
         catch
           :error, reason ->
             stack = System.stacktrace()
-            delete_stop(conn, conn_state, :error, reason, stack, opts)
+            delete_stop(conn, conn_state, :error, reason, stack)
             {:error, reason, stack, meter}
         end
     catch
       kind, reason ->
         stack = System.stacktrace()
-        delete_stop(conn, conn_state, kind, reason, stack, opts)
+        delete_stop(conn, conn_state, kind, reason, stack)
         {kind, reason, stack, meter}
     end
   end
@@ -1301,7 +1308,7 @@ defmodule DBConnection do
       try do
         fun.(conn, conn_state, meter, opts)
       after
-        checkin(conn, opts)
+        checkin(conn)
       end
     end
   end
@@ -1316,7 +1323,7 @@ defmodule DBConnection do
       try do
         fun.(conn, conn_state, arg, meter, opts)
       after
-        checkin(conn, opts)
+        checkin(conn)
       end
     end
   end
@@ -1331,7 +1338,7 @@ defmodule DBConnection do
       try do
         fun.(conn, conn_state, arg1, arg2, meter, opts)
       after
-        checkin(conn, opts)
+        checkin(conn)
       end
     end
   end
@@ -1476,10 +1483,10 @@ defmodule DBConnection do
     case handle(conn, conn_state, :handle_begin, [], opts) do
       {status, conn_state} when status in [:idle, :transaction, :error] ->
         put_info(conn, conn_state)
-        status_disconnect(conn, status, meter, opts)
+        status_disconnect(conn, status, meter)
 
       other ->
-        handle_common_result(other, conn, conn_state, meter, opts)
+        handle_common_result(other, conn, conn_state, meter)
     end
   end
 
@@ -1495,10 +1502,10 @@ defmodule DBConnection do
     case handle(conn, conn_state, :handle_rollback, [], opts) do
       {status, conn_state} when status in [:idle, :transaction, :error] ->
         put_info(conn, conn_state)
-        status_disconnect(conn, status, meter, opts)
+        status_disconnect(conn, status, meter)
 
       other ->
-        handle_common_result(other, conn, conn_state, meter, opts)
+        handle_common_result(other, conn, conn_state, meter)
     end
   end
 
@@ -1526,18 +1533,18 @@ defmodule DBConnection do
 
       {status, conn_state} when status in [:idle, :transaction] ->
         put_info(conn, conn_state)
-        {:commit, status_disconnect(conn, status, meter, opts)}
+        {:commit, status_disconnect(conn, status, meter)}
 
       other ->
-        {:commit, handle_common_result(other, conn, conn_state, meter, opts)}
+        {:commit, handle_common_result(other, conn, conn_state, meter)}
     end
   end
 
-  defp status_disconnect(conn, status, meter, opts) do
+  defp status_disconnect(conn, status, meter) do
     # conn_state must valid as just put there in previous call
     {:ok, conn_state, meter} = fetch_info(conn, meter)
     err = DBConnection.TransactionError.exception(status)
-    delete_disconnect(conn, conn_state, err, opts)
+    delete_disconnect(conn, conn_state, err)
     {:error, err, meter}
   end
 
@@ -1550,7 +1557,7 @@ defmodule DBConnection do
         put_info(conn, conn_state)
         {status, conn_state}
       {:disconnect, err, conn_state} ->
-        delete_disconnect(conn, conn_state, err, opts)
+        delete_disconnect(conn, conn_state, err)
         {:error, meter}
       other ->
         try do
@@ -1558,13 +1565,13 @@ defmodule DBConnection do
         catch
           :error, reason ->
             stack = System.stacktrace()
-            delete_stop(conn, conn_state, :error, reason, stack, opts)
+            delete_stop(conn, conn_state, :error, reason, stack)
             {:error, reason, stack, meter}
         end
     catch
       kind, reason ->
         stack = System.stacktrace()
-        delete_stop(conn, conn_state, kind, reason, stack, opts)
+        delete_stop(conn, conn_state, kind, reason, stack)
         {kind, reason, stack, meter}
     end
   end
@@ -1589,10 +1596,10 @@ defmodule DBConnection do
         {:ok, query, result, meter}
 
       {:ok, _, _} = other ->
-        bad_return!(other, conn, conn_state, meter, opts)
+        bad_return!(other, conn, conn_state, meter)
 
       other ->
-        handle_common_result(other, conn, conn_state, meter, opts)
+        handle_common_result(other, conn, conn_state, meter)
     end
   end
 
@@ -1635,7 +1642,7 @@ defmodule DBConnection do
         {:halt, result, meter}
 
       other ->
-        handle_common_result(other, conn, conn_state, meter, opts)
+        handle_common_result(other, conn, conn_state, meter)
     end
   end
 

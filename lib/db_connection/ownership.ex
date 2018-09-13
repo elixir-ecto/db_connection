@@ -6,7 +6,7 @@ end
 
 defmodule DBConnection.Ownership do
   @moduledoc """
-  A `DBConnection.Pool` that requires explicit checkout and checkin
+  A DBConnection pool that requires explicit checkout and checkin
   as a mechanism to coordinate between processes.
 
   ### Options
@@ -31,10 +31,13 @@ defmodule DBConnection.Ownership do
   connection (hence the `:infinity` timeout).
   """
 
-  @behaviour DBConnection.Pool
-
   alias DBConnection.Ownership.Manager
   alias DBConnection.Holder
+
+  @doc false
+  def child_spec(args) do
+    Supervisor.Spec.worker(Manager, [args])
+  end
 
   ## Ownership API
 
@@ -97,28 +100,4 @@ defmodule DBConnection.Ownership do
   @spec ownership_allow(GenServer.server, owner_or_allowed :: pid, allow :: pid, Keyword.t) ::
     :ok | {:already, :owner | :allowed} | :not_found
   defdelegate ownership_allow(manager, owner, allow, opts), to: Manager, as: :allow
-
-  ## Pool callbacks
-
-  @doc false
-  def start_link(module, opts) do
-    Manager.start_link(module, opts)
-  end
-
-  @doc false
-  def child_spec(module, opts, child_opts) do
-    Supervisor.Spec.worker(Manager, [module, opts], child_opts)
-  end
-
-  @doc false
-  defdelegate checkout(manager, opts), to: Holder
-
-  @doc false
-  defdelegate checkin(proxy, state, opts), to: Holder
-
-  @doc false
-  defdelegate disconnect(proxy, err, state, opts), to: Holder
-
-  @doc false
-  defdelegate stop(proxy, err, state, opts), to: Holder
 end
