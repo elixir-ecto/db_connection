@@ -10,17 +10,17 @@ defmodule AfterConnectTest do
     stack = [
       {:ok, :state},
       {:idle, :state},
-      {:ok, %R{}, :new_state},
-      {:ok, %R{}, :newer_state},
+      {:ok, %Q{}, %R{}, :new_state},
+      {:ok, %Q{}, %R{}, :newer_state},
       {:idle, :newer_state},
-      {:ok, %R{}, :newest_state}
+      {:ok, %Q{}, %R{}, :newest_state}
       ]
     {:ok, agent} = A.start_link(stack)
 
     after_connect = fn(conn) ->
       _ = Process.put(:agent, agent)
-      assert P.execute(conn, %Q{}, [:after_connect]) == {:ok, %R{}}
-      assert P.execute(conn, %Q{}, [:after_connect], [key: :value]) == {:ok, %R{}}
+      assert P.execute(conn, %Q{}, [:after_connect]) == {:ok, %Q{}, %R{}}
+      assert P.execute(conn, %Q{}, [:after_connect], [key: :value]) == {:ok, %Q{}, %R{}}
       :ok
     end
     opts = [after_connect: after_connect, agent: agent, parent: self()]
@@ -42,18 +42,18 @@ defmodule AfterConnectTest do
     stack = [
       {:ok, :state},
       {:idle, :state},
-      {:ok, %R{}, :new_state},
-      {:ok, %R{}, :newer_state},
+      {:ok, %Q{}, %R{}, :new_state},
+      {:ok, %Q{}, %R{}, :newer_state},
       {:idle, :newer_state},
-      {:ok, %R{}, :newest_state}
+      {:ok, %Q{}, %R{}, :newest_state}
       ]
     {:ok, agent} = A.start_link(stack)
 
     defmodule AfterCon do
       def after_connect(conn, :arg, agent) do
         _ = Process.put(:agent, agent)
-        assert P.execute(conn, %Q{}, [:after_connect]) == {:ok, %R{}}
-        assert P.execute(conn, %Q{}, [:after_connect], [key: :value]) == {:ok, %R{}}
+        assert P.execute(conn, %Q{}, [:after_connect]) == {:ok, %Q{}, %R{}}
+        assert P.execute(conn, %Q{}, [:after_connect], [key: :value]) == {:ok, %Q{}, %R{}}
          :ok
       end
     end
@@ -85,16 +85,16 @@ defmodule AfterConnectTest do
       {:ok, :state},
       {:idle, :state},
       {:error, err, :new_state},
-      {:ok, %R{}, :newer_state},
+      {:ok, %Q{}, %R{}, :newer_state},
       {:idle, :newer_state},
-      {:ok, %R{}, :newest_state}
+      {:ok, %Q{}, %R{}, :newest_state}
       ]
     {:ok, agent} = A.start_link(stack)
 
     after_connect = fn(conn) ->
       _ = Process.put(:agent, agent)
       assert P.execute(conn, %Q{}, [:after_connect]) == {:error, err}
-      assert P.execute(conn, %Q{}, [:after_connect]) == {:ok, %R{}}
+      assert P.execute(conn, %Q{}, [:after_connect]) == {:ok, %Q{}, %R{}}
       :ok
     end
     opts = [after_connect: after_connect, agent: agent, parent: self()]
@@ -120,9 +120,9 @@ defmodule AfterConnectTest do
       :ok,
       {:ok, :state2},
       {:idle, :state2},
-      {:ok, %R{}, :new_state2},
+      {:ok, %Q{}, %R{}, :new_state2},
       {:idle, :new_state2},
-      {:ok, %R{}, :newer_state2}
+      {:ok, %Q{}, %R{}, :newer_state2}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -135,7 +135,7 @@ defmodule AfterConnectTest do
           assert_raise DBConnection.Connection.Error, "connection is closed",
             fn() -> P.execute(conn, %Q{}, [:after_connect]) end
           :ok
-        {:ok, %R{}} ->
+        {:ok, %Q{}, %R{}} ->
           :ok
       end
     end
@@ -258,22 +258,22 @@ defmodule AfterConnectTest do
         {:ok, :state2}
       end,
       {:idle, :state2},
-      {:ok, %R{}, :new_state2},
+      {:ok, %Q{}, %R{}, :new_state2},
       {:idle, :new_state2},
-      {:ok, %R{}, :newer_state2}
+      {:ok, %Q{}, %R{}, :newer_state2}
       ]
     {:ok, agent} = A.start_link(stack)
 
     after_connect = fn(conn) ->
       _ = Process.put(:agent, agent)
-      assert P.execute(conn, %Q{}, [:after_connect]) == {:ok, %R{}}
+      assert P.execute(conn, %Q{}, [:after_connect]) == {:ok, %Q{}, %R{}}
       :ok
     end
     opts = [after_connect: after_connect, agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
 
     assert_receive :reconnected, 500
-    assert P.execute(pool, %Q{}, [:client]) == {:ok, %R{}}
+    assert P.execute(pool, %Q{}, [:client]) == {:ok, %Q{}, %R{}}
 
     assert [
       {:connect, _},

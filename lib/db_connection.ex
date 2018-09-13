@@ -256,7 +256,7 @@ defmodule DBConnection do
   This callback is called in the client process.
   """
   @callback handle_execute(query, params, opts :: Keyword.t, state :: any) ::
-    {:ok, result, new_state :: any} | {:ok, query, result, new_state :: any} |
+    {:ok, query, result, new_state :: any} |
     {:error | :disconnect, Exception.t, new_state :: any}
 
   @doc """
@@ -282,7 +282,7 @@ defmodule DBConnection do
   This callback is called in the client process.
   """
   @callback handle_declare(query, params, opts :: Keyword.t, state :: any) ::
-    {:ok, cursor, new_state :: any} | {:ok, query, cursor, new_state :: any} |
+    {:ok, query, cursor, new_state :: any} |
     {:error | :disconnect, Exception.t, new_state :: any}
 
   @doc """
@@ -520,7 +520,7 @@ defmodule DBConnection do
   See `prepare/3`.
   """
   @spec execute(conn, query, params, opts :: Keyword.t) ::
-    {:ok, result} | {:ok, query, result} | {:error, Exception.t}
+    {:ok, query, result} | {:error, Exception.t}
   def execute(conn, query, params, opts \\ []) do
     result =
       case maybe_encode(query, params, meter(opts), opts) do
@@ -528,13 +528,9 @@ defmodule DBConnection do
           parsed_prepare_execute(conn, query, params, meter, opts)
 
         {:ok, params, meter} ->
-          case run(conn, &run_execute/6, query, params, meter, opts) do
-            {:ok, result, meter} ->
-              decode(query, result, meter, opts)
-            {:ok, new_query, result, meter} ->
-              altered_decode(new_query, result, meter, opts)
-            other ->
-              other
+          with {:ok, query, result, meter} <- run(conn, &run_execute/6, query, params, meter, opts),
+               {:ok, result, meter} <- decode(query, result, meter, opts) do
+            {:ok, query, result, meter}
           end
 
         {_, _, _, _} = error ->
@@ -550,12 +546,10 @@ defmodule DBConnection do
 
   See `execute/4`
   """
-  @spec execute!(conn, query, params, opts :: Keyword.t) ::
-    result | {query, result}
+  @spec execute!(conn, query, params, opts :: Keyword.t) :: result
   def execute!(conn, query, params, opts \\ []) do
     case execute(conn, query, params, opts) do
-      {:ok, result} -> result
-      {:ok, query, result} -> {query, result}
+      {:ok, _query, result} -> result
       {:error, err} -> raise err
     end
   end
@@ -1067,14 +1061,18 @@ defmodule DBConnection do
         {kind, reason, stack, meter}
 
       other ->
-        try do
-          raise DBConnection.ConnectionError, "bad return value: #{inspect other}"
-        catch
-          :error, reason ->
-            stack = System.stacktrace()
-            delete_stop(conn, conn_state, :error, reason, stack, opts)
-            {:error, reason, stack, meter}
-        end
+        bad_return!(other, conn, conn_state, meter, opts)
+    end
+  end
+
+  defp bad_return!(other, conn, conn_state, meter, opts) do
+    try do
+      raise DBConnection.ConnectionError, "bad return value: #{inspect other}"
+    catch
+      :error, reason ->
+        stack = System.stacktrace()
+        delete_stop(conn, conn_state, :error, reason, stack, opts)
+        {:error, reason, stack, meter}
     end
   end
 
@@ -1143,15 +1141,6 @@ defmodule DBConnection do
     else
       result ->
         {:ok, result, meter}
-    end
-  end
-
-  defp altered_decode(query, result, meter, opts) do
-    case decode(query, result, meter, opts) do
-      {:ok, result, meter} ->
-        {:ok, query, result, meter}
-      other ->
-        other
     end
   end
 
@@ -1232,6 +1221,9 @@ defmodule DBConnection do
       {:ok, query, result, conn_state} ->
         put_info(conn, conn_state)
         {:ok, query, result, meter}
+
+      {:ok, _, _} = other ->
+        bad_return!(other, conn, conn_state, meter, opts)
 
       other ->
         handle_common_result(other, conn, conn_state, meter, opts)
@@ -1582,7 +1574,7 @@ defmodule DBConnection do
          {:ok, query, meter} <- describe(conn, query, meter, opts),
          {:ok, params, meter} <- encode(conn, query, params, meter, opts),
          {:ok, conn_state, meter} <- fetch_info(conn, meter),
-         {:ok, cursor, meter}
+         {:ok, query, cursor, meter}
           <- run_declare(conn, conn_state, query, params, meter, opts) do
       {:ok, query, cursor, meter}
     end
@@ -1595,6 +1587,9 @@ defmodule DBConnection do
       {:ok, query, result, conn_state} ->
         put_info(conn, conn_state)
         {:ok, query, result, meter}
+
+      {:ok, _, _} = other ->
+        bad_return!(other, conn, conn_state, meter, opts)
 
       other ->
         handle_common_result(other, conn, conn_state, meter, opts)

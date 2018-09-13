@@ -12,7 +12,7 @@ defmodule PrepareStreamTest do
       {:ok, :state},
       {:ok, :began, :new_state},
       {:ok, %Q{}, :newer_state},
-      {:ok, %C{}, :newest_state},
+      {:ok, %Q{}, %C{}, :newest_state},
       {:cont, %R{}, :state2},
       {:halt, %R{}, :new_state2},
       {:ok, :deallocated, :newer_state2},
@@ -46,7 +46,7 @@ defmodule PrepareStreamTest do
       {:ok, :state},
       {:ok, :began, :new_state},
       {:ok, %Q{state: :prepared}, :newer_state},
-      {:ok, %C{}, :newest_state},
+      {:ok, %Q{state: :declared}, %C{}, :newest_state},
       {:halt, %R{}, :state2},
       {:ok, :deallocated, :new_state2},
       {:ok, :committed, :newer_state2}
@@ -71,7 +71,7 @@ defmodule PrepareStreamTest do
       handle_begin: [_, :state],
       handle_prepare: [%Q{state: :parsed}, _, :new_state],
       handle_declare: [%Q{state: :described}, :encoded, _, :newer_state],
-      handle_fetch: [%Q{state: :described}, %C{}, _, :newest_state],
+      handle_fetch: [%Q{state: :declared}, %C{}, _, :newest_state],
       handle_deallocate: [%Q{}, %C{}, _, :state2],
       handle_commit: [_, :new_state2]
       ] = A.record(agent)
@@ -82,7 +82,7 @@ defmodule PrepareStreamTest do
       {:ok, :state},
       {:ok, :began, :new_state},
       {:ok, %Q{}, :newer_state},
-      {:ok, %C{}, :newest_state},
+      {:ok, %Q{}, %C{}, :newest_state},
       {:halt, %R{}, :state2},
       {:ok, :deallocated, :new_state2},
       {:ok, :committed, :newest_state2}

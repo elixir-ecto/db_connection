@@ -12,7 +12,7 @@ defmodule StreamTest do
     stack = [
       {:ok, :state},
       {:ok, :began, :new_state},
-      {:ok, %C{}, :newer_state},
+      {:ok, %Q{}, %C{}, :newer_state},
       {:cont, %R{}, :newest_state},
       {:halt, %R{}, :state2},
       {:ok, :deallocated, :new_state2},
@@ -44,7 +44,7 @@ defmodule StreamTest do
     stack = [
       {:ok, :state},
       {:ok, :began, :new_state},
-      {:ok, %C{}, :newer_state},
+      {:ok, %Q{}, %C{}, :newer_state},
       {:halt, %R{}, :newest_state},
       {:ok, :deallocated, :state2},
       {:ok, :committed, :new_state2}
@@ -77,7 +77,7 @@ defmodule StreamTest do
       {:ok, :state},
       {:ok, :began, :begin_state},
       {:ok, %Q{state: :prepared}, :new_state},
-      {:ok, %C{}, :newer_state},
+      {:ok, %Q{state: :declared}, %C{}, :newer_state},
       {:halt, %R{}, :newest_state},
       {:ok, :deallocated, :state2},
       {:ok, :committed, :new_state2}
@@ -117,40 +117,8 @@ defmodule StreamTest do
       handle_begin: [_, :state],
       handle_prepare: [%Q{state: nil}, _, :begin_state],
       handle_declare: [%Q{state: :prepared}, :encoded, _, :new_state],
-      handle_fetch: [%Q{}, %C{}, _, :newer_state],
+      handle_fetch: [%Q{state: :declared}, %C{}, _, :newer_state],
       handle_deallocate: [%Q{}, %C{}, _, :newest_state],
-      handle_commit: [_, :state2]
-      ] = A.record(agent)
-  end
-
-  test "stream replaces query and decodes result" do
-    stack = [
-      {:ok, :state},
-      {:ok, :began, :new_state},
-      {:ok, %Q{state: :replaced}, %C{}, :newer_state},
-      {:halt, %R{}, :newest_state},
-      {:ok, :deallocated, :state2},
-      {:ok, :committed, :new_state2}
-      ]
-    {:ok, agent} = A.start_link(stack)
-
-    opts = [agent: agent, parent: self()]
-    {:ok, pool} = P.start_link(opts)
-
-    assert P.transaction(pool, fn(conn) ->
-      opts2 = [decode: fn(%Q{state: :replaced}, %R{}) -> :decoded
-                         (%Q{state: :old}, _) -> flunk "decoded with old" end]
-      stream = P.stream(conn, %Q{state: :old}, [:param], opts2)
-      assert Enum.to_list(stream) == [:decoded]
-      :hi
-    end) == {:ok, :hi}
-
-    assert [
-      connect: [_],
-      handle_begin: [_, :state],
-      handle_declare: [_, [:param], _, :new_state],
-      handle_fetch: [%Q{state: :replaced}, %C{}, _, :newer_state],
-      handle_deallocate: [%Q{state: :replaced}, %C{}, _, :newest_state],
       handle_commit: [_, :state2]
       ] = A.record(agent)
   end
@@ -159,7 +127,7 @@ defmodule StreamTest do
     stack = [
       {:ok, :state},
       {:ok, :began, :new_state},
-      {:ok, %C{}, :newer_state},
+      {:ok, %Q{}, %C{}, :newer_state},
       {:cont, %R{}, :newest_state},
       {:ok, :result, :state2},
       {:ok, :committed, :new_state2}
@@ -176,7 +144,7 @@ defmodule StreamTest do
     end) == {:ok, :hi}
 
     assert_received %DBConnection.LogEntry{call: :declare} = entry
-    assert %{query: %Q{}, params: [:param], result: {:ok, %C{}}} = entry
+    assert %{query: %Q{}, params: [:param], result: {:ok, %Q{}, %C{}}} = entry
     assert is_nil(entry.pool_time)
     assert is_integer(entry.connection_time)
     assert entry.connection_time >= 0
@@ -282,7 +250,7 @@ defmodule StreamTest do
     stack = [
       {:ok, :state},
       {:ok, :began, :new_state},
-      {:ok, %C{}, :newer_state},
+      {:ok, %Q{}, %C{}, :newer_state},
       {:disconnect, err, :newest_state},
       :ok,
       fn(opts) ->
@@ -334,7 +302,7 @@ defmodule StreamTest do
     stack = [
       {:ok, :state},
       {:ok, :began, :new_state},
-      {:ok, %C{}, :newer_state},
+      {:ok, %Q{}, %C{}, :newer_state},
       {:cont, %R{}, :newest_state},
       {:ok, :deallocated, :state2},
       {:ok, :rolledback, :new_state2}
@@ -368,7 +336,7 @@ defmodule StreamTest do
     stack = [
       {:ok, :state},
       {:ok, :began, :new_state},
-      {:ok, %C{}, :newer_state},
+      {:ok, %Q{}, %C{}, :newer_state},
       {:cont, %R{}, :newest_state},
       {:disconnect, err, :state2},
       :ok,
@@ -494,7 +462,7 @@ defmodule StreamTest do
     stack = [
       {:ok, :state},
       {:ok, :began, :new_state},
-      {:ok, %C{}, :newer_state},
+      {:ok, %Q{}, %C{}, :newer_state},
       {:halt, %R{}, :newest_state},
       {:ok, :deallocated, :state2},
       {:ok, :commited, :new_state2}
@@ -532,7 +500,7 @@ defmodule StreamTest do
         {:ok, :state}
       end,
       {:ok, :began, :new_state},
-      {:ok, %C{}, :newer_state},
+      {:ok, %Q{}, %C{}, :newer_state},
       :oops,
       {:ok, :state2}
       ]
@@ -573,7 +541,7 @@ defmodule StreamTest do
         {:ok, :state}
       end,
       {:ok, :began, :new_state},
-      {:ok, %C{}, :newer_state},
+      {:ok, %Q{}, %C{}, :newer_state},
       {:cont, %R{}, :newest_state},
       fn(_, _, _, _) ->
         raise "oops"

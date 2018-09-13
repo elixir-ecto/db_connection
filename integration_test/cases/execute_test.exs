@@ -9,15 +9,15 @@ defmodule ExecuteTest do
   test "execute returns result" do
     stack = [
       {:ok, :state},
-      {:ok, %R{}, :new_state},
-      {:ok, %R{}, :new_state}
+      {:ok, %Q{}, %R{}, :new_state},
+      {:ok, %Q{}, %R{}, :new_state}
       ]
     {:ok, agent} = A.start_link(stack)
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
-    assert P.execute(pool, %Q{}, [:param]) == {:ok, %R{}}
-    assert P.execute(pool, %Q{}, [:param], [key: :value]) == {:ok, %R{}}
+    assert P.execute(pool, %Q{}, [:param]) == {:ok, %Q{}, %R{}}
+    assert P.execute(pool, %Q{}, [:param], [key: :value]) == {:ok, %Q{}, %R{}}
 
     assert [
       connect: [_],
@@ -29,7 +29,7 @@ defmodule ExecuteTest do
   test "execute encodes params and decodes result" do
     stack = [
       {:ok, :state},
-      {:ok, %R{}, :new_state},
+      {:ok, %Q{}, %R{}, :new_state},
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -38,7 +38,7 @@ defmodule ExecuteTest do
 
     opts2 = [encode: fn([:param]) -> :encoded end,
              decode: fn(%R{}) -> :decoded end]
-    assert P.execute(pool, %Q{}, [:param], opts2) == {:ok, :decoded}
+    assert P.execute(pool, %Q{}, [:param], opts2) == {:ok, %Q{}, :decoded}
 
     assert [
       connect: [_],
@@ -49,7 +49,7 @@ defmodule ExecuteTest do
     stack = [
       {:ok, :state},
       {:ok, %Q{state: :prepared}, :new_state},
-      {:ok, %R{}, :newer_state},
+      {:ok, %Q{state: :executed}, %R{}, :newer_state},
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -75,7 +75,7 @@ defmodule ExecuteTest do
     opts = [parse: parse_once,
             encode: fail_encode_once,
             decode: fn(%R{}) -> :decoded end]
-    assert P.execute(pool, %Q{}, [:param], opts) == {:ok, %Q{state: :prepared}, :decoded}
+    assert P.execute(pool, %Q{}, [:param], opts) == {:ok, %Q{state: :executed}, :decoded}
 
     assert [
       connect: [_],
@@ -83,30 +83,10 @@ defmodule ExecuteTest do
       handle_execute: [%Q{state: :prepared}, :encoded, _, :new_state]] = A.record(agent)
   end
 
-  test "execute replaces query and decodes result" do
-    stack = [
-      {:ok, :state},
-      {:ok, %Q{state: :replaced}, %R{}, :new_state},
-      ]
-    {:ok, agent} = A.start_link(stack)
-
-    opts = [agent: agent, parent: self()]
-    {:ok, pool} = P.start_link(opts)
-
-    opts2 = [decode: fn(%Q{state: :replaced}, %R{}) -> :decoded
-                       (%Q{state: :old}, _) -> flunk "decoded with old" end]
-    assert P.execute(pool, %Q{state: :old}, [:param], opts2) ==
-      {:ok, %Q{state: :replaced}, :decoded}
-
-    assert [
-      connect: [_],
-      handle_execute: [%Q{state: :old}, [:param], _, :state]] = A.record(agent)
-  end
-
   test "execute logs result" do
     stack = [
       {:ok, :state},
-      {:ok, %R{}, :new_state},
+      {:ok, %Q{}, %R{}, :new_state},
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -117,7 +97,7 @@ defmodule ExecuteTest do
     log = fn(entry) ->
       assert %DBConnection.LogEntry{call: :execute, query: %Q{},
                                     params: [:param],
-                                    result: {:ok, %R{}}} = entry
+                                    result: {:ok, %Q{}, %R{}}} = entry
       assert is_integer(entry.pool_time)
       assert entry.pool_time >= 0
       assert is_integer(entry.connection_time)
@@ -126,7 +106,7 @@ defmodule ExecuteTest do
       assert entry.decode_time >= 0
       send(parent, :logged)
     end
-    assert P.execute(pool, %Q{}, [:param], [log: log]) == {:ok, %R{}}
+    assert P.execute(pool, %Q{}, [:param], [log: log]) == {:ok, %Q{}, %R{}}
     assert_received :logged
 
     assert [
@@ -223,7 +203,7 @@ defmodule ExecuteTest do
   test "execute logs encode and decode raise" do
     stack = [
       {:ok, :state},
-      {:ok, %R{}, :new_state}
+      {:ok, %Q{}, %R{}, :new_state}
       ]
     {:ok, agent} = A.start_link(stack)
 

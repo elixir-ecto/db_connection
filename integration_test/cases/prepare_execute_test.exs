@@ -10,18 +10,18 @@ defmodule PrepareExecuteTest do
     stack = [
       {:ok, :state},
       {:ok, %Q{state: :prepared}, :new_state},
-      {:ok, %R{}, :newer_state},
+      {:ok, %Q{state: :executed}, %R{}, :newer_state},
       {:ok, %Q{state: :prepared}, :newest_state},
-      {:ok, %R{}, :state2}
+      {:ok, %Q{state: :executed}, %R{}, :state2}
       ]
     {:ok, agent} = A.start_link(stack)
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
     assert P.prepare_execute(pool, %Q{}, [:param]) ==
-      {:ok, %Q{state: :prepared}, %R{}}
-    assert P.prepare_execute(pool, %Q{}, [:param],
-      [key: :value]) == {:ok, %Q{state: :prepared}, %R{}}
+      {:ok, %Q{state: :executed}, %R{}}
+    assert P.prepare_execute(pool, %Q{}, [:param], [key: :value]) ==
+      {:ok, %Q{state: :executed}, %R{}}
 
     assert [
       connect: [_],
@@ -36,7 +36,7 @@ defmodule PrepareExecuteTest do
     stack = [
       {:ok, :state},
       {:ok, %Q{state: :prepared}, :new_state},
-      {:ok, %R{}, :newer_stater}
+      {:ok, %Q{state: :executed}, %R{}, :newer_stater}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -44,8 +44,7 @@ defmodule PrepareExecuteTest do
     {:ok, pool} = P.start_link(opts)
 
     opts2 = [parse: fn(%Q{}) -> %Q{state: :parsed} end]
-    assert P.prepare_execute(pool, %Q{}, [:param],
-      opts2) == {:ok, %Q{state: :prepared}, %R{}}
+    assert P.prepare_execute(pool, %Q{}, [:param], opts2) == {:ok, %Q{state: :executed}, %R{}}
 
     assert [
       connect: [_],
@@ -58,7 +57,7 @@ defmodule PrepareExecuteTest do
     stack = [
       {:ok, :state},
       {:ok, %Q{}, :new_state},
-      {:ok, %R{}, :newer_state}
+      {:ok, %Q{state: :executed}, %R{}, :newer_state}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -67,7 +66,7 @@ defmodule PrepareExecuteTest do
 
     opts2 = [describe: fn(%Q{}) -> %Q{state: :described} end]
     assert P.prepare_execute(pool, %Q{}, [:param],
-      opts2) == {:ok, %Q{state: :described}, %R{}}
+      opts2) == {:ok, %Q{state: :executed}, %R{}}
 
     assert [
       connect: [_],
@@ -80,7 +79,7 @@ defmodule PrepareExecuteTest do
     stack = [
       {:ok, :state},
       {:ok, %Q{}, :new_state},
-      {:ok, %R{}, :newer_state},
+      {:ok, %Q{state: :executed}, %R{}, :newer_state},
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -90,7 +89,7 @@ defmodule PrepareExecuteTest do
     opts2 = [encode: fn([:param]) -> :encoded end,
              decode: fn(%R{}) -> :decoded end]
     assert P.prepare_execute(pool, %Q{}, [:param],
-      opts2) == {:ok, %Q{}, :decoded}
+      opts2) == {:ok, %Q{state: :executed}, :decoded}
 
     assert [
       connect: [_],
@@ -102,7 +101,7 @@ defmodule PrepareExecuteTest do
     stack = [
       {:ok, :state},
       {:ok, %Q{}, :new_state},
-      {:ok, %R{}, :newer_state},
+      {:ok, %Q{}, %R{}, :newer_state},
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -272,7 +271,7 @@ defmodule PrepareExecuteTest do
       {:ok, %Q{}, :new_state},
       {:ok, :closed, :newer_state},
       {:ok, %Q{}, :newest_state},
-      {:ok, %R{}, :state2}
+      {:ok, %Q{}, %R{}, :state2}
       ]
     {:ok, agent} = A.start_link(stack)
 

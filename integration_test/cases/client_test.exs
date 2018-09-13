@@ -94,7 +94,7 @@ defmodule ClientTest do
       {:disconnect, RuntimeError.exception("oops"), :bad_state},
       {:idle, :new_state},
       {:idle, :new_state},
-      {:ok, %R{}, :newer_state}]
+      {:ok, %Q{}, %R{}, :newer_state}]
     {:ok, agent} = A.start_link(stack)
 
     parent = self()
@@ -114,7 +114,7 @@ defmodule ClientTest do
     end, [timeout: 100]) == :result
 
     assert_receive :done
-    assert P.execute(pool, %Q{}, [:param]) == {:ok, %R{}}
+    assert P.execute(pool, %Q{}, [:param]) == {:ok, %Q{}, %R{}}
 
     assert [
       {:connect, _},
@@ -141,7 +141,7 @@ defmodule ClientTest do
       fn(_, _, _, _) ->
         throw(:oops)
       end,
-      {:ok, %R{}, :newer_state}]
+      {:ok, %Q{}, %R{}, :newer_state}]
     {:ok, agent} = A.start_link(stack)
 
     parent = self()
@@ -167,7 +167,7 @@ defmodule ClientTest do
         :ok
     end
 
-    assert P.execute(pool, %Q{}, [:param]) == {:ok, %R{}}
+    assert P.execute(pool, %Q{}, [:param]) == {:ok, %Q{}, %R{}}
 
     assert [
       {:connect, _},
