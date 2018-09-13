@@ -500,8 +500,7 @@ defmodule DBConnection do
 
   @doc """
   Execute a prepared query with a database connection and return
-  `{:ok, result}` or `{:ok, query, result}` on success or
-  `{:error, exception}` if there was an error.
+  `{:ok, query, result}` on success or `{:error, exception}` if there was an error.
 
   If the query is not prepared on the connection an attempt may be made to
   prepare it and then execute again.
