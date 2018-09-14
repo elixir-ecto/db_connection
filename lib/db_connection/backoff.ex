@@ -50,8 +50,7 @@ defmodule DBConnection.Backoff do
   ## Internal
 
   defp min_max(opts) do
-    ## TODO: remove :backoff_start in 1.0
-    case {opts[:backoff_min] || opts[:backoff_start], opts[:backoff_max]} do
+    case {opts[:backoff_min], opts[:backoff_max]} do
       {nil, nil} -> {@min, @max}
       {nil, max} -> {min(@min, max), max}
       {min, nil} -> {min, max(min, @max)}
@@ -71,12 +70,10 @@ defmodule DBConnection.Backoff do
   defp new(:rand, min, max) do
     %Backoff{type: :rand, min: min, max: max, state: seed()}
   end
-  ## TODO: remove :normal in 1.0
-  defp new(type, min, max) when type in [:normal, :exp] do
+  defp new(:exp, min, max) do
     %Backoff{type: :exp, min: min, max: max, state: nil}
   end
-  ## TODO: remove :jitter in 1.0
-  defp new(type, min, max) when type in [:jitter, :rand_exp] do
+  defp new(:rand_exp, min, max) do
     lower = max(min, div(max, 3))
     %Backoff{type: :rand_exp, min: min, max: max, state: {min, lower, seed()}}
   end
