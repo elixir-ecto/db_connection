@@ -55,7 +55,7 @@ defmodule DBConnection.Ownership do
     with {:ok, pid} <- Manager.checkout(manager, opts) do
       case Holder.checkout(pid, opts) do
         {:ok, pool_ref, _module, state} ->
-          Holder.checkin(pool_ref, state, opts)
+          Holder.checkin(pool_ref, state)
         {:error, err} ->
           raise err
       end
