@@ -30,10 +30,14 @@ defmodule DBConnection.Ownership.Proxy do
     timeout = Keyword.get(pool_opts, :queue_target, @queue_target) * 2
     interval = Keyword.get(pool_opts, :queue_interval, @queue_interval)
 
+    pre_checkin = Keyword.get(pool_opts, :pre_checkin, &{:ok, :unused, &1})
+    post_checkout = Keyword.get(pool_opts, :post_checkout, &{:ok, &1, &2})
+
     state = %{client: nil, timer: nil, holder: nil,
               timeout: timeout, interval: interval, poll: nil,
               owner_ref: owner_ref, pool: pool, pool_ref: nil,
               pool_opts: pool_opts,  queue: :queue.new,
+              pre_checkin: pre_checkin, post_checkout: post_checkout,
               ownership_timer: start_timer(caller, ownership_timeout)}
 
     now = System.monotonic_time(@time_unit)
@@ -75,13 +79,20 @@ defmodule DBConnection.Ownership.Proxy do
   end
 
   def handle_info({:db_connection, from, {:checkout, _caller, _now, _queue?}}, %{holder: nil} = state) do
-    %{pool: pool, pool_opts: pool_opts, owner_ref: owner_ref} = state
+    %{pool: pool, pool_opts: pool_opts, owner_ref: owner_ref, post_checkout: post_checkout} = state
 
     case Holder.checkout(pool, pool_opts) do
       {:ok, pool_ref, mod, conn_state} ->
-        holder = Holder.new(self(), owner_ref, mod, conn_state)
-        state = %{state | pool_ref: pool_ref, holder: holder}
-        checkout(from, state)
+        case post_checkout.(mod, conn_state) do
+          {:ok, mod, conn_state} ->
+            holder = Holder.new(self(), owner_ref, mod, conn_state)
+            state = %{state | pool_ref: pool_ref, holder: holder}
+            checkout(from, state)
+          {:error, err, _, _} ->
+            GenServer.reply(from, {:error, err})
+            {:stop, {:shutdown, err}, state}
+        end
+
       {:error, err} = error ->
         GenServer.reply(from, error)
         {:stop, {:shutdown, err}, state}
@@ -177,12 +188,23 @@ defmodule DBConnection.Ownership.Proxy do
   end
 
   defp pool_done(err, state, done) do
-    %{holder: holder, pool_ref: pool_ref} = state
+    %{holder: holder, pool_ref: pool_ref, pre_checkin: pre_checkin} = state
+
     if holder do
       conn_state = Holder.get_state(holder)
-      done.(pool_ref, err, conn_state)
+
+      case pre_checkin.(conn_state) do
+        {:ok, _mod, conn_state} ->
+          done.(pool_ref, err, conn_state)
+          {:stop, {:shutdown, err}, state}
+
+        {:error, err, _, conn_state} ->
+          Holder.disconnect(pool_ref, err, conn_state)
+          {:stop, {:shutdown, err}, state}
+      end
+    else
+      {:stop, {:shutdown, err}, state}
     end
-    {:stop, {:shutdown, err}, state}
   end
 
   defp start_poll(now, %{interval: interval} = state) do
