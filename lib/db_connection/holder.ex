@@ -3,7 +3,7 @@ defmodule DBConnection.Holder do
   require Record
 
   @queue true
-  @timeout 5000
+  @timeout 15000
   @time_unit 1000
 
   Record.defrecord(:conn, [:connection, :deadline, :module, :state])
