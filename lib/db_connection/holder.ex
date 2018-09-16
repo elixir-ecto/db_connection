@@ -82,9 +82,10 @@ defmodule DBConnection.Holder do
     :ok
   end
 
-  @spec get_state(t) :: term
+  @spec get_state(t) :: {module, term}
   def get_state(holder) do
-    :ets.lookup_element(holder, :conn, conn(:state) + 1)
+    [conn(module: module, state: state)] = :ets.lookup(holder, :conn)
+    {module, state}
   end
 
   @spec handle_checkout(t, {pid, reference}, reference) :: boolean
