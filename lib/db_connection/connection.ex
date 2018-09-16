@@ -24,17 +24,17 @@ defmodule DBConnection.Connection do
   end
 
   @doc false
-  def checkin({pid, ref}, state, _) do
+  def checkin({pid, ref}, state) do
     Connection.cast(pid, {:checkin, ref, state})
   end
 
   @doc false
-  def disconnect({pid, ref}, err, state, _) do
+  def disconnect({pid, ref}, err, state) do
     Connection.cast(pid, {:disconnect, ref, err, state})
   end
 
   @doc false
-  def stop({pid, ref}, err, state, _) do
+  def stop({pid, ref}, err, state) do
     Connection.cast(pid, {:stop, ref, err, state})
   end
 

@@ -24,6 +24,7 @@ defmodule DBConnection.Ownership.Proxy do
       pool_opts
       |> Keyword.put(:timeout, :infinity)
       |> Keyword.delete(:deadline)
+
     owner_ref = Process.monitor(caller)
     ownership_timeout = Keyword.get(pool_opts, :ownership_timeout, @ownership_timeout)
     timeout = Keyword.get(pool_opts, :queue_target, @queue_target) * 2
@@ -156,10 +157,9 @@ defmodule DBConnection.Ownership.Proxy do
 
   # If it is down but it has no client, checkin
   defp down(reason, %{client: nil} = state) do
-    %{pool_ref: pool_ref, pool_opts: pool_opts, holder: holder} = state
-    conn_state = Holder.get_state(holder)
-    Holder.checkin(pool_ref, conn_state, pool_opts)
-    {:stop, {:shutdown, reason}, state}
+    pool_done(reason, state, fn pool_ref, _, conn_state ->
+      Holder.checkin(pool_ref, conn_state)
+    end)
   end
 
   # If it is down but it has a client, disconnect
@@ -169,18 +169,18 @@ defmodule DBConnection.Ownership.Proxy do
   end
 
   defp pool_disconnect(err, state) do
-    pool_done(&Holder.disconnect/4, err, state)
+    pool_done(err, state, &Holder.disconnect/3)
   end
 
   defp pool_stop(reason, state) do
-    pool_done(&Holder.stop/4, reason, state)
+    pool_done(reason, state, &Holder.stop/3)
   end
 
-  defp pool_done(done, err, state) do
-    %{holder: holder, pool_ref: pool_ref, pool_opts: pool_opts} = state
+  defp pool_done(err, state, done) do
+    %{holder: holder, pool_ref: pool_ref} = state
     if holder do
       conn_state = Holder.get_state(holder)
-      done.(pool_ref, err, conn_state, pool_opts)
+      done.(pool_ref, err, conn_state)
     end
     {:stop, {:shutdown, err}, state}
   end

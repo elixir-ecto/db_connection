@@ -1,6 +1,5 @@
 defmodule DBConnection.Task do
   @moduledoc false
-  @behaviour DBConnection.Pool
   @name __MODULE__
 
   def start_link() do
@@ -36,7 +35,7 @@ defmodule DBConnection.Task do
       {:go, ^ref, mon} ->
         Process.unlink(conn)
         pool = {:via, __MODULE__, {{conn, mon}, mod, state}}
-        _ = DBConnection.run(pool, make(fun), [pool: __MODULE__] ++ opts)
+        _ = DBConnection.run(pool, make_fun(fun), [holder: __MODULE__] ++ opts)
         exit(:normal)
     end
   end
@@ -45,14 +44,14 @@ defmodule DBConnection.Task do
     {:ok, info, mod, state}
   end
 
-  defdelegate checkin(info, state, opts), to: DBConnection.Connection
-  defdelegate disconnect(info, err, state, opts), to: DBConnection.Connection
-  defdelegate stop(info, err, state, opts), to: DBConnection.Connection
+  defdelegate checkin(info, state), to: DBConnection.Connection
+  defdelegate disconnect(info, err, state), to: DBConnection.Connection
+  defdelegate stop(info, err, state), to: DBConnection.Connection
 
-  defp make(fun) when is_function(fun, 1) do
+  defp make_fun(fun) when is_function(fun, 1) do
     fun
   end
-  defp make(mfargs) do
+  defp make_fun(mfargs) do
     fn(conn) ->
       {mod, fun, args} = mfargs
       apply(mod, fun, [conn | args])
