@@ -88,7 +88,7 @@ defmodule DBConnection.Ownership.Proxy do
             holder = Holder.new(self(), owner_ref, mod, conn_state)
             state = %{state | pool_ref: pool_ref, holder: holder}
             checkout(from, state)
-          {:error, err, _, _} ->
+          {:error, err, _} ->
             GenServer.reply(from, {:error, err})
             {:stop, {:shutdown, err}, state}
         end
@@ -198,7 +198,7 @@ defmodule DBConnection.Ownership.Proxy do
           done.(pool_ref, err, conn_state)
           {:stop, {:shutdown, err}, state}
 
-        {:error, err, _, conn_state} ->
+        {:error, err, conn_state} ->
           Holder.disconnect(pool_ref, err, conn_state)
           {:stop, {:shutdown, err}, state}
       end
