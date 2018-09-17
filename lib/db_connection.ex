@@ -648,7 +648,7 @@ defmodule DBConnection do
   end
   def run(pool, fun, opts) do
     case checkout(pool, nil, opts) do
-      {:ok, conn, _, _} ->
+      {:ok, conn, _} ->
         try do
           status = status(conn, opts)
           {fun.(conn), status, status(conn, opts)}
@@ -968,7 +968,7 @@ defmodule DBConnection do
         }
 
         put_info(conn, conn_state)
-        {:ok, conn, conn_state, meter}
+        {:ok, conn, meter}
       {:error, err} ->
         {:error, err, meter}
     end
@@ -980,7 +980,7 @@ defmodule DBConnection do
     end
   end
   defp checkout(pool, fun, meter, opts) do
-    with {:ok, conn, _conn_state, meter} <- checkout(pool, meter, opts) do
+    with {:ok, conn, meter} <- checkout(pool, meter, opts) do
       case fun.(conn, meter, opts) do
         {:ok, result, meter} ->
           {:ok, conn, result, meter}
@@ -1218,7 +1218,7 @@ defmodule DBConnection do
     end
   end
   defp cleanup(pool, fun, args, meter, opts) do
-    with {:ok, conn, _conn_state, meter} <- checkout(pool, meter, opts) do
+    with {:ok, conn, meter} <- checkout(pool, meter, opts) do
       try do
         fun.(conn, :ok, args, meter, opts)
       after
@@ -1252,7 +1252,7 @@ defmodule DBConnection do
     fun.(conn, meter, opts)
   end
   defp run(pool, fun, meter, opts) do
-    with {:ok, conn, _conn_state, meter} <- checkout(pool, meter, opts) do
+    with {:ok, conn, meter} <- checkout(pool, meter, opts) do
       try do
         fun.(conn, meter, opts)
       after
@@ -1265,7 +1265,7 @@ defmodule DBConnection do
     fun.(conn, arg, meter, opts)
   end
   defp run(pool, fun, arg, meter, opts) do
-    with {:ok, conn, _conn_state, meter} <- checkout(pool, meter, opts) do
+    with {:ok, conn, meter} <- checkout(pool, meter, opts) do
       try do
         fun.(conn, arg, meter, opts)
       after
@@ -1278,7 +1278,7 @@ defmodule DBConnection do
     fun.(conn, arg1, arg2, meter, opts)
   end
   defp run(pool, fun, arg1, arg2, meter, opts) do
-    with {:ok, conn, _conn_state, meter} <- checkout(pool, meter, opts) do
+    with {:ok, conn, meter} <- checkout(pool, meter, opts) do
       try do
         fun.(conn, arg1, arg2, meter, opts)
       after
