@@ -81,8 +81,14 @@ defmodule DBConnection.Holder do
         else
           result when is_tuple(result) ->
             state = :erlang.element(:erlang.tuple_size(result), result)
-            :ets.update_element(holder, :conn, {conn(:state) + 1, state})
-            result
+
+            try do
+              :ets.update_element(holder, :conn, {conn(:state) + 1, state})
+              result
+            catch
+              kind, reason ->
+                {:catch, kind, reason, System.stacktrace()}
+            end
         end
     end
   end
