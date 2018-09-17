@@ -157,8 +157,8 @@ defmodule DBConnection.Ownership.Proxy do
 
   # If it is down but it has no client, checkin
   defp down(reason, %{client: nil} = state) do
-    pool_done(reason, state, fn pool_ref, _, conn_state ->
-      Holder.checkin(pool_ref, conn_state)
+    pool_done(reason, state, fn pool_ref, _ ->
+      Holder.checkin(pool_ref)
     end)
   end
 
@@ -169,18 +169,17 @@ defmodule DBConnection.Ownership.Proxy do
   end
 
   defp pool_disconnect(err, state) do
-    pool_done(err, state, &Holder.disconnect/3)
+    pool_done(err, state, &Holder.disconnect/2)
   end
 
   defp pool_stop(reason, state) do
-    pool_done(reason, state, &Holder.stop/3)
+    pool_done(reason, state, &Holder.stop/2)
   end
 
   defp pool_done(err, state, done) do
     %{holder: holder, pool_ref: pool_ref} = state
     if holder do
-      conn_state = Holder.get_state(holder)
-      done.(pool_ref, err, conn_state)
+      done.(pool_ref, err)
     end
     {:stop, {:shutdown, err}, state}
   end

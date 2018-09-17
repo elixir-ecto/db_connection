@@ -46,20 +46,45 @@ defmodule DBConnection.Holder do
     end
   end
 
-  @spec checkin(pool_ref :: any, state :: any) :: :ok
-  def checkin(pool_ref, state) do
+  @spec checkin(pool_ref :: any) :: :ok
+  def checkin(pool_ref, _state \\ :TODO) do
     now = System.monotonic_time(@time_unit)
-    done(pool_ref, :checkin, state, now)
+    done(pool_ref, :checkin, now)
   end
 
-  @spec disconnect(pool_ref :: any, err :: Exception.t(), state :: any) :: :ok
-  def disconnect(pool_ref, err, state) do
-    done(pool_ref, :disconnect, state, err)
+  @spec disconnect(pool_ref :: any, err :: Exception.t()) :: :ok
+  def disconnect(pool_ref, err, _state \\ :TODO) do
+    done(pool_ref, :disconnect, err)
   end
 
-  @spec stop(pool_ref :: any, err :: Exception.t(), state :: any) :: :ok
-  def stop(pool_ref, err, state) do
-    done(pool_ref, :stop, state, err)
+  @spec stop(pool_ref :: any, err :: Exception.t()) :: :ok
+  def stop(pool_ref, err, _state \\ :TODO) do
+    done(pool_ref, :stop, err)
+  end
+
+  @spec handle(pool_ref :: any, fun :: atom, args :: [term], Keyword.t) :: tuple
+  def handle(pool_ref, fun, args, opts) do
+    pool_ref(holder: holder) = pool_ref
+
+    try do
+      :ets.lookup(holder, :conn)
+    rescue
+      e in ArgumentError ->
+        {:catch, :error, e, System.stacktrace()}
+    else
+      [conn(module: module, state: state)] ->
+        try do
+          apply(module, fun, args ++ [opts, state])
+        catch
+          kind, reason ->
+            {:catch, kind, reason, System.stacktrace()}
+        else
+          result when is_tuple(result) ->
+            state = :erlang.element(:erlang.tuple_size(result), result)
+            :ets.update_element(holder, :conn, {conn(:state) + 1, state})
+            result
+        end
+    end
   end
 
   @spec update(pid, reference, module, term) :: t
@@ -80,11 +105,6 @@ defmodule DBConnection.Holder do
   def reply_error(from, exception) do
     GenServer.reply(from, {:error, exception})
     :ok
-  end
-
-  @spec get_state(t) :: term
-  def get_state(holder) do
-    :ets.lookup_element(holder, :conn, conn(:state) + 1)
   end
 
   @spec handle_checkout(t, {pid, reference}, reference) :: boolean
@@ -178,19 +198,17 @@ defmodule DBConnection.Holder do
     end
   end
 
-  defp done(pool_ref, tag, state, info) do
+  defp done(pool_ref, tag, info) do
     pool_ref(pool: pool, reference: ref, deadline: deadline, holder: holder) = pool_ref
     cancel_deadline(deadline)
 
     try do
-      :ets.update_element(holder, :conn, [{conn(:deadline) + 1, nil}, {conn(:state) + 1, state}])
+      :ets.update_element(holder, :conn, [{conn(:deadline) + 1, nil}])
       :ets.give_away(holder, pool, {tag, ref, info})
     rescue
-      ArgumentError ->
-        :ok
+      ArgumentError -> :ok
     else
-      true ->
-        :ok
+      true -> :ok
     end
   end
 
