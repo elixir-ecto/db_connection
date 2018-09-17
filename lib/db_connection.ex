@@ -828,7 +828,7 @@ defmodule DBConnection do
   """
   @spec status(conn, opts :: Keyword.t) :: status
   def status(conn, opts \\ []) do
-    case run(conn, &run_status/4, nil, opts) do
+    case run(conn, &run_status/3, nil, opts) do
       {status, _meter} ->
         status
       {:error, _err, _meter} ->
@@ -975,14 +975,13 @@ defmodule DBConnection do
   end
 
   defp checkout(%DBConnection{} = conn, fun, meter, opts) do
-    with {:ok, conn_state, meter} <- fetch_info(conn, meter),
-         {:ok, result, meter} <- fun.(conn, conn_state, meter, opts) do
+    with {:ok, result, meter} <- fun.(conn, meter, opts) do
       {:ok, conn, result, meter}
     end
   end
   defp checkout(pool, fun, meter, opts) do
-    with {:ok, conn, conn_state, meter} <- checkout(pool, meter, opts) do
-      case fun.(conn, conn_state, meter, opts) do
+    with {:ok, conn, _conn_state, meter} <- checkout(pool, meter, opts) do
+      case fun.(conn, meter, opts) do
         {:ok, result, meter} ->
           {:ok, conn, result, meter}
         error ->
@@ -997,11 +996,9 @@ defmodule DBConnection do
   end
 
   defp checkin(%DBConnection{} = conn, fun, meter, opts) do
-    with {:ok, conn_state, meter} <- fetch_info(conn, meter) do
-      return = fun.(conn, conn_state, meter, opts)
-      checkin(conn)
-      return
-    end
+    return = fun.(conn, meter, opts)
+    checkin(conn)
+    return
   end
   defp checkin(pool, fun, meter, opts) do
     run(pool, fun, meter, opts)
@@ -1255,14 +1252,12 @@ defmodule DBConnection do
   end
 
   defp run(%DBConnection{} = conn, fun, meter, opts) do
-    with {:ok, conn_state, meter} <- fetch_info(conn, meter) do
-      fun.(conn, conn_state, meter, opts)
-    end
+    fun.(conn, meter, opts)
   end
   defp run(pool, fun, meter, opts) do
-    with {:ok, conn, conn_state, meter} <- checkout(pool, meter, opts) do
+    with {:ok, conn, _conn_state, meter} <- checkout(pool, meter, opts) do
       try do
-        fun.(conn, conn_state, meter, opts)
+        fun.(conn, meter, opts)
       after
         checkin(conn)
       end
@@ -1425,11 +1420,11 @@ defmodule DBConnection do
 
   defp begin(conn, run, opts) do
     conn
-    |> run.(&run_begin/4, meter(opts), opts)
+    |> run.(&run_begin/3, meter(opts), opts)
     |> log(:begin, :begin, nil)
   end
 
-  defp run_begin(conn, conn_state, meter, opts) do
+  defp run_begin(conn, meter, opts) do
     %DBConnection{pool_ref: pool_ref} = conn
     meter = event(meter, :begin)
 
@@ -1445,11 +1440,11 @@ defmodule DBConnection do
 
   defp rollback(conn, run, opts) do
     conn
-    |> run.(&run_rollback/4, meter(opts), opts)
+    |> run.(&run_rollback/3, meter(opts), opts)
     |> log(:rollback, :rollback, nil)
   end
 
-  defp run_rollback(conn, conn_state, meter, opts) do
+  defp run_rollback(conn, meter, opts) do
     %DBConnection{pool_ref: pool_ref} = conn
     meter = event(meter, :rollback)
 
@@ -1464,7 +1459,7 @@ defmodule DBConnection do
   end
 
   defp commit(conn, run, opts) do
-    case run.(conn, &run_commit/4, meter(opts), opts) do
+    case run.(conn, &run_commit/3, meter(opts), opts) do
       {:rollback, {:ok, result, meter}} ->
         log(meter, :commit, :rollback, nil, {:ok, result})
         err = DBConnection.TransactionError.exception(:error)
@@ -1478,13 +1473,13 @@ defmodule DBConnection do
     end
   end
 
-  defp run_commit(conn, conn_state, meter, opts) do
+  defp run_commit(conn, meter, opts) do
     %DBConnection{pool_ref: pool_ref} = conn
     meter = event(meter, :commit)
 
     case Holder.handle(pool_ref, :handle_commit, [], opts) do
-      {:error, conn_state} ->
-        {:rollback, run_rollback(conn, conn_state, meter, opts)}
+      {:error, _conn_state} ->
+        {:rollback, run_rollback(conn, meter, opts)}
 
       {status, conn_state} when status in [:idle, :transaction] ->
         put_info(conn, conn_state)
@@ -1501,7 +1496,7 @@ defmodule DBConnection do
     {:error, err, meter}
   end
 
-  defp run_status(conn, conn_state, meter, opts) do
+  defp run_status(conn, meter, opts) do
     %DBConnection{pool_ref: pool_ref} = conn
 
     case Holder.handle(pool_ref, :handle_status, [], opts) do
