@@ -587,7 +587,7 @@ defmodule DBConnection do
     {:ok, result} | {:error, Exception.t}
   def close(conn, query, opts \\ []) do
     conn
-    |> cleanup(&run_close/6, [query], meter(opts), opts)
+    |> cleanup(&run_close/5, [query], meter(opts), opts)
     |> log(:close, query, nil)
   end
 
@@ -1160,7 +1160,7 @@ defmodule DBConnection do
 
   defp deallocate(conn, query, cursor, opts) do
     conn
-    |> cleanup(&run_deallocate/6, [query, cursor], meter(opts), opts)
+    |> cleanup(&run_deallocate/5, [query, cursor], meter(opts), opts)
     |> log(:deallocate, query, cursor)
   end
 
@@ -1201,36 +1201,33 @@ defmodule DBConnection do
   end
 
   defp raised_close(conn, query, meter, opts, kind, reason, stack) do
-    with {status, conn_state, meter} when status in [:ok, :failed]
-          <- get_info(conn, meter),
-         {:ok, _, meter}
-          <- run_close(conn, status, conn_state, [query], meter, opts) do
+    with {status, _, meter} when status in [:ok, :failed] <- get_info(conn, meter),
+         {:ok, _, meter} <- run_close(conn, status, [query], meter, opts) do
       {kind, reason, stack, meter}
     end
   end
 
-  defp run_close(conn, status, conn_state, args, meter, opts) do
+  defp run_close(conn, status, args, meter, opts) do
     meter = event(meter, :close)
-    cleanup(conn, status, conn_state, :handle_close, args, meter, opts)
+    cleanup(conn, status, :handle_close, args, meter, opts)
   end
 
   defp cleanup(%DBConnection{} = conn, fun, args, meter, opts) do
-    with {status, conn_state, meter} when status in [:ok, :failed]
-          <- get_info(conn, meter) do
-      fun.(conn, status, conn_state, args, meter, opts)
+    with {status, _, meter} when status in [:ok, :failed] <- get_info(conn, meter) do
+      fun.(conn, status, args, meter, opts)
     end
   end
   defp cleanup(pool, fun, args, meter, opts) do
-    with {:ok, conn, conn_state, meter} <- checkout(pool, meter, opts) do
+    with {:ok, conn, _conn_state, meter} <- checkout(pool, meter, opts) do
       try do
-        fun.(conn, :ok, conn_state, args, meter, opts)
+        fun.(conn, :ok, args, meter, opts)
       after
         checkin(conn)
       end
     end
   end
 
-  defp cleanup(conn, status, conn_state, fun, args, meter, opts) do
+  defp cleanup(conn, status, fun, args, meter, opts) do
     %DBConnection{pool_ref: pool_ref} = conn
 
     case Holder.handle(pool_ref, fun, args, opts) do
@@ -1586,15 +1583,15 @@ defmodule DBConnection do
   defp stream_deallocate(conn, {_status, query, cursor}, opts),
     do: deallocate(conn, query, cursor, opts)
 
-  defp run_deallocate(conn, status, conn_state, args, meter, opts) do
+  defp run_deallocate(conn, status, args, meter, opts) do
     meter = event(meter, :deallocate)
-    cleanup(conn, status, conn_state, :handle_deallocate, args, meter, opts)
+    cleanup(conn, status, :handle_deallocate, args, meter, opts)
   end
 
   defp resource(%DBConnection{} = conn, start, next, stop, opts) do
-    start = fn() -> start.(conn, opts) end
-    next = fn(state) -> next.(conn, state, opts) end
-    stop = fn(state) -> stop.(conn, state, opts) end
+    start = fn -> start.(conn, opts) end
+    next = fn state -> next.(conn, state, opts) end
+    stop = fn state -> stop.(conn, state, opts) end
     Stream.resource(start, next, stop)
   end
 
