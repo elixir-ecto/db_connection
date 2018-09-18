@@ -662,20 +662,14 @@ defmodule DBConnection do
             checkin(conn)
             result
 
-          {result, old_status, new_status} ->
+          {_result, old_status, new_status} ->
             # TODO: Do we need to check the holder connection status here?
-            case Holder.get_status(conn.pool_ref) do
-              :ok ->
-                err = DBConnection.ConnectionError.exception(
-                  "connection was checked out with status #{inspect(old_status)} " <>
-                    "but it was checked in with status #{inspect(new_status)}"
-                )
-                disconnect(conn, err)
-                raise err
-
-              _ ->
-                result
-            end
+            err = DBConnection.ConnectionError.exception(
+              "connection was checked out with status #{inspect(old_status)} " <>
+                "but it was checked in with status #{inspect(new_status)}"
+            )
+            disconnect(conn, err)
+            raise err
         end
 
       {:error, err, _} ->
@@ -1184,8 +1178,7 @@ defmodule DBConnection do
   defp run_prepare_execute(conn, query, params, meter, opts) do
     # TODO: Should we check holder conn status after encoding?
     with {:ok, query, meter} <- run_prepare(conn, query, meter, opts),
-         {:ok, params, meter} <- encode(conn, query, params, meter, opts),
-         :ok <- ok_status_or_error(conn, meter) do
+         {:ok, params, meter} <- encode(conn, query, params, meter, opts) do
       run_execute(conn, query, params, meter, opts)
     end
   end
@@ -1518,7 +1511,6 @@ defmodule DBConnection do
     with {:ok, query, meter} <- prepare(conn, query, meter, opts),
          {:ok, query, meter} <- describe(conn, query, meter, opts),
          {:ok, params, meter} <- encode(conn, query, params, meter, opts),
-         :ok <- ok_status_or_error(conn, meter),
          {:ok, query, cursor, meter} <- run_declare(conn, query, params, meter, opts) do
       {:ok, query, cursor, meter}
     end
