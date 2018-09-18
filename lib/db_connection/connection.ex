@@ -167,10 +167,6 @@ defmodule DBConnection.Connection do
     pool_update(state, %{s | client: nil, backoff: backoff})
   end
 
-  def handle_cast({:checkin, ref, state}, %{client: {ref, _}} = s) do
-    pool_update(state, s)
-  end
-
   def handle_cast({:checkin, _, _}, s) do
     handle_timeout(s)
   end
