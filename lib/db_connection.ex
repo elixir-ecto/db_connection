@@ -662,14 +662,20 @@ defmodule DBConnection do
             checkin(conn)
             result
 
-          {_result, old_status, new_status} ->
+          {result, old_status, new_status} ->
             # TODO: Do we need to check the holder connection status here?
-            err = DBConnection.ConnectionError.exception(
-              "connection was checked out with status #{inspect(old_status)} " <>
-                "but it was checked in with status #{inspect(new_status)}"
-            )
-            disconnect(conn, err)
-            raise err
+            case Holder.get_status(conn.pool_ref) do
+              :ok ->
+                err = DBConnection.ConnectionError.exception(
+                  "connection was checked out with status #{inspect(old_status)} " <>
+                    "but it was checked in with status #{inspect(new_status)}"
+                )
+                disconnect(conn, err)
+                raise err
+
+              _ ->
+                result
+            end
         end
 
       {:error, err, _} ->
@@ -1178,7 +1184,8 @@ defmodule DBConnection do
   defp run_prepare_execute(conn, query, params, meter, opts) do
     # TODO: Should we check holder conn status after encoding?
     with {:ok, query, meter} <- run_prepare(conn, query, meter, opts),
-         {:ok, params, meter} <- encode(conn, query, params, meter, opts) do
+         {:ok, params, meter} <- encode(conn, query, params, meter, opts),
+         :ok <- ok_status_or_error(conn, meter) do
       run_execute(conn, query, params, meter, opts)
     end
   end
@@ -1394,7 +1401,10 @@ defmodule DBConnection do
   end
 
   defp fail(%DBConnection{pool_ref: pool_ref}) do
-    Holder.put_status(pool_ref, :failed)
+    case Holder.get_status(pool_ref) do
+      :ok -> Holder.put_status(pool_ref, :failed)
+      _ -> :ok
+    end
   end
 
   defp conclude(%DBConnection{pool_ref: pool_ref, conn_ref: conn_ref}, result) do
@@ -1405,7 +1415,10 @@ defmodule DBConnection do
   end
 
   defp reset(%DBConnection{pool_ref: pool_ref}) do
-    Holder.put_status(pool_ref, :ok)
+    case Holder.get_status(pool_ref) do
+      :failed -> Holder.put_status(pool_ref, :ok)
+      _ -> :ok
+    end
   end
 
   defp begin(conn, run, opts) do
@@ -1505,6 +1518,7 @@ defmodule DBConnection do
     with {:ok, query, meter} <- prepare(conn, query, meter, opts),
          {:ok, query, meter} <- describe(conn, query, meter, opts),
          {:ok, params, meter} <- encode(conn, query, params, meter, opts),
+         :ok <- ok_status_or_error(conn, meter),
          {:ok, query, cursor, meter} <- run_declare(conn, query, params, meter, opts) do
       {:ok, query, cursor, meter}
     end

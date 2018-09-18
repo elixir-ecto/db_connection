@@ -49,17 +49,17 @@ defmodule DBConnection.Holder do
   @spec checkin(pool_ref :: any) :: :ok
   def checkin(pool_ref) do
     now = System.monotonic_time(@time_unit)
-    done(pool_ref, :checkin, now)
+    done(pool_ref, :ok, :checkin, now)
   end
 
   @spec disconnect(pool_ref :: any, err :: Exception.t()) :: :ok
   def disconnect(pool_ref, err) do
-    done(pool_ref, :disconnect, err)
+    done(pool_ref, :missing, :disconnect, err)
   end
 
   @spec stop(pool_ref :: any, err :: Exception.t()) :: :ok
   def stop(pool_ref, err) do
-    done(pool_ref, :stop, err)
+    done(pool_ref, :missing, :stop, err)
   end
 
   @spec handle(pool_ref :: any, fun :: atom, args :: [term], Keyword.t) :: tuple
@@ -81,14 +81,12 @@ defmodule DBConnection.Holder do
         else
           result when is_tuple(result) ->
             state = :erlang.element(:erlang.tuple_size(result), result)
+            :ets.update_element(holder, :conn, {conn(:state) + 1, state})
+            result
 
-            try do
-              :ets.update_element(holder, :conn, {conn(:state) + 1, state})
-              result
-            catch
-              kind, reason ->
-                {:catch, kind, reason, System.stacktrace()}
-            end
+          # If it is not a tuple, we just return it as is so we raise bad return.
+          result ->
+            result
         end
     end
   end
@@ -229,12 +227,12 @@ defmodule DBConnection.Holder do
     end
   end
 
-  defp done(pool_ref, tag, info) do
+  defp done(pool_ref, status, tag, info) do
     pool_ref(pool: pool, reference: ref, deadline: deadline, holder: holder) = pool_ref
     cancel_deadline(deadline)
 
     try do
-      :ets.update_element(holder, :conn, [{conn(:deadline) + 1, nil}])
+      :ets.update_element(holder, :conn, [{conn(:deadline) + 1, nil}, {conn(:status) + 1, status}])
       :ets.give_away(holder, pool, {tag, ref, info})
     rescue
       ArgumentError -> :ok
