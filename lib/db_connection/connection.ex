@@ -24,11 +24,6 @@ defmodule DBConnection.Connection do
   end
 
   @doc false
-  def checkin({pid, ref}, state) do
-    Connection.cast(pid, {:checkin, ref, state})
-  end
-
-  @doc false
   def disconnect({pid, ref}, err, state) do
     Connection.cast(pid, {:disconnect, ref, err, state})
   end
@@ -160,21 +155,6 @@ defmodule DBConnection.Connection do
     end
   end
 
-  def handle_cast({:checkin, ref, state}, %{client: {ref, :after_connect} = client} = s) do
-    %{backoff: backoff} = s
-    backoff = backoff && Backoff.reset(backoff)
-    demonitor(client)
-    pool_update(state, %{s | client: nil, backoff: backoff})
-  end
-
-  def handle_cast({:checkin, ref, state}, %{client: {ref, _}} = s) do
-    pool_update(state, s)
-  end
-
-  def handle_cast({:checkin, _, _}, s) do
-    handle_timeout(s)
-  end
-
   def handle_cast({:disconnect, ref, err, state}, %{client: {ref, _}} = s) do
     {:disconnect, {:log, err}, %{s | state: state}}
   end
@@ -196,8 +176,7 @@ defmodule DBConnection.Connection do
     case apply(mod, :checkout, [state]) do
       {:ok, state} ->
         opts = [timeout: timeout] ++ opts
-        {pid, ref} =
-          DBConnection.Task.run_child(mod, after_connect, state, opts)
+        {pid, ref} = DBConnection.Task.run_child(mod, state, after_connect, opts)
         timer = start_timer(pid, timeout)
         s = %{s | client: {ref, :after_connect}, timer: timer, state: state}
         {:noreply, s}
@@ -253,6 +232,19 @@ defmodule DBConnection.Connection do
         handle_timeout(%{s | state: state})
       {:disconnect, err, state} ->
         {:disconnect, {:log, err}, %{s | state: state}}
+    end
+  end
+
+  def handle_info(
+        {:"ETS-TRANSFER", holder, _pid, {msg, ref, extra}},
+        %{client: {ref, :after_connect}} = s
+      ) do
+    state = Holder.delete(holder)
+
+    case msg do
+      :checkin -> handle_checkin(state, s)
+      :disconnect -> handle_cast({:disconnect, ref, extra, state}, s)
+      :stop -> handle_cast({:stop, ref, extra, state}, s)
     end
   end
 
@@ -337,6 +329,13 @@ defmodule DBConnection.Connection do
       0 ->
         raise ArgumentError, "timer #{inspect(timer)} does not exist"
     end
+  end
+
+  defp handle_checkin(state, s) do
+    %{backoff: backoff, client: client} = s
+    backoff = backoff && Backoff.reset(backoff)
+    demonitor(client)
+    pool_update(state, %{s | client: nil, backoff: backoff})
   end
 
   defp pool_update(state, %{pool: pool, tag: tag, mod: mod} = s) do

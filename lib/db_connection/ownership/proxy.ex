@@ -179,7 +179,7 @@ defmodule DBConnection.Ownership.Proxy do
   defp pool_done(err, state, done) do
     %{holder: holder, pool_ref: pool_ref} = state
     if holder do
-      Holder.copy_state(pool_ref, holder)
+      Holder.put_state(pool_ref, Holder.delete(holder))
       done.(pool_ref, err)
     end
     {:stop, {:shutdown, err}, state}

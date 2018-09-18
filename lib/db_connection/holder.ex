@@ -11,6 +11,8 @@ defmodule DBConnection.Holder do
 
   @type t :: :ets.tid()
 
+  ## Holder API
+
   @spec new(pid, reference, module, term) :: t
   def new(pool, ref, mod, state) do
     # Insert before setting heir so that pool can't receive empty table
@@ -22,6 +24,23 @@ defmodule DBConnection.Holder do
     :ets.setopts(holder, {:heir, pool, ref})
     holder
   end
+
+  @spec update(pid, reference, module, term) :: t
+  def update(pool, ref, mod, state) do
+    holder = new(pool, ref, mod, state)
+    now = System.monotonic_time(@time_unit)
+    :ets.give_away(holder, pool, {:checkin, ref, now})
+    holder
+  end
+
+  @spec delete(t) :: term
+  def delete(holder) do
+    state = :ets.lookup_element(holder, :conn, conn(:state) + 1)
+    :ets.delete(holder)
+    state
+  end
+
+  ## Pool API (invoked by caller)
 
   @callback checkout(pool :: GenServer.server(), opts :: Keyword.t()) ::
               {:ok, pool_ref :: any, module, state :: any} | {:error, Exception.t()}
@@ -91,13 +110,12 @@ defmodule DBConnection.Holder do
     end
   end
 
-  ## State helpers
+  ## Pool state helpers API (invoked by callers)
 
-  @spec copy_state(pool_ref :: any, t) :: term
-  def copy_state(pool_ref(holder: sink_holder), source_holder) do
-    state = :ets.lookup_element(source_holder, :conn, conn(:state) + 1)
+  @spec put_state(pool_ref :: any, term) :: :ok
+  def put_state(pool_ref(holder: sink_holder), state) do
     :ets.update_element(sink_holder, :conn, [{conn(:state) + 1, state}])
-    state
+    :ok
   end
 
   @spec get_status(pool_ref :: any) :: :ok | :failed | :missing
@@ -118,17 +136,7 @@ defmodule DBConnection.Holder do
     end
   end
 
-  ## Connection helpers
-
-  @spec update(pid, reference, module, term) :: t
-  def update(pool, ref, mod, state) do
-    holder = new(pool, ref, mod, state)
-    now = System.monotonic_time(@time_unit)
-    :ets.give_away(holder, pool, {:checkin, ref, now})
-    holder
-  end
-
-  ## Pool helpers (replies and handlers)
+  ## Pool callbacks (invoked by pools)
 
   # TODO: Remove other GenServer.reply from the codebase
   @spec reply_redirect({pid, reference}, GenServer.server()) :: :ok
