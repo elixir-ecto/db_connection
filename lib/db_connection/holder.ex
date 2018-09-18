@@ -91,6 +91,15 @@ defmodule DBConnection.Holder do
     end
   end
 
+  ## State helpers
+
+  @spec copy_state(pool_ref :: any, t) :: term
+  def copy_state(pool_ref(holder: sink_holder), source_holder) do
+    state = :ets.lookup_element(source_holder, :conn, conn(:state) + 1)
+    :ets.update_element(sink_holder, :conn, [{conn(:state) + 1, state}])
+    state
+  end
+
   @spec get_status(pool_ref :: any) :: :ok | :failed | :missing
   def get_status(pool_ref(holder: holder)) do
     try do
