@@ -639,8 +639,8 @@ defmodule DBConnection do
   @spec run(conn, (t -> result), opts :: Keyword.t) :: result when result: var
   def run(conn, fun, opts \\ [])
   def run(%DBConnection{} = conn, fun, _) do
-    case fetch_info(conn, nil) do
-      {:ok, _conn_state, _meter} ->
+    case ok_status_or_error(conn, nil) do
+      :ok ->
         fun.(conn)
       {:error, err, _meter} ->
         raise err
@@ -663,6 +663,7 @@ defmodule DBConnection do
             result
 
           {_result, old_status, new_status} ->
+            # TODO: Do we need to check the holder connection status here?
             err = DBConnection.ConnectionError.exception(
               "connection was checked out with status #{inspect(old_status)} " <>
                 "but it was checked in with status #{inspect(new_status)}"
@@ -787,11 +788,9 @@ defmodule DBConnection do
   end
 
   def rollback(%DBConnection{} = conn, _reason) do
-    case get_info(conn, nil) do
-      {:error, err, _meter} ->
-        raise err
-      {_status, _conn_state, _meter} ->
-        raise "not inside transaction"
+    case get_status_or_error(conn, nil) do
+      {:ok, _} -> raise "not inside transaction"
+      {:error, err, _meter} -> raise err
     end
   end
 
@@ -960,14 +959,13 @@ defmodule DBConnection do
         stack = System.stacktrace()
         {kind, reason, stack, meter}
     else
-      {:ok, pool_ref, _, conn_state} ->
+      {:ok, pool_ref, _conn_mod, _conn_state} ->
         conn = %DBConnection{
           holder: holder,
           pool_ref: pool_ref,
           conn_ref: make_ref()
         }
 
-        put_info(conn, conn_state)
         {:ok, conn, meter}
       {:error, err} ->
         {:error, err, meter}
@@ -975,7 +973,8 @@ defmodule DBConnection do
   end
 
   defp checkout(%DBConnection{} = conn, fun, meter, opts) do
-    with {:ok, result, meter} <- fun.(conn, meter, opts) do
+    with :ok <- ok_status_or_error(conn, meter),
+         {:ok, result, meter} <- fun.(conn, meter, opts) do
       {:ok, conn, result, meter}
     end
   end
@@ -996,9 +995,11 @@ defmodule DBConnection do
   end
 
   defp checkin(%DBConnection{} = conn, fun, meter, opts) do
-    return = fun.(conn, meter, opts)
-    checkin(conn)
-    return
+    with :ok <- ok_status_or_error(conn, meter) do
+      return = fun.(conn, meter, opts)
+      checkin(conn)
+      return
+    end
   end
   defp checkin(pool, fun, meter, opts) do
     run(pool, fun, meter, opts)
@@ -1018,12 +1019,10 @@ defmodule DBConnection do
 
   defp handle_common_result(return, conn, meter) do
     case return do
-      {:ok, result, conn_state} ->
-        put_info(conn, conn_state)
+      {:ok, result, _conn_state} ->
         {:ok, result, meter}
 
-      {:error, err, conn_state} ->
-        put_info(conn, conn_state)
+      {:error, err, _conn_state} ->
         {:error, err, meter}
 
       {:disconnect, err, _conn_state} ->
@@ -1177,6 +1176,7 @@ defmodule DBConnection do
   end
 
   defp run_prepare_execute(conn, query, params, meter, opts) do
+    # TODO: Should we check holder conn status after encoding?
     with {:ok, query, meter} <- run_prepare(conn, query, meter, opts),
          {:ok, params, meter} <- encode(conn, query, params, meter, opts) do
       run_execute(conn, query, params, meter, opts)
@@ -1188,8 +1188,7 @@ defmodule DBConnection do
     meter = event(meter, :execute)
 
     case Holder.handle(pool_ref, :handle_execute, [query, params], opts) do
-      {:ok, query, result, conn_state} ->
-        put_info(conn, conn_state)
+      {:ok, query, result, _conn_state} ->
         {:ok, query, result, meter}
 
       {:ok, _, _} = other ->
@@ -1201,7 +1200,7 @@ defmodule DBConnection do
   end
 
   defp raised_close(conn, query, meter, opts, kind, reason, stack) do
-    with {status, _, meter} when status in [:ok, :failed] <- get_info(conn, meter),
+    with {:ok, status} <- get_status_or_error(conn, meter),
          {:ok, _, meter} <- run_close(conn, status, [query], meter, opts) do
       {kind, reason, stack, meter}
     end
@@ -1213,7 +1212,7 @@ defmodule DBConnection do
   end
 
   defp cleanup(%DBConnection{} = conn, fun, args, meter, opts) do
-    with {status, _, meter} when status in [:ok, :failed] <- get_info(conn, meter) do
+    with {:ok, status} <- get_status_or_error(conn, meter) do
       fun.(conn, status, args, meter, opts)
     end
   end
@@ -1231,11 +1230,11 @@ defmodule DBConnection do
     %DBConnection{pool_ref: pool_ref} = conn
 
     case Holder.handle(pool_ref, fun, args, opts) do
-      {:ok, result, conn_state} ->
-        put_info(conn, status, conn_state)
+      {:ok, result, _conn_state} ->
+        Holder.put_status(pool_ref, status)
         {:ok, result, meter}
-      {:error, err, conn_state} ->
-        put_info(conn, status, conn_state)
+      {:error, err, _conn_state} ->
+        Holder.put_status(pool_ref, status)
         {:error, err, meter}
       {:disconnect, err, _conn_state} ->
         disconnect(conn, err)
@@ -1249,7 +1248,9 @@ defmodule DBConnection do
   end
 
   defp run(%DBConnection{} = conn, fun, meter, opts) do
-    fun.(conn, meter, opts)
+    with :ok <- ok_status_or_error(conn, meter) do
+      fun.(conn, meter, opts)
+    end
   end
   defp run(pool, fun, meter, opts) do
     with {:ok, conn, meter} <- checkout(pool, meter, opts) do
@@ -1262,7 +1263,9 @@ defmodule DBConnection do
   end
 
   defp run(%DBConnection{} = conn, fun, arg, meter, opts) do
-    fun.(conn, arg, meter, opts)
+    with :ok <- ok_status_or_error(conn, meter) do
+      fun.(conn, arg, meter, opts)
+    end
   end
   defp run(pool, fun, arg, meter, opts) do
     with {:ok, conn, meter} <- checkout(pool, meter, opts) do
@@ -1275,7 +1278,9 @@ defmodule DBConnection do
   end
 
   defp run(%DBConnection{} = conn, fun, arg1, arg2, meter, opts) do
-    fun.(conn, arg1, arg2, meter, opts)
+    with :ok <- ok_status_or_error(conn, meter) do
+      fun.(conn, arg1, arg2, meter, opts)
+    end
   end
   defp run(pool, fun, arg1, arg2, meter, opts) do
     with {:ok, conn, meter} <- checkout(pool, meter, opts) do
@@ -1388,31 +1393,19 @@ defmodule DBConnection do
     end
   end
 
-  defp fail(conn) do
-    case get_info(conn, nil) do
-      {:ok, conn_state, _meter} ->
-        put_info(conn, :failed, conn_state)
-      _ ->
-        :ok
+  defp fail(%DBConnection{pool_ref: pool_ref}) do
+    Holder.put_status(pool_ref, :failed)
+  end
+
+  defp conclude(%DBConnection{pool_ref: pool_ref, conn_ref: conn_ref}, result) do
+    case Holder.get_status(pool_ref) do
+      :ok -> result
+      _ -> throw({__MODULE__, conn_ref, :rollback})
     end
   end
 
-  defp conclude(%DBConnection{conn_ref: conn_ref} = conn, result) do
-    case get_info(conn, nil) do
-      {:ok, _conn_state, _meter} ->
-        result
-      _ ->
-        throw({__MODULE__, conn_ref, :rollback})
-    end
-  end
-
-  defp reset(conn) do
-    case get_info(conn, nil) do
-      {:failed, conn_state, _meter} ->
-        put_info(conn, :ok, conn_state)
-      _ ->
-        :ok
-    end
+  defp reset(%DBConnection{pool_ref: pool_ref}) do
+    Holder.put_status(pool_ref, :ok)
   end
 
   defp begin(conn, run, opts) do
@@ -1426,8 +1419,7 @@ defmodule DBConnection do
     meter = event(meter, :begin)
 
     case Holder.handle(pool_ref, :handle_begin, [], opts) do
-      {status, conn_state} when status in [:idle, :transaction, :error] ->
-        put_info(conn, conn_state)
+      {status, _conn_state} when status in [:idle, :transaction, :error] ->
         status_disconnect(conn, status, meter)
 
       other ->
@@ -1446,8 +1438,7 @@ defmodule DBConnection do
     meter = event(meter, :rollback)
 
     case Holder.handle(pool_ref, :handle_rollback, [], opts) do
-      {status, conn_state} when status in [:idle, :transaction, :error] ->
-        put_info(conn, conn_state)
+      {status, _conn_state} when status in [:idle, :transaction, :error] ->
         status_disconnect(conn, status, meter)
 
       other ->
@@ -1478,8 +1469,7 @@ defmodule DBConnection do
       {:error, _conn_state} ->
         {:rollback, run_rollback(conn, meter, opts)}
 
-      {status, conn_state} when status in [:idle, :transaction] ->
-        put_info(conn, conn_state)
+      {status, _conn_state} when status in [:idle, :transaction] ->
         {:commit, status_disconnect(conn, status, meter)}
 
       other ->
@@ -1497,9 +1487,8 @@ defmodule DBConnection do
     %DBConnection{pool_ref: pool_ref} = conn
 
     case Holder.handle(pool_ref, :handle_status, [], opts) do
-      {status, conn_state} when status in [:idle, :transaction, :error] ->
-        put_info(conn, conn_state)
-        {status, conn_state}
+      {status, _conn_state} when status in [:idle, :transaction, :error] ->
+        {status, meter}
       {:disconnect, err, _conn_state} ->
         disconnect(conn, err)
         {:error, meter}
@@ -1512,6 +1501,7 @@ defmodule DBConnection do
   end
 
   defp run_prepare_declare(conn, query, params, meter, opts) do
+    # TODO: Should we check holder conn status after encoding?
     with {:ok, query, meter} <- prepare(conn, query, meter, opts),
          {:ok, query, meter} <- describe(conn, query, meter, opts),
          {:ok, params, meter} <- encode(conn, query, params, meter, opts),
@@ -1525,8 +1515,7 @@ defmodule DBConnection do
     meter = event(meter, :declare)
 
     case Holder.handle(pool_ref, :handle_declare, [query, params], opts) do
-      {:ok, query, result, conn_state} ->
-        put_info(conn, conn_state)
+      {:ok, query, result, _conn_state} ->
         {:ok, query, result, meter}
 
       {:ok, _, _} = other ->
@@ -1567,12 +1556,10 @@ defmodule DBConnection do
     meter = event(meter, :fetch)
 
     case Holder.handle(pool_ref, :handle_fetch, args, opts) do
-      {:cont, result, conn_state}  ->
-        put_info(conn, conn_state)
+      {:cont, result, _conn_state}  ->
         {:cont, result, meter}
 
-      {:halt, result, conn_state}  ->
-        put_info(conn, conn_state)
+      {:halt, result, _conn_state}  ->
         {:halt, result, meter}
 
       other ->
@@ -1595,37 +1582,26 @@ defmodule DBConnection do
     Stream.resource(start, next, stop)
   end
 
-  defp put_info(conn, status \\ :ok, conn_state) do
-    _ = Process.put(key(conn), {status, conn_state})
-    :ok
-  end
+  defp ok_status_or_error(%{pool_ref: pool_ref}, meter) do
+    case Holder.get_status(pool_ref) do
+      :ok ->
+        :ok
 
-  defp fetch_info(conn, meter) do
-    case Process.get(key(conn)) do
-      {:ok, conn_state} ->
-        {:ok, conn_state, meter}
-
-      {:failed, _conn_state} ->
+      :failed ->
         msg = "transaction rolling back"
         {:error, DBConnection.ConnectionError.exception(msg), meter}
 
-      nil ->
-
+      :missing ->
         msg = "connection is closed"
         {:error, DBConnection.ConnectionError.exception(msg), meter}
     end
   end
 
-  defp get_info(conn, meter) do
-    case Process.get(key(conn)) do
-      {status, conn_state} ->
-        {status, conn_state, meter}
-
-      nil ->
-        msg = "connection is closed"
-        {:error, DBConnection.ConnectionError.exception(msg), meter}
+  defp get_status_or_error(%{pool_ref: pool_ref}, meter) do
+    case Holder.get_status(pool_ref) do
+      :ok -> {:ok, :ok}
+      :failed -> {:ok, :failed}
+      :missing -> {:error, DBConnection.ConnectionError.exception("connection is closed"), meter}
     end
   end
-
-  defp key(%DBConnection{conn_ref: conn_ref}), do: {__MODULE__, conn_ref}
 end

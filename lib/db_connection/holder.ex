@@ -6,7 +6,7 @@ defmodule DBConnection.Holder do
   @timeout 15000
   @time_unit 1000
 
-  Record.defrecord(:conn, [:connection, :deadline, :module, :state])
+  Record.defrecord(:conn, [:connection, :module, :state, deadline: nil, status: :ok])
   Record.defrecord(:pool_ref, [:pool, :reference, :deadline, :holder])
 
   @type t :: :ets.tid()
@@ -16,7 +16,7 @@ defmodule DBConnection.Holder do
     # Insert before setting heir so that pool can't receive empty table
     holder = :ets.new(__MODULE__, [:public, :ordered_set])
 
-    conn = conn(connection: self(), deadline: nil, module: mod, state: state)
+    conn = conn(connection: self(), module: mod, state: state)
     true = :ets.insert_new(holder, conn)
 
     :ets.setopts(holder, {:heir, pool, ref})
@@ -93,6 +93,26 @@ defmodule DBConnection.Holder do
     end
   end
 
+  @spec get_status(pool_ref :: any) :: :ok | :failed | :missing
+  def get_status(pool_ref(holder: holder)) do
+    try do
+      :ets.lookup_element(holder, :conn, conn(:status) + 1)
+    rescue
+      ArgumentError -> :missing
+    end
+  end
+
+  @spec put_status(pool_ref :: any, :ok | :failed) :: :ok | :failed | :missing
+  def put_status(pool_ref(holder: holder), status) do
+    try do
+      :ets.update_element(holder, :conn, [{conn(:status) + 1, status}])
+    rescue
+      ArgumentError -> false
+    end
+  end
+
+  ## Connection helpers
+
   @spec update(pid, reference, module, term) :: t
   def update(pool, ref, mod, state) do
     holder = new(pool, ref, mod, state)
@@ -101,6 +121,9 @@ defmodule DBConnection.Holder do
     holder
   end
 
+  ## Pool helpers (replies and handlers)
+
+  # TODO: Remove other GenServer.reply from the codebase
   @spec reply_redirect({pid, reference}, GenServer.server()) :: :ok
   def reply_redirect(from, redirect) do
     GenServer.reply(from, {:redirect, redirect})
@@ -153,6 +176,8 @@ defmodule DBConnection.Holder do
   def handle_stop(holder, err) do
     handle_done(holder, &DBConnection.Connection.stop/3, err)
   end
+
+  ## Private
 
   defp checkout(pool, caller, queue?, start, timeout) do
     case GenServer.whereis(pool) do
