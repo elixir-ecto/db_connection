@@ -47,18 +47,18 @@ defmodule DBConnection.Holder do
   end
 
   @spec checkin(pool_ref :: any) :: :ok
-  def checkin(pool_ref, _state \\ :TODO) do
+  def checkin(pool_ref) do
     now = System.monotonic_time(@time_unit)
     done(pool_ref, :checkin, now)
   end
 
   @spec disconnect(pool_ref :: any, err :: Exception.t()) :: :ok
-  def disconnect(pool_ref, err, _state \\ :TODO) do
+  def disconnect(pool_ref, err) do
     done(pool_ref, :disconnect, err)
   end
 
   @spec stop(pool_ref :: any, err :: Exception.t()) :: :ok
-  def stop(pool_ref, err, _state \\ :TODO) do
+  def stop(pool_ref, err) do
     done(pool_ref, :stop, err)
   end
 
