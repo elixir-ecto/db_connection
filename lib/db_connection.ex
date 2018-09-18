@@ -95,9 +95,7 @@ defmodule DBConnection do
   @typedoc """
   Run or transaction connection reference.
   """
-  @type t :: %__MODULE__{holder: module,
-                         pool_ref: any,
-                         conn_ref: reference}
+  @type t :: %__MODULE__{pool_ref: any, conn_ref: reference}
   @type conn :: GenServer.server | t
   @type query :: any
   @type params :: any
@@ -960,12 +958,7 @@ defmodule DBConnection do
         {kind, reason, stack, meter}
     else
       {:ok, pool_ref, _conn_mod, _conn_state} ->
-        conn = %DBConnection{
-          holder: holder,
-          pool_ref: pool_ref,
-          conn_ref: make_ref()
-        }
-
+        conn = %DBConnection{pool_ref: pool_ref, conn_ref: make_ref()}
         {:ok, conn, meter}
       {:error, err} ->
         {:error, err, meter}
