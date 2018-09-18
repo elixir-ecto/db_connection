@@ -18,14 +18,14 @@ defmodule DBConnection.Task do
   end
 
   def run_child(mod, state, fun, opts) do
-    ref = make_ref()
-    arg = [ref, fun, self(), opts]
+    arg = [fun, self(), opts]
     {:ok, pid} = Task.Supervisor.start_child(__MODULE__, __MODULE__, :init, arg)
+    ref = Process.monitor(pid)
     _ = DBConnection.Holder.update(pid, ref, mod, state)
     {pid, ref}
   end
 
-  def init(ref, fun, parent, opts) do
+  def init(fun, parent, opts) do
     try do
       Process.link(parent)
     catch
@@ -34,7 +34,7 @@ defmodule DBConnection.Task do
     end
 
     receive do
-      {:"ETS-TRANSFER", holder, ^parent, {:checkin, ^ref, _extra}} ->
+      {:"ETS-TRANSFER", holder, ^parent, {:checkin, ref, _extra}} ->
         Process.unlink(parent)
         pool_ref = DBConnection.Holder.pool_ref(pool: parent, reference: ref, holder: holder)
         checkout = {:via, __MODULE__, pool_ref}
