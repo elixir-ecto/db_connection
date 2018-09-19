@@ -647,21 +647,36 @@ defmodule DBConnection do
   def run(pool, fun, opts) do
     case checkout(pool, nil, opts) do
       {:ok, conn, _} ->
+        old_status = status(conn, opts)
+
         try do
-          status = status(conn, opts)
-          {fun.(conn), status, status(conn, opts)}
+          result = fun.(conn)
+
+          case run(conn, &run_status/3, nil, opts) do
+            {^old_status, _meter} ->
+              {:ok, result}
+            {new_status, _meter} ->
+              {:nomatch, old_status, new_status}
+            {:error, _err, _meter} ->
+              {:error, result}
+            {kind, reason, stack, _meter} ->
+              :erlang.raise(kind, reason, stack)
+          end
         catch
           kind, error ->
             stacktrace = System.stacktrace()
             checkin(conn)
             :erlang.raise(kind, error, stacktrace)
         else
-          {result, status, status} ->
+          {:ok, result} ->
             checkin(conn)
             result
 
-          {_result, old_status, new_status} ->
-            # TODO: Do we need to check the holder connection status here?
+          {:error, result} ->
+            checkin(conn)
+            result
+
+          {:nomatch, old_status, new_status} ->
             err = DBConnection.ConnectionError.exception(
               "connection was checked out with status #{inspect(old_status)} " <>
                 "but it was checked in with status #{inspect(new_status)}"
@@ -1169,7 +1184,6 @@ defmodule DBConnection do
   end
 
   defp run_prepare_execute(conn, query, params, meter, opts) do
-    # TODO: Should we check holder conn status after encoding?
     with {:ok, query, meter} <- run_prepare(conn, query, meter, opts),
          {:ok, params, meter} <- encode(conn, query, params, meter, opts) do
       run_execute(conn, query, params, meter, opts)
@@ -1500,7 +1514,6 @@ defmodule DBConnection do
   end
 
   defp run_prepare_declare(conn, query, params, meter, opts) do
-    # TODO: Should we check holder conn status after encoding?
     with {:ok, query, meter} <- prepare(conn, query, meter, opts),
          {:ok, query, meter} <- describe(conn, query, meter, opts),
          {:ok, params, meter} <- encode(conn, query, params, meter, opts),

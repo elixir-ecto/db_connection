@@ -61,6 +61,7 @@ defmodule DBConnection.Connection do
   @doc false
   def connect(_, s) do
     %{mod: mod, opts: opts, backoff: backoff, after_connect: after_connect} = s
+
     try do
       apply(mod, :connect, [connect_opts(opts)])
     rescue
