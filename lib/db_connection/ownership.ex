@@ -39,8 +39,6 @@ defmodule DBConnection.Ownership do
     Supervisor.Spec.worker(Manager, [args])
   end
 
-  ## Ownership API
-
   @doc """
   Explicitly checks a connection out from the ownership manager.
 

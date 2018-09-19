@@ -19,7 +19,7 @@ defmodule DBConnection.Task do
 
   def run_child(mod, state, fun, opts) do
     arg = [fun, self(), opts]
-    {:ok, pid} = Task.Supervisor.start_child(__MODULE__, __MODULE__, :init, arg)
+    {:ok, pid} = Task.Supervisor.start_child(@name, __MODULE__, :init, arg)
     ref = Process.monitor(pid)
     _ = DBConnection.Holder.update(pid, ref, mod, state)
     {pid, ref}
