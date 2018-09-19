@@ -9,7 +9,7 @@ defmodule DBConnection.Ownership do
   A DBConnection pool that requires explicit checkout and checkin
   as a mechanism to coordinate between processes.
 
-  ### Options
+  ## Options
 
     * `:ownership_mode` - When mode is `:manual`, all connections must
       be explicitly checked out before by using `ownership_checkout/2`.
@@ -24,9 +24,33 @@ defmodule DBConnection.Ownership do
     * `:ownership_log` - The `Logger.level` to log ownership changes, or `nil`
       not to log, default `nil`.
 
-  Finally, if the `:caller` option is given on checkout with a pid and no
-  pool is assigned to the current process, a connection will be allowed
-  from the given pid and used on checkout with `:pool_timeout` of `:infinity`.
+  There are also two experimental options, `:post_checkout` and `:pre_checkin`
+  which allows a developer to configure what happens when a connection is
+  checked out and checked in. Those options are meant to be used during tests,
+  and have the following behaviour:
+
+    * `:post_checkout` - it must be an anonymous function that receives the
+      connection module, the connection state and it must return either
+      `{:ok, connection_module, connection_state}` or
+      `{:disconnect, err, connection_module, connection_state}`. This allows
+      the developer to change the connection module on post checkout. However,
+      in case of disconnects, the return `connection_module` must be the same
+      as the `connection_module` given. Defaults to simply returning the given
+      connection module and state.
+
+    * `:pre_checkin` - it must be an anonymous function that receives the
+      checkin reason (`:checkin`, `{:disconnect, err}` or `{:stop, err}`),
+      the connection module and the connection state returned by `post_checkout`.
+      It must return either `{:ok, connection_module, connection_state}` or
+      `{:disconnect, err, connection_module, connection_state}` where the connection
+      module is the module given to `:post_checkout` Defaults to simply returning
+      the given connection module and state.
+
+  ## Caller handling
+
+  If the `:caller` option is given on checkout with a pid and no pool is
+  assigned to the current process, a connection will be allowed from the
+  given pid and used on checkout with `:pool_timeout` of `:infinity`.
   This is useful when multiple tasks need to collaborate on the same
   connection (hence the `:infinity` timeout).
   """
