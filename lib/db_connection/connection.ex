@@ -137,14 +137,6 @@ defmodule DBConnection.Connection do
     end
   end
 
-  def handle_call({:stop, ref, _, _} = stop, from, %{client: {ref, _}} = s) do
-    Connection.reply(from, :ok)
-    handle_cast(stop, s)
-  end
-  def handle_call({:stop, _, _, _}, _, s) do
-    {:reply, :error, s}
-  end
-
   @doc false
   def handle_cast({:ping, ref, state}, %{client: {ref, :pool}, mod: mod} = s) do
     case apply(mod, :ping, [state]) do
