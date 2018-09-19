@@ -5,6 +5,8 @@ defmodule ManagerTest do
   alias TestAgent, as: A
   alias DBConnection.Ownership
 
+  import ExUnit.CaptureLog
+
   test "requires explicit checkout on manual mode" do
     {:ok, pool, opts} = start_pool()
     refute_checked_out pool, opts
@@ -132,7 +134,7 @@ defmodule ManagerTest do
     assert_checked_out pool, [caller: parent] ++ opts
   end
 
-  test "automatically allow caller process with caller option" do
+  test "automatically allows caller process with caller option" do
     {:ok, pool, opts} = start_pool()
     parent = self()
 
@@ -318,6 +320,184 @@ defmodule ManagerTest do
     refute_checked_out pool, opts
     assert Ownership.ownership_checkout(pool, []) == :ok
     assert Ownership.ownership_mode(pool, {:shared, self()}, []) == :ok
+  end
+
+  ## Callbacks
+
+  test "allows post_checkout callback" do
+    {:ok, pool, opts} = start_pool()
+    parent = self()
+
+    post_checkout = fn TestConnection, :state ->
+      send(parent, :post_checkout)
+      {:ok, TestConnection, :state}
+    end
+
+    assert Ownership.ownership_checkout(pool, post_checkout: post_checkout) == :ok
+    assert_checked_out(pool, opts)
+    assert_receive :post_checkout
+  end
+
+  test "allows pre_checkin callback" do
+    {:ok, pool, opts} = start_pool()
+    parent = self()
+
+    pre_checkin = fn :checkin, TestConnection, :state ->
+      send(parent, :pre_checkin)
+      {:ok, TestConnection, :state}
+    end
+
+    assert Ownership.ownership_checkout(pool, pre_checkin: pre_checkin) == :ok
+    assert_checked_out(pool, opts)
+    assert Ownership.ownership_checkin(pool, []) == :ok
+    assert_receive :pre_checkin
+  end
+
+  test "allows connection to be replaced on post_checkout/pre_checkin" do
+    {:ok, pool, opts} = start_pool()
+    parent = self()
+
+    post_checkout = fn TestConnection, :state ->
+      send(parent, :post_checkout)
+      {:ok, Unknown, :unknown}
+    end
+
+    pre_checkin = fn {:stop, _}, Unknown, :unknown ->
+      send(parent, :pre_checkin)
+      {:ok, TestConnection, :state}
+    end
+
+    checkout = [post_checkout: post_checkout, pre_checkin: pre_checkin]
+    assert Ownership.ownership_checkout(pool, checkout) == :ok
+    assert_raise UndefinedFunctionError, ~r"function Unknown.handle_status/2 is undefined", fn ->
+      assert_checked_out(pool, opts)
+    end
+    _ = Ownership.ownership_checkin(pool, [])
+    assert_receive :pre_checkin
+    assert_receive :post_checkout
+  end
+
+  test "disconnects on bad post_checkout" do
+    stack = [
+      {:ok, :state},
+      {:idle, :state},
+      {:idle, :state},
+      :ok,
+      fn(opts) ->
+        send(opts[:parent], :reconnected)
+        {:ok, :state}
+      end]
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self(), ownership_mode: :manual]
+    {:ok, pool} = P.start_link(opts)
+    parent = self()
+
+    post_checkout = fn TestConnection, :state ->
+      send(parent, :post_checkout)
+      {:error, RuntimeError.exception("oops"), TestConnection, :state}
+    end
+
+    assert capture_log(fn ->
+      assert Ownership.ownership_checkout(pool, post_checkout: post_checkout) == :ok
+      assert_raise RuntimeError, "oops", fn ->
+        assert_checked_out(pool, opts)
+      end
+      assert Ownership.ownership_checkin(pool, []) == :not_found
+      assert_receive :post_checkout
+      assert_receive :reconnected
+    end) =~ "disconnected: ** (RuntimeError) oops"
+  end
+
+  test "disconnects on bad pre_checkin" do
+    stack = [
+      {:ok, :state},
+      {:idle, :state},
+      {:idle, :state},
+      :ok,
+      fn(opts) ->
+        send(opts[:parent], :reconnected)
+        {:ok, :state}
+      end]
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self(), ownership_mode: :manual]
+    {:ok, pool} = P.start_link(opts)
+    parent = self()
+
+    pre_checkin = fn :checkin, TestConnection, :state ->
+      send(parent, :pre_checkin)
+      {:error, RuntimeError.exception("oops"), TestConnection, :state}
+    end
+
+    assert capture_log(fn ->
+      assert Ownership.ownership_checkout(pool, pre_checkin: pre_checkin) == :ok
+      assert_checked_out(pool, opts)
+      assert Ownership.ownership_checkin(pool, []) == :ok
+      assert_receive :pre_checkin
+      assert_receive :reconnected
+    end) =~ "disconnected: ** (RuntimeError) oops"
+  end
+
+  test "disconnects on bad pre_checkin on disconnect" do
+    stack = [
+      {:ok, :state},
+      {:idle, :state},
+      {:disconnect, DBConnection.ConnectionError.exception("oops"), :state},
+      :ok,
+      fn(opts) ->
+        send(opts[:parent], :reconnected)
+        {:ok, :state}
+      end]
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self(), ownership_mode: :manual]
+    {:ok, pool} = P.start_link(opts)
+    parent = self()
+
+    pre_checkin = fn {:disconnect, _}, TestConnection, :state ->
+      send(parent, :pre_checkin)
+      {:error, RuntimeError.exception("oops"), TestConnection, :state}
+    end
+
+    assert capture_log(fn ->
+      assert Ownership.ownership_checkout(pool, pre_checkin: pre_checkin) == :ok
+      assert_checked_out(pool, opts)
+      _ = Ownership.ownership_checkin(pool, [])
+      assert_receive :pre_checkin
+      assert_receive :reconnected
+    end) =~ "disconnected: ** (RuntimeError) oops"
+  end
+
+  test "stops on bad pre_checkin on stop" do
+    stack = [
+      {:ok, :state},
+      {:idle, :state},
+      :oops,
+      fn(opts) ->
+        send(opts[:parent], :reconnected)
+        {:ok, :state}
+      end]
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self(), ownership_mode: :manual]
+    {:ok, pool} = P.start_link(opts)
+    parent = self()
+
+    pre_checkin = fn {:stop, _}, TestConnection, :state ->
+      send(parent, :pre_checkin)
+      {:error, RuntimeError.exception("oops"), TestConnection, :state}
+    end
+
+    assert capture_log(fn ->
+      assert Ownership.ownership_checkout(pool, pre_checkin: pre_checkin) == :ok
+      assert_raise DBConnection.ConnectionError, "bad return value: :oops", fn ->
+        assert_checked_out(pool, opts)
+      end
+      _ = Ownership.ownership_checkin(pool, [])
+      assert_receive :pre_checkin
+      assert_receive :reconnected
+    end) =~ ~r"GenServer #PID<\d+\.\d+\.\d+> terminating\n\*\* \(RuntimeError\) oops"
   end
 
   defp start_pool(opts \\ []) do

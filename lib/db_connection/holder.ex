@@ -35,9 +35,9 @@ defmodule DBConnection.Holder do
 
   @spec delete(t) :: term
   def delete(holder) do
-    state = :ets.lookup_element(holder, :conn, conn(:state) + 1)
+    [conn(module: module, state: state)] = :ets.lookup(holder, :conn)
     :ets.delete(holder)
-    state
+    {module, state}
   end
 
   ## Pool API (invoked by caller)
