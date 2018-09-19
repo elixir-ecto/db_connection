@@ -75,7 +75,7 @@ defmodule DBConnection do
   require Logger
 
   alias DBConnection.Holder
-  defstruct [:holder, :pool_ref, :conn_ref, :conn_mode]
+  defstruct [:pool_ref, :conn_ref, :conn_mode]
 
   defmodule EncodeError do
     defexception [:message]
