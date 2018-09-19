@@ -138,7 +138,6 @@ defmodule DBConnection.Holder do
 
   ## Pool callbacks (invoked by pools)
 
-  # TODO: Remove other GenServer.reply from the codebase
   @spec reply_redirect({pid, reference}, GenServer.server()) :: :ok
   def reply_redirect(from, redirect) do
     GenServer.reply(from, {:redirect, redirect})

@@ -82,8 +82,8 @@ defmodule DBConnection.Ownership.Proxy do
         holder = Holder.new(self(), owner_ref, mod, conn_state)
         state = %{state | pool_ref: pool_ref, holder: holder}
         checkout(from, state)
-      {:error, err} = error ->
-        GenServer.reply(from, error)
+      {:error, err} ->
+        Holder.reply_error(from, err)
         {:stop, {:shutdown, err}, state}
     end
   end
@@ -100,7 +100,7 @@ defmodule DBConnection.Ownership.Proxy do
     else
       message = "connection not available and queuing is disabled"
       err = DBConnection.ConnectionError.exception(message)
-      GenServer.reply(from, {:error, err})
+      Holder.reply_error(from, err)
       {:noreply, state}
     end
   end
@@ -202,9 +202,8 @@ defmodule DBConnection.Ownership.Proxy do
   end
 
   defp drop(delay, from) do
-    message = "connection not available " <>
-      "and request was dropped from queue after #{delay}ms"
+    message = "connection not available and request was dropped from queue after #{delay}ms"
     err = DBConnection.ConnectionError.exception(message)
-    GenServer.reply(from, {:error, err})
+    Holder.reply_error(from, err)
   end
 end
