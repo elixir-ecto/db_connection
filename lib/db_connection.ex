@@ -795,11 +795,8 @@ defmodule DBConnection do
     throw({__MODULE__, conn_ref, reason})
   end
 
-  def rollback(%DBConnection{} = conn, _reason) do
-    case get_status_or_error(conn, nil) do
-      {:ok, _} -> raise "not inside transaction"
-      {:error, err, _meter} -> raise err
-    end
+  def rollback(%DBConnection{} = _conn, _reason) do
+    raise "not inside transaction"
   end
 
   @doc """
@@ -1382,23 +1379,23 @@ defmodule DBConnection do
   end
 
   defp fail(%DBConnection{pool_ref: pool_ref}) do
-    case Holder.get_status(pool_ref) do
-      :ok -> Holder.put_status(pool_ref, :failed)
-      _ -> :ok
+    case Holder.status?(pool_ref, :ok) do
+      true -> Holder.put_status(pool_ref, :aborted)
+      false -> :ok
     end
   end
 
   defp conclude(%DBConnection{pool_ref: pool_ref, conn_ref: conn_ref}, result) do
-    case Holder.get_status(pool_ref) do
-      :ok -> result
-      _ -> throw({__MODULE__, conn_ref, :rollback})
+    case Holder.status?(pool_ref, :ok) do
+      true -> result
+      false -> throw({__MODULE__, conn_ref, :rollback})
     end
   end
 
   defp reset(%DBConnection{pool_ref: pool_ref}) do
-    case Holder.get_status(pool_ref) do
-      :failed -> Holder.put_status(pool_ref, :ok)
-      _ -> :ok
+    case Holder.status?(pool_ref, :aborted) do
+      true -> Holder.put_status(pool_ref, :ok)
+      false -> :ok
     end
   end
 
@@ -1573,13 +1570,5 @@ defmodule DBConnection do
     next = fn state -> next.(conn, state, opts) end
     stop = fn state -> stop.(conn, state, opts) end
     Stream.resource(start, next, stop)
-  end
-
-  defp get_status_or_error(%{pool_ref: pool_ref}, meter) do
-    case Holder.get_status(pool_ref) do
-      :ok -> {:ok, :ok}
-      :failed -> {:ok, :failed}
-      :missing -> {:error, DBConnection.ConnectionError.exception("connection is closed"), meter}
-    end
   end
 end

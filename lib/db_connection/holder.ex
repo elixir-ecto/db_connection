@@ -73,12 +73,12 @@ defmodule DBConnection.Holder do
 
   @spec disconnect(pool_ref :: any, err :: Exception.t()) :: :ok
   def disconnect(pool_ref, err) do
-    done(pool_ref, :missing, :disconnect, err)
+    done(pool_ref, {:error, err}, :disconnect, err)
   end
 
   @spec stop(pool_ref :: any, err :: Exception.t()) :: :ok
   def stop(pool_ref, err) do
-    done(pool_ref, :missing, :stop, err)
+    done(pool_ref, {:error, err}, :stop, err)
   end
 
   @spec handle(pool_ref :: any, fun :: atom, args :: [term], Keyword.t) :: tuple
@@ -94,24 +94,22 @@ defmodule DBConnection.Holder do
   defp handle(type, pool_ref, fun, args, opts) do
     pool_ref(holder: holder) = pool_ref
 
-    conn =
-      try do
-        [conn] = :ets.lookup(holder, :conn)
-        conn
-      rescue
-        ArgumentError -> conn(status: :missing)
-      end
-
-    case conn do
-      conn(status: :missing) ->
+    try do
+      :ets.lookup(holder, :conn)
+    rescue
+      ArgumentError ->
+        msg = "connection is closed"
+        {:disconnect, DBConnection.ConnectionError.exception(msg), _state = :unused}
+    else
+      [conn(status: {:error, _})] ->
         msg = "connection is closed"
         {:disconnect, DBConnection.ConnectionError.exception(msg), _state = :unused}
 
-      conn(status: :failed) when type != :cleanup ->
+      [conn(status: :aborted)] when type != :cleanup ->
         msg = "transaction rolling back"
         {:disconnect, DBConnection.ConnectionError.exception(msg), _state = :unused}
 
-      conn(module: module, state: state) ->
+      [conn(module: module, state: state)] ->
         try do
           apply(module, fun, args ++ [opts, state])
         catch
@@ -147,16 +145,16 @@ defmodule DBConnection.Holder do
     :ok
   end
 
-  @spec get_status(pool_ref :: any) :: :ok | :failed | :missing
-  def get_status(pool_ref(holder: holder)) do
+  @spec status?(pool_ref :: any, :ok | :aborted) :: boolean()
+  def status?(pool_ref(holder: holder), status) do
     try do
-      :ets.lookup_element(holder, :conn, conn(:status) + 1)
+      :ets.lookup_element(holder, :conn, conn(:status) + 1) == status
     rescue
-      ArgumentError -> :missing
+      ArgumentError -> false
     end
   end
 
-  @spec put_status(pool_ref :: any, :ok | :failed) :: boolean()
+  @spec put_status(pool_ref :: any, :ok | :aborted) :: boolean()
   def put_status(pool_ref(holder: holder), status) do
     try do
       :ets.update_element(holder, :conn, [{conn(:status) + 1, status}])
