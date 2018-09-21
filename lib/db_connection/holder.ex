@@ -100,7 +100,16 @@ defmodule DBConnection.Holder do
         else
           result when is_tuple(result) ->
             state = :erlang.element(:erlang.tuple_size(result), result)
-            :ets.update_element(holder, :conn, {conn(:state) + 1, state})
+
+            # This means a disconnect happened from the connection side
+            # but, since we succeed, we can return the result and the client
+            # will notice the disconnect anyway.
+            try do
+              :ets.update_element(holder, :conn, {conn(:state) + 1, state})
+            rescue
+              ArgumentError -> false
+            end
+
             result
 
           # If it is not a tuple, we just return it as is so we raise bad return.
@@ -127,7 +136,7 @@ defmodule DBConnection.Holder do
     end
   end
 
-  @spec put_status(pool_ref :: any, :ok | :failed) :: :ok | :failed | :missing
+  @spec put_status(pool_ref :: any, :ok | :failed) :: boolean()
   def put_status(pool_ref(holder: holder), status) do
     try do
       :ets.update_element(holder, :conn, [{conn(:status) + 1, status}])
