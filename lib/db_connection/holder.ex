@@ -83,15 +83,35 @@ defmodule DBConnection.Holder do
 
   @spec handle(pool_ref :: any, fun :: atom, args :: [term], Keyword.t) :: tuple
   def handle(pool_ref, fun, args, opts) do
+    handle(:handle, pool_ref, fun, args, opts)
+  end
+
+  @spec cleanup(pool_ref :: any, fun :: atom, args :: [term], Keyword.t) :: tuple
+  def cleanup(pool_ref, fun, args, opts) do
+    handle(:cleanup, pool_ref, fun, args, opts)
+  end
+
+  defp handle(type, pool_ref, fun, args, opts) do
     pool_ref(holder: holder) = pool_ref
 
-    try do
-      :ets.lookup(holder, :conn)
-    rescue
-      e in ArgumentError ->
-        {:catch, :error, e, System.stacktrace()}
-    else
-      [conn(module: module, state: state)] ->
+    conn =
+      try do
+        [conn] = :ets.lookup(holder, :conn)
+        conn
+      rescue
+        ArgumentError -> conn(status: :missing)
+      end
+
+    case conn do
+      conn(status: :missing) ->
+        msg = "connection is closed"
+        {:disconnect, DBConnection.ConnectionError.exception(msg), _state = :unused}
+
+      conn(status: :failed) when type != :cleanup ->
+        msg = "transaction rolling back"
+        {:disconnect, DBConnection.ConnectionError.exception(msg), _state = :unused}
+
+      conn(module: module, state: state) ->
         try do
           apply(module, fun, args ++ [opts, state])
         catch

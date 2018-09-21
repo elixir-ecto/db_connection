@@ -585,7 +585,7 @@ defmodule DBConnection do
     {:ok, result} | {:error, Exception.t}
   def close(conn, query, opts \\ []) do
     conn
-    |> cleanup(&run_close/5, [query], meter(opts), opts)
+    |> run_cleanup(&run_close/4, [query], meter(opts), opts)
     |> log(:close, query, nil)
   end
 
@@ -637,12 +637,7 @@ defmodule DBConnection do
   @spec run(conn, (t -> result), opts :: Keyword.t) :: result when result: var
   def run(conn, fun, opts \\ [])
   def run(%DBConnection{} = conn, fun, _) do
-    case ok_status_or_error(conn, nil) do
-      :ok ->
-        fun.(conn)
-      {:error, err, _meter} ->
-        raise err
-    end
+    fun.(conn)
   end
   def run(pool, fun, opts) do
     case checkout(pool, nil, opts) do
@@ -981,8 +976,7 @@ defmodule DBConnection do
   end
 
   defp checkout(%DBConnection{} = conn, fun, meter, opts) do
-    with :ok <- ok_status_or_error(conn, meter),
-         {:ok, result, meter} <- fun.(conn, meter, opts) do
+    with {:ok, result, meter} <- fun.(conn, meter, opts) do
       {:ok, conn, result, meter}
     end
   end
@@ -1003,11 +997,9 @@ defmodule DBConnection do
   end
 
   defp checkin(%DBConnection{} = conn, fun, meter, opts) do
-    with :ok <- ok_status_or_error(conn, meter) do
-      return = fun.(conn, meter, opts)
-      checkin(conn)
-      return
-    end
+    return = fun.(conn, meter, opts)
+    checkin(conn)
+    return
   end
   defp checkin(pool, fun, meter, opts) do
     run(pool, fun, meter, opts)
@@ -1167,7 +1159,7 @@ defmodule DBConnection do
 
   defp deallocate(conn, query, cursor, opts) do
     conn
-    |> cleanup(&run_deallocate/5, [query, cursor], meter(opts), opts)
+    |> run_cleanup(&run_deallocate/4, [query, cursor], meter(opts), opts)
     |> log(:deallocate, query, cursor)
   end
 
@@ -1207,41 +1199,36 @@ defmodule DBConnection do
   end
 
   defp raised_close(conn, query, meter, opts, kind, reason, stack) do
-    with {:ok, status} <- get_status_or_error(conn, meter),
-         {:ok, _, meter} <- run_close(conn, status, [query], meter, opts) do
+    with {:ok, _, meter} <- run_close(conn, [query], meter, opts) do
       {kind, reason, stack, meter}
     end
   end
 
-  defp run_close(conn, status, args, meter, opts) do
+  defp run_close(conn, args, meter, opts) do
     meter = event(meter, :close)
-    cleanup(conn, status, :handle_close, args, meter, opts)
+    cleanup(conn, :handle_close, args, meter, opts)
   end
 
-  defp cleanup(%DBConnection{} = conn, fun, args, meter, opts) do
-    with {:ok, status} <- get_status_or_error(conn, meter) do
-      fun.(conn, status, args, meter, opts)
-    end
+  defp run_cleanup(%DBConnection{} = conn, fun, args, meter, opts) do
+    fun.(conn, args, meter, opts)
   end
-  defp cleanup(pool, fun, args, meter, opts) do
+  defp run_cleanup(pool, fun, args, meter, opts) do
     with {:ok, conn, meter} <- checkout(pool, meter, opts) do
       try do
-        fun.(conn, :ok, args, meter, opts)
+        fun.(conn, args, meter, opts)
       after
         checkin(conn)
       end
     end
   end
 
-  defp cleanup(conn, status, fun, args, meter, opts) do
+  defp cleanup(conn, fun, args, meter, opts) do
     %DBConnection{pool_ref: pool_ref} = conn
 
-    case Holder.handle(pool_ref, fun, args, opts) do
+    case Holder.cleanup(pool_ref, fun, args, opts) do
       {:ok, result, _conn_state} ->
-        Holder.put_status(pool_ref, status)
         {:ok, result, meter}
       {:error, err, _conn_state} ->
-        Holder.put_status(pool_ref, status)
         {:error, err, meter}
       {:disconnect, err, _conn_state} ->
         disconnect(conn, err)
@@ -1255,9 +1242,7 @@ defmodule DBConnection do
   end
 
   defp run(%DBConnection{} = conn, fun, meter, opts) do
-    with :ok <- ok_status_or_error(conn, meter) do
-      fun.(conn, meter, opts)
-    end
+    fun.(conn, meter, opts)
   end
   defp run(pool, fun, meter, opts) do
     with {:ok, conn, meter} <- checkout(pool, meter, opts) do
@@ -1270,9 +1255,7 @@ defmodule DBConnection do
   end
 
   defp run(%DBConnection{} = conn, fun, arg, meter, opts) do
-    with :ok <- ok_status_or_error(conn, meter) do
-      fun.(conn, arg, meter, opts)
-    end
+    fun.(conn, arg, meter, opts)
   end
   defp run(pool, fun, arg, meter, opts) do
     with {:ok, conn, meter} <- checkout(pool, meter, opts) do
@@ -1285,9 +1268,7 @@ defmodule DBConnection do
   end
 
   defp run(%DBConnection{} = conn, fun, arg1, arg2, meter, opts) do
-    with :ok <- ok_status_or_error(conn, meter) do
-      fun.(conn, arg1, arg2, meter, opts)
-    end
+    fun.(conn, arg1, arg2, meter, opts)
   end
   defp run(pool, fun, arg1, arg2, meter, opts) do
     with {:ok, conn, meter} <- checkout(pool, meter, opts) do
@@ -1504,7 +1485,7 @@ defmodule DBConnection do
         {status, meter}
       {:disconnect, err, _conn_state} ->
         disconnect(conn, err)
-        {:error, meter}
+        {:error, err, meter}
       {:catch, kind, reason, stack} ->
         stop(conn, kind, reason, stack)
         {kind, reason, stack, meter}
@@ -1582,9 +1563,9 @@ defmodule DBConnection do
   defp stream_deallocate(conn, {_status, query, cursor}, opts),
     do: deallocate(conn, query, cursor, opts)
 
-  defp run_deallocate(conn, status, args, meter, opts) do
+  defp run_deallocate(conn, args, meter, opts) do
     meter = event(meter, :deallocate)
-    cleanup(conn, status, :handle_deallocate, args, meter, opts)
+    cleanup(conn, :handle_deallocate, args, meter, opts)
   end
 
   defp resource(%DBConnection{} = conn, start, next, stop, opts) do
@@ -1592,21 +1573,6 @@ defmodule DBConnection do
     next = fn state -> next.(conn, state, opts) end
     stop = fn state -> stop.(conn, state, opts) end
     Stream.resource(start, next, stop)
-  end
-
-  defp ok_status_or_error(%{pool_ref: pool_ref}, meter) do
-    case Holder.get_status(pool_ref) do
-      :ok ->
-        :ok
-
-      :failed ->
-        msg = "transaction rolling back"
-        {:error, DBConnection.ConnectionError.exception(msg), meter}
-
-      :missing ->
-        msg = "connection is closed"
-        {:error, DBConnection.ConnectionError.exception(msg), meter}
-    end
   end
 
   defp get_status_or_error(%{pool_ref: pool_ref}, meter) do
