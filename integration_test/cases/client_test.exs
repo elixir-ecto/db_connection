@@ -66,8 +66,12 @@ defmodule ClientTest do
       send(parent, {:done, self()})
     end)
 
-    P.run(pool, fn(_) ->
+    P.run(pool, fn(conn) ->
       assert_receive :reconnected
+
+      assert {:error, %DBConnection.ConnectionError{}} =
+        P.execute(conn, %Q{}, [:first])
+
       send(pid, {:go, parent})
       assert_receive {:done, ^pid}
     end, [timeout: 100])
@@ -130,7 +134,7 @@ defmodule ClientTest do
       {:handle_execute, [%Q{}, [:second], _, :new_state]}] = A.record(agent)
   end
 
-test "reconnect when client timeout and then returns disconnected when disconnected" do
+  test "reconnect when client timeout and then returns disconnected when disconnected" do
     stack = [
       {:ok, :state},
       {:idle, :state},
