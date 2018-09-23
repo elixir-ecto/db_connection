@@ -158,7 +158,10 @@ defmodule ClientTest do
     {:ok, pool} = P.start_link(opts)
 
     assert P.run(pool, fn(conn) ->
-      assert {:error, %DBConnection.ConnectionError{message: "oops"}} =
+      message =
+        "oops (the connection was closed by the pool, possibly due to a timeout or because the pool has been terminated)"
+
+      assert {:error, %DBConnection.ConnectionError{message: ^message}} =
                P.execute(conn, %Q{}, [:first])
 
       spawn_link(fn() ->
