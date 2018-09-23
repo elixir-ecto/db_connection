@@ -145,8 +145,9 @@ defmodule TransactionExecuteTest do
     assert P.transaction(pool, fn(conn) ->
       assert P.execute(conn, %Q{}, [:param]) == {:error, err}
 
-      assert_raise DBConnection.ConnectionError, "connection is closed",
-        fn() -> P.execute!(conn, %Q{}, [:param]) end
+      assert_raise DBConnection.ConnectionError,
+                   "connection is closed because of an error, disconnect or timeout",
+                   fn() -> P.execute!(conn, %Q{}, [:param]) end
 
       :closed
     end) == {:error, :rollback}
@@ -181,11 +182,13 @@ defmodule TransactionExecuteTest do
     Process.flag(:trap_exit, true)
 
     assert P.transaction(pool, fn(conn) ->
-      assert_raise DBConnection.ConnectionError, "bad return value: :oops",
-        fn() -> P.execute(conn, %Q{}, [:param]) end
+      assert_raise DBConnection.ConnectionError,
+                   "bad return value: :oops",
+                   fn() -> P.execute(conn, %Q{}, [:param]) end
 
-      assert_raise DBConnection.ConnectionError, "connection is closed",
-        fn() -> P.execute!(conn, %Q{}, [:param]) end
+      assert_raise DBConnection.ConnectionError,
+                   "connection is closed because of an error, disconnect or timeout",
+                   fn() -> P.execute!(conn, %Q{}, [:param]) end
 
       :closed
     end) == {:error, :rollback}
@@ -225,11 +228,13 @@ defmodule TransactionExecuteTest do
     Process.flag(:trap_exit, true)
 
     assert P.transaction(pool, fn(conn) ->
-      assert_raise RuntimeError, "oops",
-        fn() -> P.execute(conn, %Q{}, [:param]) end
+      assert_raise RuntimeError,
+                   "oops",
+                   fn() -> P.execute(conn, %Q{}, [:param]) end
 
-      assert_raise DBConnection.ConnectionError, "connection is closed",
-        fn() -> P.execute!(conn, %Q{}, [:param]) end
+      assert_raise DBConnection.ConnectionError,
+                   "connection is closed because of an error, disconnect or timeout",
+                   fn() -> P.execute!(conn, %Q{}, [:param]) end
 
       :closed
     end) == {:error, :rollback}
