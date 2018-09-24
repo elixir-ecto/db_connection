@@ -283,7 +283,7 @@ defmodule StreamTest do
     closed = DBConnection.ConnectionError.exception("connection is closed")
     assert %{query: %Q{}, params: %C{}, result: {:error, ^closed}} = entry
     assert is_nil(entry.pool_time)
-    assert is_nil(entry.connection_time)
+    assert entry.connection_time >= 0
     assert is_nil(entry.decode_time)
 
     assert_receive :reconnected

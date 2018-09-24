@@ -2,6 +2,8 @@ defmodule DBConnection.Task do
   @moduledoc false
   @name __MODULE__
 
+  require DBConnection.Holder
+
   def start_link() do
     Task.Supervisor.start_link(name: @name)
   end
@@ -15,38 +17,35 @@ defmodule DBConnection.Task do
       "can not create a child spec for the DBConnection.Task pool"
   end
 
-  def run_child(mod, fun, state, opts) do
-    ref = make_ref()
-    arg = [mod, fun, ref, self(), state, opts]
-    {:ok, pid} = Task.Supervisor.start_child(__MODULE__, __MODULE__, :init, arg)
-    mon = Process.monitor(pid)
-    send(pid, {:go, ref, mon})
-    {pid, mon}
+  def run_child(mod, state, fun, opts) do
+    arg = [fun, self(), opts]
+    {:ok, pid} = Task.Supervisor.start_child(@name, __MODULE__, :init, arg)
+    ref = Process.monitor(pid)
+    _ = DBConnection.Holder.update(pid, ref, mod, state)
+    {pid, ref}
   end
 
-  def init(mod, fun, ref, conn, state, opts) do
+  def init(fun, parent, opts) do
     try do
-      Process.link(conn)
+      Process.link(parent)
     catch
       :error, :noproc ->
         exit({:shutdown, :noproc})
     end
+
     receive do
-      {:go, ^ref, mon} ->
-        Process.unlink(conn)
-        pool = {:via, __MODULE__, {{conn, mon}, mod, state}}
-        _ = DBConnection.run(pool, make_fun(fun), [holder: __MODULE__] ++ opts)
+      {:"ETS-TRANSFER", holder, ^parent, {:checkin, ref, _extra}} ->
+        Process.unlink(parent)
+        pool_ref = DBConnection.Holder.pool_ref(pool: parent, reference: ref, holder: holder)
+        checkout = {:via, __MODULE__, pool_ref}
+        _ = DBConnection.run(checkout, make_fun(fun), [holder: __MODULE__] ++ opts)
         exit(:normal)
     end
   end
 
-  def checkout({:via, __MODULE__, {info, mod, state}}, _) do
-    {:ok, info, mod, state}
+  def checkout({:via, __MODULE__, pool_ref}, _opts) do
+    {:ok, pool_ref, _mod = :unused, _state = :unused}
   end
-
-  defdelegate checkin(info, state), to: DBConnection.Connection
-  defdelegate disconnect(info, err, state), to: DBConnection.Connection
-  defdelegate stop(info, err, state), to: DBConnection.Connection
 
   defp make_fun(fun) when is_function(fun, 1) do
     fun

@@ -251,7 +251,11 @@ defmodule TransactionExecuteTest do
     stack = [
       {:ok, :state},
       {:ok, :began, :new_state},
-      {:ok, :rolledback, :newer_state}
+      :ok,
+      fn(opts) ->
+        send(opts[:parent], :reconnected)
+        {:ok, :state}
+      end
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -268,10 +272,13 @@ defmodule TransactionExecuteTest do
         fn() -> P.execute!(conn, %Q{}, [:param]) end
     end) == {:error, :rollback}
 
+    assert_receive :reconnected
+
     assert [
       connect: [_],
       handle_begin: [ _, :state],
-      handle_rollback: [_, :new_state]] = A.record(agent)
+      disconnect: _,
+      connect: _] = A.record(agent)
   end
 
   test "transaction logs rollback if closed" do

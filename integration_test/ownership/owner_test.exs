@@ -13,8 +13,7 @@ defmodule OwnerTest do
       fn(opts) ->
         send(opts[:parent], :reconnected)
         {:ok, :state}
-      end,
-      {:idle, :state}]
+      end]
     {:ok, agent} = A.start_link(stack)
 
     opts = [agent: agent, parent: self(), ownership_mode: :manual]
@@ -40,8 +39,7 @@ defmodule OwnerTest do
       {:connect, _},
       {:handle_status, _},
       {:disconnect, _},
-      {:connect, _},
-      {:handle_status, _}] = A.record(agent)
+      {:connect, _}] = A.record(agent)
   end
 
   test "reconnects when ownership times out" do
@@ -53,7 +51,6 @@ defmodule OwnerTest do
         send(opts[:parent], :reconnected)
         {:ok, :state}
       end,
-      {:idle, :state},
       {:idle, :state},
       {:idle, :state}]
     {:ok, agent} = A.start_link(stack)
@@ -81,7 +78,6 @@ defmodule OwnerTest do
       {:handle_status, _},
       {:disconnect, _},
       {:connect, _},
-      {:handle_status, _},
       {:handle_status, _},
       {:handle_status, _}] = A.record(agent)
   end

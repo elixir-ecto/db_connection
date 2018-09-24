@@ -6,22 +6,41 @@ defmodule DBConnection.Holder do
   @timeout 15000
   @time_unit 1000
 
-  Record.defrecord(:conn, [:connection, :deadline, :module, :state])
+  Record.defrecord(:conn, [:connection, :module, :state, deadline: nil, status: :ok])
   Record.defrecord(:pool_ref, [:pool, :reference, :deadline, :holder])
 
   @type t :: :ets.tid()
+
+  ## Holder API
 
   @spec new(pid, reference, module, term) :: t
   def new(pool, ref, mod, state) do
     # Insert before setting heir so that pool can't receive empty table
     holder = :ets.new(__MODULE__, [:public, :ordered_set])
 
-    conn = conn(connection: self(), deadline: nil, module: mod, state: state)
+    conn = conn(connection: self(), module: mod, state: state)
     true = :ets.insert_new(holder, conn)
 
     :ets.setopts(holder, {:heir, pool, ref})
     holder
   end
+
+  @spec update(pid, reference, module, term) :: t
+  def update(pool, ref, mod, state) do
+    holder = new(pool, ref, mod, state)
+    now = System.monotonic_time(@time_unit)
+    :ets.give_away(holder, pool, {:checkin, ref, now})
+    holder
+  end
+
+  @spec delete(t) :: term
+  def delete(holder) do
+    state = :ets.lookup_element(holder, :conn, conn(:state) + 1)
+    :ets.delete(holder)
+    state
+  end
+
+  ## Pool API (invoked by caller)
 
   @callback checkout(pool :: GenServer.server(), opts :: Keyword.t()) ::
               {:ok, pool_ref :: any, module, state :: any} | {:error, Exception.t()}
@@ -46,29 +65,105 @@ defmodule DBConnection.Holder do
     end
   end
 
-  @spec checkin(pool_ref :: any, state :: any) :: :ok
-  def checkin(pool_ref, state) do
+  @spec checkin(pool_ref :: any) :: :ok
+  def checkin(pool_ref) do
     now = System.monotonic_time(@time_unit)
-    done(pool_ref, :checkin, state, now)
+    done(pool_ref, :ok, :checkin, now)
   end
 
-  @spec disconnect(pool_ref :: any, err :: Exception.t(), state :: any) :: :ok
-  def disconnect(pool_ref, err, state) do
-    done(pool_ref, :disconnect, state, err)
+  @spec disconnect(pool_ref :: any, err :: Exception.t()) :: :ok
+  def disconnect(pool_ref, err) do
+    done(pool_ref, {:error, err}, :disconnect, err)
   end
 
-  @spec stop(pool_ref :: any, err :: Exception.t(), state :: any) :: :ok
-  def stop(pool_ref, err, state) do
-    done(pool_ref, :stop, state, err)
+  @spec stop(pool_ref :: any, err :: Exception.t()) :: :ok
+  def stop(pool_ref, err) do
+    done(pool_ref, {:error, err}, :stop, err)
   end
 
-  @spec update(pid, reference, module, term) :: t
-  def update(pool, ref, mod, state) do
-    holder = new(pool, ref, mod, state)
-    now = System.monotonic_time(@time_unit)
-    :ets.give_away(holder, pool, {:checkin, ref, now})
-    holder
+  @spec handle(pool_ref :: any, fun :: atom, args :: [term], Keyword.t) :: tuple
+  def handle(pool_ref, fun, args, opts) do
+    handle(:handle, pool_ref, fun, args, opts)
   end
+
+  @spec cleanup(pool_ref :: any, fun :: atom, args :: [term], Keyword.t) :: tuple
+  def cleanup(pool_ref, fun, args, opts) do
+    handle(:cleanup, pool_ref, fun, args, opts)
+  end
+
+  defp handle(type, pool_ref, fun, args, opts) do
+    pool_ref(holder: holder) = pool_ref
+
+    try do
+      :ets.lookup(holder, :conn)
+    rescue
+      ArgumentError ->
+        msg = "connection is closed"
+        {:disconnect, DBConnection.ConnectionError.exception(msg), _state = :unused}
+    else
+      [conn(status: {:error, _})] ->
+        msg = "connection is closed"
+        {:disconnect, DBConnection.ConnectionError.exception(msg), _state = :unused}
+
+      [conn(status: :aborted)] when type != :cleanup ->
+        msg = "transaction rolling back"
+        {:disconnect, DBConnection.ConnectionError.exception(msg), _state = :unused}
+
+      [conn(module: module, state: state)] ->
+        try do
+          apply(module, fun, args ++ [opts, state])
+        catch
+          kind, reason ->
+            {:catch, kind, reason, System.stacktrace()}
+        else
+          result when is_tuple(result) ->
+            state = :erlang.element(:erlang.tuple_size(result), result)
+
+            # This means a disconnect happened from the connection side
+            # but, since we succeed, we can return the result and the client
+            # will notice the disconnect anyway.
+            try do
+              :ets.update_element(holder, :conn, {conn(:state) + 1, state})
+            rescue
+              ArgumentError -> false
+            end
+
+            result
+
+          # If it is not a tuple, we just return it as is so we raise bad return.
+          result ->
+            result
+        end
+    end
+  end
+
+  ## Pool state helpers API (invoked by callers)
+
+  @spec put_state(pool_ref :: any, term) :: :ok
+  def put_state(pool_ref(holder: sink_holder), state) do
+    :ets.update_element(sink_holder, :conn, [{conn(:state) + 1, state}])
+    :ok
+  end
+
+  @spec status?(pool_ref :: any, :ok | :aborted) :: boolean()
+  def status?(pool_ref(holder: holder), status) do
+    try do
+      :ets.lookup_element(holder, :conn, conn(:status) + 1) == status
+    rescue
+      ArgumentError -> false
+    end
+  end
+
+  @spec put_status(pool_ref :: any, :ok | :aborted) :: boolean()
+  def put_status(pool_ref(holder: holder), status) do
+    try do
+      :ets.update_element(holder, :conn, [{conn(:status) + 1, status}])
+    rescue
+      ArgumentError -> false
+    end
+  end
+
+  ## Pool callbacks (invoked by pools)
 
   @spec reply_redirect({pid, reference}, GenServer.server()) :: :ok
   def reply_redirect(from, redirect) do
@@ -80,11 +175,6 @@ defmodule DBConnection.Holder do
   def reply_error(from, exception) do
     GenServer.reply(from, {:error, exception})
     :ok
-  end
-
-  @spec get_state(t) :: term
-  def get_state(holder) do
-    :ets.lookup_element(holder, :conn, conn(:state) + 1)
   end
 
   @spec handle_checkout(t, {pid, reference}, reference) :: boolean
@@ -127,6 +217,8 @@ defmodule DBConnection.Holder do
   def handle_stop(holder, err) do
     handle_done(holder, &DBConnection.Connection.stop/3, err)
   end
+
+  ## Private
 
   defp checkout(pool, caller, queue?, start, timeout) do
     case GenServer.whereis(pool) do
@@ -178,19 +270,17 @@ defmodule DBConnection.Holder do
     end
   end
 
-  defp done(pool_ref, tag, state, info) do
+  defp done(pool_ref, status, tag, info) do
     pool_ref(pool: pool, reference: ref, deadline: deadline, holder: holder) = pool_ref
     cancel_deadline(deadline)
 
     try do
-      :ets.update_element(holder, :conn, [{conn(:deadline) + 1, nil}, {conn(:state) + 1, state}])
+      :ets.update_element(holder, :conn, [{conn(:deadline) + 1, nil}, {conn(:status) + 1, status}])
       :ets.give_away(holder, pool, {tag, ref, info})
     rescue
-      ArgumentError ->
-        :ok
+      ArgumentError -> :ok
     else
-      true ->
-        :ok
+      true -> :ok
     end
   end
 

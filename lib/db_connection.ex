@@ -74,7 +74,8 @@ defmodule DBConnection do
   """
   require Logger
 
-  defstruct [:holder, :pool_ref, :conn_mod, :conn_ref, :conn_mode]
+  alias DBConnection.Holder
+  defstruct [:pool_ref, :conn_ref, :conn_mode]
 
   defmodule EncodeError do
     defexception [:message]
@@ -94,10 +95,7 @@ defmodule DBConnection do
   @typedoc """
   Run or transaction connection reference.
   """
-  @type t :: %__MODULE__{holder: module,
-                         pool_ref: any,
-                         conn_mod: any,
-                         conn_ref: reference}
+  @type t :: %__MODULE__{pool_ref: any, conn_ref: reference}
   @type conn :: GenServer.server | t
   @type query :: any
   @type params :: any
@@ -419,7 +417,7 @@ defmodule DBConnection do
     meter = meter(opts)
     result =
       with {:ok, query, meter} <- parse(query, meter, opts) do
-        run(conn, &run_prepare/5, query, meter, opts)
+        run(conn, &run_prepare/4, query, meter, opts)
       end
     log(result, :prepare, query, nil)
   end
@@ -478,7 +476,7 @@ defmodule DBConnection do
   end
 
   defp parsed_prepare_execute(conn, query, params, meter, opts) do
-    with {:ok, query, result, meter} <- run(conn, &run_prepare_execute/6, query, params, meter, opts),
+    with {:ok, query, result, meter} <- run(conn, &run_prepare_execute/5, query, params, meter, opts),
          {:ok, result, meter} <- decode(query, result, meter, opts) do
       {:ok, query, result, meter}
     end
@@ -532,7 +530,7 @@ defmodule DBConnection do
           parsed_prepare_execute(conn, query, params, meter, opts)
 
         {:ok, params, meter} ->
-          with {:ok, query, result, meter} <- run(conn, &run_execute/6, query, params, meter, opts),
+          with {:ok, query, result, meter} <- run(conn, &run_execute/5, query, params, meter, opts),
                {:ok, result, meter} <- decode(query, result, meter, opts) do
             {:ok, query, result, meter}
           end
@@ -587,7 +585,7 @@ defmodule DBConnection do
     {:ok, result} | {:error, Exception.t}
   def close(conn, query, opts \\ []) do
     conn
-    |> cleanup(&run_close/6, [query], meter(opts), opts)
+    |> run_cleanup(&run_close/4, [query], meter(opts), opts)
     |> log(:close, query, nil)
   end
 
@@ -639,42 +637,47 @@ defmodule DBConnection do
   @spec run(conn, (t -> result), opts :: Keyword.t) :: result when result: var
   def run(conn, fun, opts \\ [])
   def run(%DBConnection{} = conn, fun, _) do
-    case fetch_info(conn, nil) do
-      {:ok, _conn_state, _meter} ->
-        fun.(conn)
-      {:error, err, _meter} ->
-        raise err
-    end
+    fun.(conn)
   end
   def run(pool, fun, opts) do
     case checkout(pool, nil, opts) do
-      {:ok, conn, _, _} ->
+      {:ok, conn, _} ->
+        old_status = status(conn, opts)
+
         try do
-          status = status(conn, opts)
-          {fun.(conn), status, status(conn, opts)}
+          result = fun.(conn)
+
+          case run(conn, &run_status/3, nil, opts) do
+            {^old_status, _meter} ->
+              {:ok, result}
+            {new_status, _meter} ->
+              {:nomatch, old_status, new_status}
+            {:error, _err, _meter} ->
+              {:error, result}
+            {kind, reason, stack, _meter} ->
+              :erlang.raise(kind, reason, stack)
+          end
         catch
           kind, error ->
             stacktrace = System.stacktrace()
             checkin(conn)
             :erlang.raise(kind, error, stacktrace)
         else
-          {result, status, status} ->
+          {:ok, result} ->
             checkin(conn)
             result
 
-          {result, old_status, new_status} ->
-            case fetch_info(conn, nil) do
-              {:ok, conn_state, _meter} ->
-                err = DBConnection.ConnectionError.exception(
-                  "connection was checked out with status #{inspect(old_status)} " <>
-                    "but it was checked in with status #{inspect(new_status)}"
-                )
-                delete_disconnect(conn, conn_state, err)
-                raise err
+          {:error, result} ->
+            checkin(conn)
+            result
 
-              {:error, _, _} ->
-                result
-            end
+          {:nomatch, old_status, new_status} ->
+            err = DBConnection.ConnectionError.exception(
+              "connection was checked out with status #{inspect(old_status)} " <>
+                "but it was checked in with status #{inspect(new_status)}"
+            )
+            disconnect(conn, err)
+            raise err
         end
 
       {:error, err, _} ->
@@ -792,13 +795,8 @@ defmodule DBConnection do
     throw({__MODULE__, conn_ref, reason})
   end
 
-  def rollback(%DBConnection{} = conn, _reason) do
-    case get_info(conn, nil) do
-      {:error, err, _meter} ->
-        raise err
-      {_status, _conn_state, _meter} ->
-        raise "not inside transaction"
-    end
+  def rollback(%DBConnection{} = _conn, _reason) do
+    raise "not inside transaction"
   end
 
   @doc """
@@ -834,7 +832,7 @@ defmodule DBConnection do
   """
   @spec status(conn, opts :: Keyword.t) :: status
   def status(conn, opts \\ []) do
-    case run(conn, &run_status/4, nil, opts) do
+    case run(conn, &run_status/3, nil, opts) do
       {status, _meter} ->
         status
       {:error, _err, _meter} ->
@@ -966,30 +964,22 @@ defmodule DBConnection do
         stack = System.stacktrace()
         {kind, reason, stack, meter}
     else
-      {:ok, pool_ref, conn_mod, conn_state} ->
-        conn = %DBConnection{
-          holder: holder,
-          pool_ref: pool_ref,
-          conn_mod: conn_mod,
-          conn_ref: make_ref()
-        }
-
-        put_info(conn, conn_state)
-        {:ok, conn, conn_state, meter}
+      {:ok, pool_ref, _conn_mod, _conn_state} ->
+        conn = %DBConnection{pool_ref: pool_ref, conn_ref: make_ref()}
+        {:ok, conn, meter}
       {:error, err} ->
         {:error, err, meter}
     end
   end
 
   defp checkout(%DBConnection{} = conn, fun, meter, opts) do
-    with {:ok, conn_state, meter} <- fetch_info(conn, meter),
-         {:ok, result, meter} <- fun.(conn, conn_state, meter, opts) do
+    with {:ok, result, meter} <- fun.(conn, meter, opts) do
       {:ok, conn, result, meter}
     end
   end
   defp checkout(pool, fun, meter, opts) do
-    with {:ok, conn, conn_state, meter} <- checkout(pool, meter, opts) do
-      case fun.(conn, conn_state, meter, opts) do
+    with {:ok, conn, meter} <- checkout(pool, meter, opts) do
+      case fun.(conn, meter, opts) do
         {:ok, result, meter} ->
           {:ok, conn, result, meter}
         error ->
@@ -999,87 +989,61 @@ defmodule DBConnection do
     end
   end
 
-  defp checkin(conn) do
-    case delete_info(conn) do
-      {:ok, conn_state} ->
-        %DBConnection{holder: holder, pool_ref: pool_ref} = conn
-        _ = holder.checkin(pool_ref, conn_state)
-        :ok
-      {:error, _} = error ->
-        error
-    end
+  defp checkin(%DBConnection{pool_ref: pool_ref}) do
+    Holder.checkin(pool_ref)
   end
 
   defp checkin(%DBConnection{} = conn, fun, meter, opts) do
-    with {:ok, conn_state, meter} <- fetch_info(conn, meter) do
-      return = fun.(conn, conn_state, meter, opts)
-      checkin(conn)
-      return
-    end
+    return = fun.(conn, meter, opts)
+    checkin(conn)
+    return
   end
   defp checkin(pool, fun, meter, opts) do
     run(pool, fun, meter, opts)
   end
 
-  defp delete_disconnect(conn, conn_state, err) do
-    _ = delete_info(conn)
-    %DBConnection{holder: holder, pool_ref: pool_ref} = conn
-    _ = holder.disconnect(pool_ref, err, conn_state)
+  defp disconnect(%DBConnection{pool_ref: pool_ref}, err) do
+    _ = Holder.disconnect(pool_ref, err)
     :ok
   end
 
-  defp delete_stop(conn, conn_state, kind, reason, stack) do
-    _ = delete_info(conn)
-    msg = "client #{inspect self()} stopped: " <>
-      Exception.format(kind, reason, stack)
+  defp stop(%DBConnection{pool_ref: pool_ref}, kind, reason, stack) do
+    msg = "client #{inspect self()} stopped: " <> Exception.format(kind, reason, stack)
     exception = DBConnection.ConnectionError.exception(msg)
-    %DBConnection{holder: holder, pool_ref: pool_ref} = conn
-    _ = holder.stop(pool_ref, exception, conn_state)
+    _ = Holder.stop(pool_ref, exception)
     :ok
   end
 
-  defp handle(conn, conn_state, fun, args, opts) do
-    %DBConnection{conn_mod: conn_mod} = conn
-
-    try do
-      apply(conn_mod, fun, args ++ [opts, conn_state])
-    catch
-      kind, reason ->
-        stack = System.stacktrace()
-        delete_stop(conn, conn_state, kind, reason, stack)
-        {:catch, kind, reason, stack}
-    end
-  end
-
-  defp handle_common_result(return, conn, conn_state, meter) do
+  defp handle_common_result(return, conn, meter) do
     case return do
-      {:ok, result, conn_state} ->
-        put_info(conn, conn_state)
+      {:ok, result, _conn_state} ->
         {:ok, result, meter}
 
-      {:error, err, conn_state} ->
-        put_info(conn, conn_state)
+      {:error, err, _conn_state} ->
         {:error, err, meter}
 
-      {:disconnect, err, conn_state} ->
-        delete_disconnect(conn, conn_state, err)
+      {:disconnect, err, _conn_state} ->
+        disconnect(conn, err)
         {:error, err, meter}
 
       {:catch, kind, reason, stack} ->
+        stop(conn, kind, reason, stack)
         {kind, reason, stack, meter}
 
       other ->
-        bad_return!(other, conn, conn_state, meter)
+        bad_return!(other, conn, meter)
     end
   end
 
-  defp bad_return!(other, conn, conn_state, meter) do
+  @compile {:inline, bad_return!: 3}
+
+  defp bad_return!(other, conn, meter) do
     try do
       raise DBConnection.ConnectionError, "bad return value: #{inspect other}"
     catch
       :error, reason ->
         stack = System.stacktrace()
-        delete_stop(conn, conn_state, :error, reason, stack)
+        stop(conn, :error, reason, stack)
         {:error, reason, stack, meter}
     end
   end
@@ -1162,7 +1126,7 @@ defmodule DBConnection do
   end
 
   defp parsed_prepare_declare(conn, query, params, meter, opts) do
-    run(conn, &run_prepare_declare/6, query, params, meter, opts)
+    run(conn, &run_prepare_declare/5, query, params, meter, opts)
   end
 
   defp prepare_declare!(conn, query, params, opts) do
@@ -1181,7 +1145,7 @@ defmodule DBConnection do
           parsed_prepare_declare(conn, query, params, meter, opts)
 
         {:ok, params, meter} ->
-          run(conn, &run_declare/6, query, params, meter, opts)
+          run(conn, &run_declare/5, query, params, meter, opts)
 
         {_, _, _, _} = error ->
           error
@@ -1192,122 +1156,95 @@ defmodule DBConnection do
 
   defp deallocate(conn, query, cursor, opts) do
     conn
-    |> cleanup(&run_deallocate/6, [query, cursor], meter(opts), opts)
+    |> run_cleanup(&run_deallocate/4, [query, cursor], meter(opts), opts)
     |> log(:deallocate, query, cursor)
   end
 
-  defp run_prepare(conn, conn_state, query, meter, opts) do
-    with {:ok, query, meter} <- prepare(conn, conn_state, query, meter, opts) do
+  defp run_prepare(conn, query, meter, opts) do
+    with {:ok, query, meter} <- prepare(conn, query, meter, opts) do
       describe(conn, query, meter, opts)
     end
   end
 
-  defp prepare(conn, conn_state, query, meter, opts) do
-    conn
-    |> handle(conn_state, :handle_prepare, [query], opts)
-    |> handle_common_result(conn, conn_state, event(meter, :prepare))
+  defp prepare(%DBConnection{pool_ref: pool_ref} = conn, query, meter, opts) do
+    pool_ref
+    |> Holder.handle(:handle_prepare, [query], opts)
+    |> handle_common_result(conn, event(meter, :prepare))
   end
 
-  defp run_prepare_execute(conn, conn_state, query, params, meter, opts) do
-    with {:ok, query, meter}
-          <- run_prepare(conn, conn_state, query, meter, opts),
-         {:ok, params, meter} <- encode(conn, query, params, meter, opts),
-         {:ok, conn_state, meter} <- fetch_info(conn, meter),
-         {:ok, result, meter}
-          <- run_execute(conn, conn_state, query, params, meter, opts) do
-      # run_execute maybe return {:ok, new_query, result, meter}, replacing the
-      # query prepared in run_prepare but it should not happen because just
-      # prepared.
-      {:ok, query, result, meter}
+  defp run_prepare_execute(conn, query, params, meter, opts) do
+    with {:ok, query, meter} <- run_prepare(conn, query, meter, opts),
+         {:ok, params, meter} <- encode(conn, query, params, meter, opts) do
+      run_execute(conn, query, params, meter, opts)
     end
   end
 
-  defp run_execute(conn, conn_state, query, params, meter, opts) do
+  defp run_execute(conn, query, params, meter, opts) do
+    %DBConnection{pool_ref: pool_ref} = conn
     meter = event(meter, :execute)
 
-    case handle(conn, conn_state, :handle_execute, [query, params], opts) do
-      {:ok, query, result, conn_state} ->
-        put_info(conn, conn_state)
+    case Holder.handle(pool_ref, :handle_execute, [query, params], opts) do
+      {:ok, query, result, _conn_state} ->
         {:ok, query, result, meter}
 
       {:ok, _, _} = other ->
-        bad_return!(other, conn, conn_state, meter)
+        bad_return!(other, conn, meter)
 
       other ->
-        handle_common_result(other, conn, conn_state, meter)
+        handle_common_result(other, conn, meter)
     end
   end
 
   defp raised_close(conn, query, meter, opts, kind, reason, stack) do
-    with {status, conn_state, meter} when status in [:ok, :failed]
-          <- get_info(conn, meter),
-         {:ok, _, meter}
-          <- run_close(conn, status, conn_state, [query], meter, opts) do
+    with {:ok, _, meter} <- run_close(conn, [query], meter, opts) do
       {kind, reason, stack, meter}
     end
   end
 
-  defp run_close(conn, status, conn_state, args, meter, opts) do
+  defp run_close(conn, args, meter, opts) do
     meter = event(meter, :close)
-    cleanup(conn, status, conn_state, :handle_close, args, meter, opts)
+    cleanup(conn, :handle_close, args, meter, opts)
   end
 
-  defp cleanup(%DBConnection{} = conn, fun, args, meter, opts) do
-    with {status, conn_state, meter} when status in [:ok, :failed]
-          <- get_info(conn, meter) do
-      fun.(conn, status, conn_state, args, meter, opts)
-    end
+  defp run_cleanup(%DBConnection{} = conn, fun, args, meter, opts) do
+    fun.(conn, args, meter, opts)
   end
-  defp cleanup(pool, fun, args, meter, opts) do
-    with {:ok, conn, conn_state, meter} <- checkout(pool, meter, opts) do
+  defp run_cleanup(pool, fun, args, meter, opts) do
+    with {:ok, conn, meter} <- checkout(pool, meter, opts) do
       try do
-        fun.(conn, :ok, conn_state, args, meter, opts)
+        fun.(conn, args, meter, opts)
       after
         checkin(conn)
       end
     end
   end
 
-  defp cleanup(conn, status, conn_state, fun, args, meter, opts) do
-    %DBConnection{conn_mod: conn_mod} = conn
-    try do
-      apply(conn_mod, fun, args ++ [opts, conn_state])
-    else
-      {:ok, result, conn_state} ->
-        put_info(conn, status, conn_state)
+  defp cleanup(conn, fun, args, meter, opts) do
+    %DBConnection{pool_ref: pool_ref} = conn
+
+    case Holder.cleanup(pool_ref, fun, args, opts) do
+      {:ok, result, _conn_state} ->
         {:ok, result, meter}
-      {:error, err, conn_state} ->
-        put_info(conn, status, conn_state)
+      {:error, err, _conn_state} ->
         {:error, err, meter}
-      {:disconnect, err, conn_state} ->
-        delete_disconnect(conn, conn_state, err)
+      {:disconnect, err, _conn_state} ->
+        disconnect(conn, err)
         {:error, err, meter}
-      other ->
-        try do
-          raise DBConnection.ConnectionError, "bad return value: #{inspect other}"
-        catch
-          :error, reason ->
-            stack = System.stacktrace()
-            delete_stop(conn, conn_state, :error, reason, stack)
-            {:error, reason, stack, meter}
-        end
-    catch
-      kind, reason ->
-        stack = System.stacktrace()
-        delete_stop(conn, conn_state, kind, reason, stack)
+      {:catch, kind, reason, stack} ->
+        stop(conn, kind, reason, stack)
         {kind, reason, stack, meter}
+      other ->
+        bad_return!(other, conn, meter)
     end
   end
 
   defp run(%DBConnection{} = conn, fun, meter, opts) do
-    with {:ok, conn_state, meter} <- fetch_info(conn, meter) do
-      fun.(conn, conn_state, meter, opts)
-    end
+    fun.(conn, meter, opts)
   end
   defp run(pool, fun, meter, opts) do
-    with {:ok, conn, conn_state, meter} <- checkout(pool, meter, opts) do
+    with {:ok, conn, meter} <- checkout(pool, meter, opts) do
       try do
-        fun.(conn, conn_state, meter, opts)
+        fun.(conn, meter, opts)
       after
         checkin(conn)
       end
@@ -1315,14 +1252,12 @@ defmodule DBConnection do
   end
 
   defp run(%DBConnection{} = conn, fun, arg, meter, opts) do
-    with {:ok, conn_state, meter} <- fetch_info(conn, meter) do
-      fun.(conn, conn_state, arg, meter, opts)
-    end
+    fun.(conn, arg, meter, opts)
   end
   defp run(pool, fun, arg, meter, opts) do
-    with {:ok, conn, conn_state, meter} <- checkout(pool, meter, opts) do
+    with {:ok, conn, meter} <- checkout(pool, meter, opts) do
       try do
-        fun.(conn, conn_state, arg, meter, opts)
+        fun.(conn, arg, meter, opts)
       after
         checkin(conn)
       end
@@ -1330,14 +1265,12 @@ defmodule DBConnection do
   end
 
   defp run(%DBConnection{} = conn, fun, arg1, arg2, meter, opts) do
-    with {:ok, conn_state, meter} <- fetch_info(conn, meter) do
-      fun.(conn, conn_state, arg1, arg2, meter, opts)
-    end
+    fun.(conn, arg1, arg2, meter, opts)
   end
   defp run(pool, fun, arg1, arg2, meter, opts) do
-    with {:ok, conn, conn_state, meter} <- checkout(pool, meter, opts) do
+    with {:ok, conn, meter} <- checkout(pool, meter, opts) do
       try do
-        fun.(conn, conn_state, arg1, arg2, meter, opts)
+        fun.(conn, arg1, arg2, meter, opts)
       after
         checkin(conn)
       end
@@ -1445,73 +1378,67 @@ defmodule DBConnection do
     end
   end
 
-  defp fail(conn) do
-    case get_info(conn, nil) do
-      {:ok, conn_state, _meter} ->
-        put_info(conn, :failed, conn_state)
-      _ ->
-        :ok
+  defp fail(%DBConnection{pool_ref: pool_ref}) do
+    case Holder.status?(pool_ref, :ok) do
+      true -> Holder.put_status(pool_ref, :aborted)
+      false -> :ok
     end
   end
 
-  defp conclude(%DBConnection{conn_ref: conn_ref} = conn, result) do
-    case get_info(conn, nil) do
-      {:ok, _conn_state, _meter} ->
-        result
-      _ ->
-        throw({__MODULE__, conn_ref, :rollback})
+  defp conclude(%DBConnection{pool_ref: pool_ref, conn_ref: conn_ref}, result) do
+    case Holder.status?(pool_ref, :ok) do
+      true -> result
+      false -> throw({__MODULE__, conn_ref, :rollback})
     end
   end
 
-  defp reset(conn) do
-    case get_info(conn, nil) do
-      {:failed, conn_state, _meter} ->
-        put_info(conn, :ok, conn_state)
-      _ ->
-        :ok
+  defp reset(%DBConnection{pool_ref: pool_ref}) do
+    case Holder.status?(pool_ref, :aborted) do
+      true -> Holder.put_status(pool_ref, :ok)
+      false -> :ok
     end
   end
 
   defp begin(conn, run, opts) do
     conn
-    |> run.(&run_begin/4, meter(opts), opts)
+    |> run.(&run_begin/3, meter(opts), opts)
     |> log(:begin, :begin, nil)
   end
 
-  defp run_begin(conn, conn_state, meter, opts) do
+  defp run_begin(conn, meter, opts) do
+    %DBConnection{pool_ref: pool_ref} = conn
     meter = event(meter, :begin)
 
-    case handle(conn, conn_state, :handle_begin, [], opts) do
-      {status, conn_state} when status in [:idle, :transaction, :error] ->
-        put_info(conn, conn_state)
+    case Holder.handle(pool_ref, :handle_begin, [], opts) do
+      {status, _conn_state} when status in [:idle, :transaction, :error] ->
         status_disconnect(conn, status, meter)
 
       other ->
-        handle_common_result(other, conn, conn_state, meter)
+        handle_common_result(other, conn, meter)
     end
   end
 
   defp rollback(conn, run, opts) do
     conn
-    |> run.(&run_rollback/4, meter(opts), opts)
+    |> run.(&run_rollback/3, meter(opts), opts)
     |> log(:rollback, :rollback, nil)
   end
 
-  defp run_rollback(conn, conn_state, meter, opts) do
+  defp run_rollback(conn, meter, opts) do
+    %DBConnection{pool_ref: pool_ref} = conn
     meter = event(meter, :rollback)
 
-    case handle(conn, conn_state, :handle_rollback, [], opts) do
-      {status, conn_state} when status in [:idle, :transaction, :error] ->
-        put_info(conn, conn_state)
+    case Holder.handle(pool_ref, :handle_rollback, [], opts) do
+      {status, _conn_state} when status in [:idle, :transaction, :error] ->
         status_disconnect(conn, status, meter)
 
       other ->
-        handle_common_result(other, conn, conn_state, meter)
+        handle_common_result(other, conn, meter)
     end
   end
 
   defp commit(conn, run, opts) do
-    case run.(conn, &run_commit/4, meter(opts), opts) do
+    case run.(conn, &run_commit/3, meter(opts), opts) do
       {:rollback, {:ok, result, meter}} ->
         log(meter, :commit, :rollback, nil, {:ok, result})
         err = DBConnection.TransactionError.exception(:error)
@@ -1525,88 +1452,73 @@ defmodule DBConnection do
     end
   end
 
-  defp run_commit(conn, conn_state, meter, opts) do
+  defp run_commit(conn, meter, opts) do
+    %DBConnection{pool_ref: pool_ref} = conn
     meter = event(meter, :commit)
 
-    case handle(conn, conn_state, :handle_commit, [], opts) do
-      {:error, conn_state} ->
-        {:rollback, run_rollback(conn, conn_state, meter, opts)}
+    case Holder.handle(pool_ref, :handle_commit, [], opts) do
+      {:error, _conn_state} ->
+        {:rollback, run_rollback(conn, meter, opts)}
 
-      {status, conn_state} when status in [:idle, :transaction] ->
-        put_info(conn, conn_state)
+      {status, _conn_state} when status in [:idle, :transaction] ->
         {:commit, status_disconnect(conn, status, meter)}
 
       other ->
-        {:commit, handle_common_result(other, conn, conn_state, meter)}
+        {:commit, handle_common_result(other, conn, meter)}
     end
   end
 
   defp status_disconnect(conn, status, meter) do
-    # conn_state must valid as just put there in previous call
-    {:ok, conn_state, meter} = fetch_info(conn, meter)
     err = DBConnection.TransactionError.exception(status)
-    delete_disconnect(conn, conn_state, err)
+    disconnect(conn, err)
     {:error, err, meter}
   end
 
-  defp run_status(conn, conn_state, meter, opts) do
-    %DBConnection{conn_mod: conn_mod} = conn
-    try do
-      apply(conn_mod, :handle_status, [opts, conn_state])
-    else
-      {status, conn_state} when status in [:idle, :transaction, :error] ->
-        put_info(conn, conn_state)
-        {status, conn_state}
-      {:disconnect, err, conn_state} ->
-        delete_disconnect(conn, conn_state, err)
-        {:error, meter}
-      other ->
-        try do
-          raise DBConnection.ConnectionError, "bad return value: #{inspect other}"
-        catch
-          :error, reason ->
-            stack = System.stacktrace()
-            delete_stop(conn, conn_state, :error, reason, stack)
-            {:error, reason, stack, meter}
-        end
-    catch
-      kind, reason ->
-        stack = System.stacktrace()
-        delete_stop(conn, conn_state, kind, reason, stack)
+  defp run_status(conn, meter, opts) do
+    %DBConnection{pool_ref: pool_ref} = conn
+
+    case Holder.handle(pool_ref, :handle_status, [], opts) do
+      {status, _conn_state} when status in [:idle, :transaction, :error] ->
+        {status, meter}
+      {:disconnect, err, _conn_state} ->
+        disconnect(conn, err)
+        {:error, err, meter}
+      {:catch, kind, reason, stack} ->
+        stop(conn, kind, reason, stack)
         {kind, reason, stack, meter}
+      other ->
+        bad_return!(other, conn, meter)
     end
   end
 
-  defp run_prepare_declare(conn, conn_info, query, params, meter, opts) do
-    with {:ok, query, meter} <- prepare(conn, conn_info, query, meter, opts),
+  defp run_prepare_declare(conn, query, params, meter, opts) do
+    with {:ok, query, meter} <- prepare(conn, query, meter, opts),
          {:ok, query, meter} <- describe(conn, query, meter, opts),
          {:ok, params, meter} <- encode(conn, query, params, meter, opts),
-         {:ok, conn_state, meter} <- fetch_info(conn, meter),
-         {:ok, query, cursor, meter}
-          <- run_declare(conn, conn_state, query, params, meter, opts) do
+         {:ok, query, cursor, meter} <- run_declare(conn, query, params, meter, opts) do
       {:ok, query, cursor, meter}
     end
   end
 
-  defp run_declare(conn, conn_state, query, params, meter, opts) do
+  defp run_declare(conn, query, params, meter, opts) do
+    %DBConnection{pool_ref: pool_ref} = conn
     meter = event(meter, :declare)
 
-    case handle(conn, conn_state, :handle_declare, [query, params], opts) do
-      {:ok, query, result, conn_state} ->
-        put_info(conn, conn_state)
+    case Holder.handle(pool_ref, :handle_declare, [query, params], opts) do
+      {:ok, query, result, _conn_state} ->
         {:ok, query, result, meter}
 
       {:ok, _, _} = other ->
-        bad_return!(other, conn, conn_state, meter)
+        bad_return!(other, conn, meter)
 
       other ->
-        handle_common_result(other, conn, conn_state, meter)
+        handle_common_result(other, conn, meter)
     end
   end
 
   defp stream_fetch(conn, {:cont, query, cursor}, opts) do
     conn
-    |> run(&run_stream_fetch/5, [query, cursor], meter(opts), opts)
+    |> run(&run_stream_fetch/4, [query, cursor], meter(opts), opts)
     |> log(:fetch, query, cursor)
     |> case do
       {ok, result} when ok in [:cont, :halt] ->
@@ -1620,93 +1532,43 @@ defmodule DBConnection do
     {:halt, state}
   end
 
-  defp run_stream_fetch(conn, conn_state, args, meter, opts) do
+  defp run_stream_fetch(conn, args, meter, opts) do
     [query, _] = args
 
-    with {ok, result, meter} when ok in [:cont, :halt] <-
-           run_fetch(conn, conn_state, args, meter, opts),
+    with {ok, result, meter} when ok in [:cont, :halt] <- run_fetch(conn, args, meter, opts),
          {:ok, result, meter} <- decode(query, result, meter, opts) do
       {ok, result, meter}
     end
   end
 
-  defp run_fetch(conn, conn_state, args, meter, opts) do
+  defp run_fetch(conn, args, meter, opts) do
+    %DBConnection{pool_ref: pool_ref} = conn
     meter = event(meter, :fetch)
 
-    case handle(conn, conn_state, :handle_fetch, args, opts) do
-      {:cont, result, conn_state}  ->
-        put_info(conn, conn_state)
+    case Holder.handle(pool_ref, :handle_fetch, args, opts) do
+      {:cont, result, _conn_state}  ->
         {:cont, result, meter}
 
-      {:halt, result, conn_state}  ->
-        put_info(conn, conn_state)
+      {:halt, result, _conn_state}  ->
         {:halt, result, meter}
 
       other ->
-        handle_common_result(other, conn, conn_state, meter)
+        handle_common_result(other, conn, meter)
     end
   end
 
   defp stream_deallocate(conn, {_status, query, cursor}, opts),
     do: deallocate(conn, query, cursor, opts)
 
-  defp run_deallocate(conn, status, conn_state, args, meter, opts) do
+  defp run_deallocate(conn, args, meter, opts) do
     meter = event(meter, :deallocate)
-    cleanup(conn, status, conn_state, :handle_deallocate, args, meter, opts)
+    cleanup(conn, :handle_deallocate, args, meter, opts)
   end
 
   defp resource(%DBConnection{} = conn, start, next, stop, opts) do
-    start = fn() -> start.(conn, opts) end
-    next = fn(state) -> next.(conn, state, opts) end
-    stop = fn(state) -> stop.(conn, state, opts) end
+    start = fn -> start.(conn, opts) end
+    next = fn state -> next.(conn, state, opts) end
+    stop = fn state -> stop.(conn, state, opts) end
     Stream.resource(start, next, stop)
   end
-
-  defp put_info(conn, status \\ :ok, conn_state) do
-    _ = Process.put(key(conn), {status, conn_state})
-    :ok
-  end
-
-  defp fetch_info(conn, meter) do
-    case Process.get(key(conn)) do
-      {:ok, conn_state} ->
-        {:ok, conn_state, meter}
-
-      {:failed, _conn_state} ->
-        msg = "transaction rolling back"
-        {:error, DBConnection.ConnectionError.exception(msg), meter}
-
-      nil ->
-
-        msg = "connection is closed"
-        {:error, DBConnection.ConnectionError.exception(msg), meter}
-    end
-  end
-
-  defp get_info(conn, meter) do
-    case Process.get(key(conn)) do
-      {status, conn_state} ->
-        {status, conn_state, meter}
-
-      nil ->
-        msg = "connection is closed"
-        {:error, DBConnection.ConnectionError.exception(msg), meter}
-    end
-  end
-
-  defp delete_info(conn) do
-    case Process.delete(key(conn)) do
-      {:ok, _conn_state} = ok ->
-        ok
-
-      {:failed, conn_state} ->
-        {:ok, conn_state}
-
-      nil ->
-        msg = "connection is closed"
-        {:error, DBConnection.ConnectionError.exception(msg)}
-    end
-  end
-
-  defp key(%DBConnection{conn_ref: conn_ref}), do: {__MODULE__, conn_ref}
 end

@@ -82,8 +82,8 @@ defmodule DBConnection.Ownership.Proxy do
         holder = Holder.new(self(), owner_ref, mod, conn_state)
         state = %{state | pool_ref: pool_ref, holder: holder}
         checkout(from, state)
-      {:error, err} = error ->
-        GenServer.reply(from, error)
+      {:error, err} ->
+        Holder.reply_error(from, err)
         {:stop, {:shutdown, err}, state}
     end
   end
@@ -100,7 +100,7 @@ defmodule DBConnection.Ownership.Proxy do
     else
       message = "connection not available and queuing is disabled"
       err = DBConnection.ConnectionError.exception(message)
-      GenServer.reply(from, {:error, err})
+      Holder.reply_error(from, err)
       {:noreply, state}
     end
   end
@@ -157,8 +157,8 @@ defmodule DBConnection.Ownership.Proxy do
 
   # If it is down but it has no client, checkin
   defp down(reason, %{client: nil} = state) do
-    pool_done(reason, state, fn pool_ref, _, conn_state ->
-      Holder.checkin(pool_ref, conn_state)
+    pool_done(reason, state, fn pool_ref, _ ->
+      Holder.checkin(pool_ref)
     end)
   end
 
@@ -169,18 +169,18 @@ defmodule DBConnection.Ownership.Proxy do
   end
 
   defp pool_disconnect(err, state) do
-    pool_done(err, state, &Holder.disconnect/3)
+    pool_done(err, state, &Holder.disconnect/2)
   end
 
   defp pool_stop(reason, state) do
-    pool_done(reason, state, &Holder.stop/3)
+    pool_done(reason, state, &Holder.stop/2)
   end
 
   defp pool_done(err, state, done) do
     %{holder: holder, pool_ref: pool_ref} = state
     if holder do
-      conn_state = Holder.get_state(holder)
-      done.(pool_ref, err, conn_state)
+      Holder.put_state(pool_ref, Holder.delete(holder))
+      done.(pool_ref, err)
     end
     {:stop, {:shutdown, err}, state}
   end
@@ -202,9 +202,8 @@ defmodule DBConnection.Ownership.Proxy do
   end
 
   defp drop(delay, from) do
-    message = "connection not available " <>
-      "and request was dropped from queue after #{delay}ms"
+    message = "connection not available and request was dropped from queue after #{delay}ms"
     err = DBConnection.ConnectionError.exception(message)
-    GenServer.reply(from, {:error, err})
+    Holder.reply_error(from, err)
   end
 end

@@ -39,8 +39,6 @@ defmodule DBConnection.Ownership do
     Supervisor.Spec.worker(Manager, [args])
   end
 
-  ## Ownership API
-
   @doc """
   Explicitly checks a connection out from the ownership manager.
 
@@ -54,8 +52,8 @@ defmodule DBConnection.Ownership do
   def ownership_checkout(manager, opts) do
     with {:ok, pid} <- Manager.checkout(manager, opts) do
       case Holder.checkout(pid, opts) do
-        {:ok, pool_ref, _module, state} ->
-          Holder.checkin(pool_ref, state)
+        {:ok, pool_ref, _module, _state} ->
+          Holder.checkin(pool_ref)
         {:error, err} ->
           raise err
       end

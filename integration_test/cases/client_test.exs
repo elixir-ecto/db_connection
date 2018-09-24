@@ -66,8 +66,12 @@ defmodule ClientTest do
       send(parent, {:done, self()})
     end)
 
-    P.run(pool, fn(_) ->
+    P.run(pool, fn(conn) ->
       assert_receive :reconnected
+
+      assert {:error, %DBConnection.ConnectionError{}} =
+        P.execute(conn, %Q{}, [:first])
+
       send(pid, {:go, parent})
       assert_receive {:done, ^pid}
     end, [timeout: 100])
@@ -78,20 +82,22 @@ defmodule ClientTest do
       {:disconnect, _},
       {:connect, _},
       {:handle_status, _},
-      {:handle_status, _},
       {:handle_status, _}] = A.record(agent)
   end
 
-  test "reconnect when client timeout and then disconnects" do
+  test "reconnect when client timeout and then returns ok even when disconnected" do
     stack = [
       {:ok, :state},
       {:idle, :state},
+      fn(_, _, _, _) ->
+        assert_receive :reconnected
+        {:ok, %Q{}, %R{}, :new_state}
+      end,
       :ok,
       fn(opts) ->
         send(opts[:parent], :reconnected)
         {:ok, :new_state}
       end,
-      {:disconnect, RuntimeError.exception("oops"), :bad_state},
       {:idle, :new_state},
       {:idle, :new_state},
       {:ok, %Q{}, %R{}, :newer_state}]
@@ -103,8 +109,9 @@ defmodule ClientTest do
     {:ok, pool} = P.start_link(opts)
 
     assert P.run(pool, fn(conn) ->
-      assert_receive :reconnected
-      assert {:error, %RuntimeError{}} = P.execute(conn, %Q{}, [:param])
+      assert {:ok, %Q{}, %R{}} =
+               P.execute(conn, %Q{}, [:first])
+
       spawn_link(fn() ->
         _ = Process.put(:agent, agent)
         assert P.run(pool, fn(_) -> :result end) == :result
@@ -114,23 +121,27 @@ defmodule ClientTest do
     end, [timeout: 100]) == :result
 
     assert_receive :done
-    assert P.execute(pool, %Q{}, [:param]) == {:ok, %Q{}, %R{}}
+    assert P.execute(pool, %Q{}, [:second]) == {:ok, %Q{}, %R{}}
 
     assert [
       {:connect, _},
       {:handle_status, _},
+      {:handle_execute, [%Q{}, [:first], _, :state]},
       {:disconnect, _},
       {:connect, _},
-      {:handle_execute, [%Q{}, [:param], _, :state]},
       {:handle_status, _},
       {:handle_status, _},
-      {:handle_execute, [%Q{}, [:param], _, :new_state]}] = A.record(agent)
+      {:handle_execute, [%Q{}, [:second], _, :new_state]}] = A.record(agent)
   end
 
-  test "reconnect when client timeout and then crashes" do
+  test "reconnect when client timeout and then returns error when disconnected" do
     stack = [
       {:ok, :state},
       {:idle, :state},
+      fn(_, _, _, _) ->
+        assert_receive :reconnected
+        {:disconnect, DBConnection.ConnectionError.exception("oops"), :new_state}
+      end,
       :ok,
       fn(opts) ->
         send(opts[:parent], :reconnected)
@@ -138,9 +149,53 @@ defmodule ClientTest do
       end,
       {:idle, :new_state},
       {:idle, :new_state},
+      {:ok, %Q{}, %R{}, :newer_state}]
+    {:ok, agent} = A.start_link(stack)
+
+    parent = self()
+
+    opts = [agent: agent, parent: parent]
+    {:ok, pool} = P.start_link(opts)
+
+    assert P.run(pool, fn(conn) ->
+      assert {:error, %DBConnection.ConnectionError{message: "oops"}} =
+               P.execute(conn, %Q{}, [:first])
+
+      spawn_link(fn() ->
+        _ = Process.put(:agent, agent)
+        assert P.run(pool, fn(_) -> :result end) == :result
+        send(parent, :done)
+      end)
+      :result
+    end, [timeout: 100]) == :result
+
+    assert_receive :done
+    assert P.execute(pool, %Q{}, [:second]) == {:ok, %Q{}, %R{}}
+
+    assert [
+      {:connect, _},
+      {:handle_status, _},
+      {:handle_execute, [%Q{}, [:first], _, :state]},
+      {:disconnect, _},
+      {:connect, _},
+      {:handle_status, _},
+      {:handle_status, _},
+      {:handle_execute, [%Q{}, [:second], _, :new_state]}] = A.record(agent)
+  end
+
+  test "reconnect when client timeout and then crashes" do
+    stack = [
+      {:ok, :state},
+      {:idle, :state},
       fn(_, _, _, _) ->
         throw(:oops)
       end,
+      fn(opts) ->
+        send(opts[:parent], :reconnected)
+        {:ok, :new_state}
+      end,
+      {:idle, :new_state},
+      {:idle, :new_state},
       {:ok, %Q{}, %R{}, :newer_state}]
     {:ok, agent} = A.start_link(stack)
 
@@ -151,32 +206,29 @@ defmodule ClientTest do
 
     try do
       P.run(pool, fn(conn) ->
-        assert_receive :reconnected
-
         spawn_link(fn ->
           _ = Process.put(:agent, agent)
           assert P.run(pool, fn(_) -> :result end) == :result
           send(parent, :done)
         end)
 
-        assert_receive :done
-        P.execute(conn, %Q{}, [:param])
+        P.execute(conn, %Q{}, [:first])        
       end, [timeout: 100])
     catch
       :throw, :oops ->
         :ok
     end
 
-    assert P.execute(pool, %Q{}, [:param]) == {:ok, %Q{}, %R{}}
+    assert_receive :done
+    assert P.execute(pool, %Q{}, [:second]) == {:ok, %Q{}, %R{}}
 
     assert [
       {:connect, _},
       {:handle_status, _},
-      {:disconnect, _},
+      {:handle_execute, [%Q{}, [:first], _, :state]},
       {:connect, _},
       {:handle_status, _},
       {:handle_status, _},
-      {:handle_execute, [%Q{}, [:param], _, :state]},
-      {:handle_execute, [%Q{}, [:param], _, :new_state]}] = A.record(agent)
+      {:handle_execute, [%Q{}, [:second], _, :new_state]}] = A.record(agent)
   end
 end

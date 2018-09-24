@@ -62,7 +62,7 @@ defmodule DBConnection.ConnectionPool do
       false ->
         message = "connection not available and queuing is disabled"
         err = DBConnection.ConnectionError.exception(message)
-        GenServer.reply(from, {:error, err})
+        Holder.reply_error(from, err)
         {:noreply, busy}
     end
   end
@@ -244,10 +244,9 @@ defmodule DBConnection.ConnectionPool do
   end
 
   defp drop(delay, from) do
-    message = "connection not available " <>
-      "and request was dropped from queue after #{delay}ms"
+    message = "connection not available and request was dropped from queue after #{delay}ms"
     err = DBConnection.ConnectionError.exception(message)
-    GenServer.reply(from, {:error, err})
+    Holder.reply_error(from, err)
   end
 
   defp start_opts(opts) do
