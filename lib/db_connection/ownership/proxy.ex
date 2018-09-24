@@ -52,20 +52,20 @@ defmodule DBConnection.Ownership.Proxy do
   def handle_info({:DOWN, ref, _, pid, reason},
                   %{owner_ref: ref, client: {client, _}} = state) do
     message = "owner #{inspect pid} exited while client #{inspect client} is still running with: " <> Exception.format_exit(reason)
-    log_and_disconnect(message, state)
+    down(message, state)
   end
 
   def handle_info({:timeout, timer, {__MODULE__, pid, timeout}}, %{ownership_timer: timer} = state) do
     message = "owner #{inspect pid} timed out because " <>
     "it owned the connection for longer than #{timeout}ms (set via the :ownership_timeout option)"
-    log_and_disconnect(message, state)
+    pool_disconnect(DBConnection.ConnectionError.exception(message), state)
   end
 
   def handle_info({:timeout, deadline, {_ref, holder, pid, len}}, %{holder: holder} = state) do
     if Holder.handle_deadline(holder, deadline) do
       message = "client #{inspect pid} timed out because " <>
         "it queued and checked out the connection for longer than #{len}ms"
-      log_and_disconnect(message, state)
+      pool_disconnect(DBConnection.ConnectionError.exception(message), state)
     else
       {:noreply, state}
     end
@@ -171,17 +171,6 @@ defmodule DBConnection.Ownership.Proxy do
   # If it is down but it has a client, disconnect but do not log
   defp down(reason, state) do
     err = DBConnection.ConnectionError.exception(reason)
-    pool_disconnect(err, state)
-  end
-
-  defp log_and_disconnect(reason, state) do
-    err = DBConnection.ConnectionError.exception(reason)
-
-    _ = Logger.error(fn() ->
-      ["Ownership connection (", inspect(self()), ") disconnected: "
-       | Exception.format_banner(:error, err, [])]
-    end)
-
     pool_disconnect(err, state)
   end
 
