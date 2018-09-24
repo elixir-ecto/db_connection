@@ -232,7 +232,7 @@ defmodule DBConnection.Connection do
         {:"ETS-TRANSFER", holder, _pid, {msg, ref, extra}},
         %{client: {ref, :after_connect}} = s
       ) do
-    state = Holder.delete(holder)
+    {_, state} = Holder.delete(holder)
 
     case msg do
       :checkin -> handle_checkin(state, s)

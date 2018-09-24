@@ -5,6 +5,8 @@ defmodule OwnerTest do
   alias TestAgent, as: A
   alias DBConnection.Ownership
 
+  import ExUnit.CaptureLog
+
   test "reconnects when owner exits during a client checkout" do
     stack = [
       {:ok, :state},
@@ -24,16 +26,18 @@ defmodule OwnerTest do
       :ok = Ownership.ownership_checkout(pool, [])
       :ok = Ownership.ownership_allow(pool, self(), parent, [])
       send parent, :allowed
-      :timer.sleep(:infinity)
+      Process.sleep(:infinity)
     end)
 
     assert_receive :allowed
 
-    assert P.run(pool, fn(_) ->
-      Process.exit(owner, :shutdown)
-      assert_receive :reconnected
-      :ok
-    end) == :ok
+    assert capture_log(fn ->
+      assert P.run(pool, fn(_) ->
+        Process.exit(owner, :shutdown)
+        assert_receive :reconnected
+        :ok
+      end) == :ok
+    end) =~ ~r"owner #PID<\d+\.\d+\.\d+> exited while client #PID<\d+\.\d+\.\d+> is still running"
 
     assert [
       {:connect, _},
@@ -67,11 +71,13 @@ defmodule OwnerTest do
 
     :ok = Ownership.ownership_checkout(pool, [ownership_timeout: 100])
 
-    P.run(pool, fn(_) ->
-      assert_receive :reconnected
-      send(pid, {:go, parent})
-      assert_receive {:done, ^pid}
-    end)
+    assert capture_log(fn ->
+      P.run(pool, fn(_) ->
+        assert_receive :reconnected
+        send(pid, {:go, parent})
+        assert_receive {:done, ^pid}
+      end)
+    end) =~ ~r"owner #PID<\d+\.\d+\.\d+> timed out because it owned the connection for longer than 100ms"
 
     assert [
       {:connect, _},
@@ -80,5 +86,35 @@ defmodule OwnerTest do
       {:connect, _},
       {:handle_status, _},
       {:handle_status, _}] = A.record(agent)
+  end
+
+  test "reconnects when client times out through owner" do
+    stack = [
+      {:ok, :state},
+      {:idle, :state},
+      :ok,
+      fn(opts) ->
+        send(opts[:parent], :reconnected)
+        {:ok, :state}
+      end]
+    {:ok, agent} = A.start_link(stack)
+
+    parent = self()
+    opts = [agent: agent, parent: parent]
+    {:ok, pool} = P.start_link(opts)
+
+    :ok = Ownership.ownership_checkout(pool, [])
+
+    assert capture_log(fn ->
+      P.run(pool, fn(_) ->
+        assert_receive :reconnected
+      end, timeout: 0)
+    end) =~ ~r"client #PID<\d+\.\d+\.\d+> timed out"
+
+    assert [
+      {:connect, _},
+      {:handle_status, _},
+      {:disconnect, _},
+      {:connect, _}] = A.record(agent)
   end
 end
