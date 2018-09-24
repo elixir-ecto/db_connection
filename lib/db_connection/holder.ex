@@ -73,36 +73,36 @@ defmodule DBConnection.Holder do
 
   @spec disconnect(pool_ref :: any, err :: Exception.t()) :: :ok
   def disconnect(pool_ref, err) do
-    done(pool_ref, {:error, err}, :disconnect, err)
+    done(pool_ref, :error, :disconnect, err)
   end
 
   @spec stop(pool_ref :: any, err :: Exception.t()) :: :ok
   def stop(pool_ref, err) do
-    done(pool_ref, {:error, err}, :stop, err)
+    done(pool_ref, :error, :stop, err)
   end
 
-  @spec handle(pool_ref :: any, fun :: atom, args :: [term], Keyword.t) :: tuple
+  @spec handle(pool_ref :: any, fun :: atom, args :: [term], Keyword.t()) :: tuple
   def handle(pool_ref, fun, args, opts) do
-    handle(:handle, pool_ref, fun, args, opts)
+    handle_or_cleanup(:handle, pool_ref, fun, args, opts)
   end
 
-  @spec cleanup(pool_ref :: any, fun :: atom, args :: [term], Keyword.t) :: tuple
+  @spec cleanup(pool_ref :: any, fun :: atom, args :: [term], Keyword.t()) :: tuple
   def cleanup(pool_ref, fun, args, opts) do
-    handle(:cleanup, pool_ref, fun, args, opts)
+    handle_or_cleanup(:cleanup, pool_ref, fun, args, opts)
   end
 
-  defp handle(type, pool_ref, fun, args, opts) do
+  defp handle_or_cleanup(type, pool_ref, fun, args, opts) do
     pool_ref(holder: holder) = pool_ref
 
     try do
       :ets.lookup(holder, :conn)
     rescue
       ArgumentError ->
-        msg = "connection is closed"
+        msg = "connection is closed because of an error, disconnect or timeout"
         {:disconnect, DBConnection.ConnectionError.exception(msg), _state = :unused}
     else
-      [conn(status: {:error, _})] ->
-        msg = "connection is closed"
+      [conn(status: :error)] ->
+        msg = "connection is closed because of an error, disconnect or timeout"
         {:disconnect, DBConnection.ConnectionError.exception(msg), _state = :unused}
 
       [conn(status: :aborted)] when type != :cleanup ->
@@ -110,30 +110,7 @@ defmodule DBConnection.Holder do
         {:disconnect, DBConnection.ConnectionError.exception(msg), _state = :unused}
 
       [conn(module: module, state: state)] ->
-        try do
-          apply(module, fun, args ++ [opts, state])
-        catch
-          kind, reason ->
-            {:catch, kind, reason, System.stacktrace()}
-        else
-          result when is_tuple(result) ->
-            state = :erlang.element(:erlang.tuple_size(result), result)
-
-            # This means a disconnect happened from the connection side
-            # but, since we succeed, we can return the result and the client
-            # will notice the disconnect anyway.
-            try do
-              :ets.update_element(holder, :conn, {conn(:state) + 1, state})
-            rescue
-              ArgumentError -> false
-            end
-
-            result
-
-          # If it is not a tuple, we just return it as is so we raise bad return.
-          result ->
-            result
-        end
+        holder_apply(holder, module, fun, args ++ [opts, state])
     end
   end
 
@@ -171,7 +148,7 @@ defmodule DBConnection.Holder do
     :ok
   end
 
-  @spec reply_error({pid, reference}, Exception.t) :: :ok
+  @spec reply_error({pid, reference}, Exception.t()) :: :ok
   def reply_error(from, exception) do
     GenServer.reply(from, {:error, exception})
     :ok
@@ -269,6 +246,46 @@ defmodule DBConnection.Holder do
         {:ok, pool_ref, mod, state}
     end
   end
+
+  defp holder_apply(holder, module, fun, args) do
+    try do
+      apply(module, fun, args)
+    catch
+      kind, reason ->
+        {:catch, kind, reason, System.stacktrace()}
+    else
+      result when is_tuple(result) ->
+        state = :erlang.element(:erlang.tuple_size(result), result)
+
+        # This means a disconnect happened from the connection side
+        # but, since we succeed, we can return the result and the client
+        # will notice the disconnect anyway.
+        try do
+          :ets.update_element(holder, :conn, {conn(:state) + 1, state})
+          result
+        rescue
+          ArgumentError ->
+            augment_disconnect(result)
+        end
+
+      # If it is not a tuple, we just return it as is so we raise bad return.
+      result ->
+        result
+    end
+  end
+
+  defp augment_disconnect({:disconnect, %DBConnection.ConnectionError{} = err, state}) do
+    %{message: message} = err
+
+    message =
+      message <>
+        " (the connection was closed by the pool, " <>
+        "possibly due to a timeout or because the pool has been terminated)"
+
+    {:disconnect, %{err | message: message}, state}
+  end
+
+  defp augment_disconnect(result), do: result
 
   defp done(pool_ref, status, tag, info) do
     pool_ref(pool: pool, reference: ref, deadline: deadline, holder: holder) = pool_ref
