@@ -646,38 +646,31 @@ defmodule DBConnection do
 
         try do
           result = fun.(conn)
-
-          case run(conn, &run_status/3, nil, opts) do
-            {^old_status, _meter} ->
-              {:ok, result}
-            {new_status, _meter} ->
-              {:nomatch, old_status, new_status}
-            {:error, _err, _meter} ->
-              {:error, result}
-            {kind, reason, stack, _meter} ->
-              :erlang.raise(kind, reason, stack)
-          end
+          {result, run(conn, &run_status/3, nil, opts)}
         catch
           kind, error ->
             stacktrace = System.stacktrace()
             checkin(conn)
             :erlang.raise(kind, error, stacktrace)
         else
-          {:ok, result} ->
+          {result, {:error, _, _}} ->
             checkin(conn)
             result
 
-          {:error, result} ->
+          {result, {^old_status, _meter}} ->
             checkin(conn)
             result
 
-          {:nomatch, old_status, new_status} ->
+          {_result, {new_status, _meter}} ->
             err = DBConnection.ConnectionError.exception(
               "connection was checked out with status #{inspect(old_status)} " <>
                 "but it was checked in with status #{inspect(new_status)}"
             )
             disconnect(conn, err)
             raise err
+
+          {_result, {kind, reason, stack, _meter}} ->
+            :erlang.raise(kind, reason, stack)
         end
 
       {:error, err, _} ->
