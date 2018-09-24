@@ -65,25 +65,9 @@ defmodule DBConnection.Connection do
     try do
       apply(mod, :connect, [connect_opts(opts)])
     rescue
-      e in KeyError ->
-        stack = cleanup_stacktrace(System.stacktrace())
-        message = Exception.message(%{e | term: nil})
-
-        message =
-          "connect raised #{inspect e.__struct__} exception: #{message}. " <>
-            "Some exception details are hidden, as they may contain sensitive data " <>
-            "such as database credentials"
-
-        reraise RuntimeError.exception(message), stack
       e ->
-        stack = cleanup_stacktrace(System.stacktrace())
-
-        message =
-          "connect raised #{inspect e.__struct__} exception. " <>
-            "The exception details are hidden, as they may contain sensitive data " <>
-            "such as database credentials"
-
-        reraise RuntimeError.exception(message), stack
+        {e, stack} = maybe_sanitize_exception(e, System.stacktrace(), opts)
+        reraise e, stack
     else
       {:ok, state} when after_connect != nil ->
         ref = make_ref()
@@ -108,6 +92,23 @@ defmodule DBConnection.Connection do
         {:backoff, timeout, %{s | backoff: backoff}}
     end
   end
+
+  defp maybe_sanitize_exception(e, stack, opts) do
+    if Keyword.get(opts, :show_sensitive_data_on_connection_error, false) do
+      {e, stack}
+    else
+      message =
+        "connect raised #{inspect(e.__struct__)} exception#{sanitized_message(e)}." <>
+          "The exception details are hidden, as they may contain sensitive data such as " <>
+          "database credentials. You may set :show_sensitive_data_on_connection_error " <>
+          "to true if you wish to see all of the details"
+
+      {RuntimeError.exception(message), cleanup_stacktrace(stack)}
+    end
+  end
+
+  defp sanitized_message(%KeyError{} = e), do: ": #{Exception.message(%{e | term: nil})}"
+  defp sanitized_message(_), do: ""
 
   @doc false
   def disconnect({log, err}, %{mod: mod} = s) do

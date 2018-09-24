@@ -44,7 +44,23 @@ defmodule ConnectTest do
     assert_receive {:EXIT, _, {%RuntimeError{}, [{_, _, 1, _} | _rest]}}
   end
 
-  test "erlang error on connect doesn't leak sensitive data" do
+  test "MatchError on connect leaks sensitive data when configured" do
+    stack = [
+    fn(opts) ->
+      Process.link(Keyword.get(opts, :parent))
+      raise MatchError, term: :password
+    end,
+    {:ok, :state}
+    ]
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self(), backoff_min: 10, show_sensitive_data_on_connection_error: true]
+    Process.flag(:trap_exit, true)
+    {:ok, _} = P.start_link(opts)
+    assert_receive {:EXIT, _, {%MatchError{}, [{_, _, 1, _} | _rest]}}
+  end
+
+  test "ErlangError on connect doesn't leak sensitive data" do
     stack = [
     fn(opts) ->
       Process.link(Keyword.get(opts, :parent))
@@ -58,6 +74,23 @@ defmodule ConnectTest do
     Process.flag(:trap_exit, true)
     {:ok, _} = P.start_link(opts)
     assert_receive {:EXIT, _, {%RuntimeError{}, [{_, _, 1, _} | _rest]}}
+  end
+
+
+  test "ErlangError on connect leaks sensitive data when configured" do
+    stack = [
+    fn(opts) ->
+      Process.link(Keyword.get(opts, :parent))
+      :erlang.error(:badarg, [:password])
+    end,
+    {:ok, :state}
+    ]
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self(), backoff_min: 10, show_sensitive_data_on_connection_error: true]
+    Process.flag(:trap_exit, true)
+    {:ok, _} = P.start_link(opts)
+    assert_receive {:EXIT, _, {%ArgumentError{}, [{_, _, [:password], _} | _rest]}}
   end
 
   test "lazy configure connection with module function and args" do
