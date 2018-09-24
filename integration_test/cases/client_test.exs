@@ -134,7 +134,7 @@ defmodule ClientTest do
       {:handle_execute, [%Q{}, [:second], _, :new_state]}] = A.record(agent)
   end
 
-  test "reconnect when client timeout and then returns disconnected when disconnected" do
+  test "reconnect when client timeout and then returns error when disconnected" do
     stack = [
       {:ok, :state},
       {:idle, :state},
