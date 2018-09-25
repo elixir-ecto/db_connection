@@ -746,7 +746,7 @@ defmodule DBConnection do
   end
   def transaction(%DBConnection{} = conn, fun, opts) do
     case begin(conn, &run/4, opts) do
-      {:ok, conn, _} ->
+      {:ok, _} ->
         run_transaction(conn, fun, &run/4, opts)
       {:error, %DBConnection.TransactionError{}} ->
         {:error, :rollback}

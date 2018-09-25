@@ -1064,4 +1064,62 @@ defmodule TransactionTest do
       connect: _
       ]  = A.record(agent)
   end
+
+  test "run inside transaction" do
+    stack = [
+      {:ok, :state},
+      {:ok, :began, :new_state},
+      {:ok, :comitted, :newer_state},
+      {:ok, :began, :newest_state},
+      {:ok, :committed, :newest_state}
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self()]
+    {:ok, pool} = P.start_link(opts)
+
+    assert P.transaction(pool, fn(conn) ->
+      assert %DBConnection{} = conn
+
+      assert P.run(conn, fn(conn) ->
+        assert %DBConnection{} = conn
+        :result
+      end)
+    end) == {:ok, :result}
+
+    assert [
+      connect: [_],
+      handle_begin: [ _, :state],
+      handle_commit: [_, :new_state]] = A.record(agent)
+  end
+
+  test "transaction inside run" do
+    stack = [
+      {:ok, :state},
+      {:idle, :new_state},
+      {:ok, :began, :newer_state},
+      {:ok, :committed, :newest_state},
+      {:idle, :newest_state}
+      ]
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self()]
+    {:ok, pool} = P.start_link(opts)
+
+    assert P.run(pool, fn(conn) ->
+      assert %DBConnection{} = conn
+
+      assert P.transaction(conn, fn(conn) ->
+        assert %DBConnection{} = conn
+        :result
+      end)
+    end) == {:ok, :result}
+
+    assert [
+      connect: [_],
+      handle_status: [_, :state],
+      handle_begin: [_, :new_state],
+      handle_commit: [_, :newer_state],
+      handle_status: [_, :newest_state]] = A.record(agent)
+  end
 end
