@@ -43,15 +43,19 @@ defmodule DBAgent do
 
   ## DBConnection API
 
+  @impl true
   def connect(opts) do
     fun = Keyword.fetch!(opts, :init)
     {:ok, %{state: fun.(), status: :idle, rollback: nil}}
   end
 
+  @impl true
   def checkout(s), do: {:ok, s}
 
+  @impl true
   def checkin(s), do: {:ok, s}
 
+  @impl true
   def handle_execute(%Query{query: :get}, fun, _, %{state: state} = s) do
     {:ok, fun.(state), s}
   end
@@ -64,29 +68,32 @@ defmodule DBAgent do
     {:ok, res, %{s | state: state}}
   end
 
+  @impl true
   def handle_close(_, _, s) do
     {:ok, nil, s}
   end
 
+  @impl true
   def handle_begin(_, %{status: :idle, state: state} = s) do
     {:ok, :began, %{s | status: :transaction, rollback: state}}
   end
 
+  @impl true
   def handle_commit(_, %{status: :transaction} = s) do
     {:ok, :committed, %{s | status: :idle, rollback: nil}}
   end
 
+  @impl true
   def handle_rollback(_, %{status: :transaction, rollback: state} = s) do
     {:ok, :rolledback, %{s | state: state, status: :idle, rollback: nil}}
   end
 end
 
 defimpl DBConnection.Query, for: DBAgent.Query do
-
   alias DBAgent.Query
 
   def parse(%Query{query: tag} = query, _)
-  when tag in [:get, :update, :get_and_update] do
+      when tag in [:get, :update, :get_and_update] do
     query
   end
 
