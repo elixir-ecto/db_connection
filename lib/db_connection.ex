@@ -120,7 +120,7 @@ defmodule DBConnection do
   to allow the checkout or `{:disconnect, exception, state}` to disconnect.
 
   This callback is called when the control of the state is passed to
-  another process. `checkin/1` is called with the new state when control
+  another process. `c:checkin/1` is called with the new state when control
   is returned to the connection process.
 
   This callback is called in the connection process.
@@ -134,7 +134,7 @@ defmodule DBConnection do
 
   This callback is called when the control of the state is passed back
   to the connection process. It should reverse any changes made in
-  `checkout/2`.
+  `c:checkout/1`.
 
   This callback is called in the connection process.
   """
@@ -192,7 +192,7 @@ defmodule DBConnection do
     {:error | :disconnect, Exception.t, new_state :: any}
 
   @doc """
-  Handle committing a transaction. Return `{:ok, result, state}` on successfully
+  Handle rolling back a transaction. Return `{:ok, result, state}` on successfully
   rolling back transaction, `{status, state}` to notify caller that the
   transaction can not rollback due to the transaction status `status`,
   `{:error, exception, state}` (deprecated) to
@@ -239,7 +239,7 @@ defmodule DBConnection do
     {:error | :disconnect, Exception.t, new_state :: any}
 
   @doc """
-  Execute a query prepared by `handle_prepare/3`. Return
+  Execute a query prepared by `c:handle_prepare/3`. Return
   `{:ok, result, state}` to return the result `result` and continue,
   `{:ok, query, result, state}` to return altered query `query` and result
   `result` and continue, `{:error, exception, state}` to return an error and
@@ -253,7 +253,7 @@ defmodule DBConnection do
     {:error | :disconnect, Exception.t, new_state :: any}
 
   @doc """
-  Close a query prepared by `handle_prepare/3` with the database. Return
+  Close a query prepared by `c:handle_prepare/3` with the database. Return
   `{:ok, result, state}` on success and to continue,
   `{:error, exception, state}` to return an error and continue, or
   `{:disconnect, exception, state}` to return an error and disconnect.
@@ -265,7 +265,7 @@ defmodule DBConnection do
     {:error | :disconnect, Exception.t, new_state :: any}
 
   @doc """
-  Declare a cursor using a query prepared by `handle_prepare/3`. Return
+  Declare a cursor using a query prepared by `c:handle_prepare/3`. Return
   `{:ok, cursor, state}` to start a cursor for a stream and continue,
   `{:ok, query, cursor, state}` to return altered query `query` and cursor
   `cursor` for a stream and continue, `{:error, exception, state}` to return an
@@ -279,7 +279,7 @@ defmodule DBConnection do
     {:error | :disconnect, Exception.t, new_state :: any}
 
   @doc """
-  Fetch the next result from a cursor declared by `handle_declare/4`. Return
+  Fetch the next result from a cursor declared by `c:handle_declare/4`. Return
   `{:cont, result, state}` to return the result `result` and continue using
   cursor, `{:halt, result, state}` to return the result `result` and close the
   cursor, `{:error, exception, state}` to return an error and close the
@@ -292,7 +292,7 @@ defmodule DBConnection do
     {:error | :disconnect, Exception.t, new_state :: any}
 
   @doc """
-  Deallocate a cursor declared by `handle_declare/4` with the database. Return
+  Deallocate a cursor declared by `c:handle_declare/4` with the database. Return
   `{:ok, result, state}` on success and to continue,
   `{:error, exception, state}` to return an error and continue, or
   `{:disconnect, exception, state}` to return an error and disconnect.
@@ -345,7 +345,7 @@ defmodule DBConnection do
     `{module, function, args}` with options prepended to `args` or `nil` where
     only returned options are passed to connect callback (default: `nil`)
     * `:after_connect` - A function to run on connect using `run/3`, either
-    a 1-arity fun, `{module, function, args}` with `DBConnection.t` prepended
+    a 1-arity fun, `{module, function, args}` with `t:DBConnection.t/0` prepended
     to `args` or `nil` (default: `nil`)
     * `:name` - A name to register the started process (see the `:name` option
     in `GenServer.start_link/3`)
@@ -381,7 +381,7 @@ defmodule DBConnection do
   It returns `{:ok, query}` on success or `{:error, exception}` if there was
   an error.
 
-  The returned `query` can then be passed to `execute/3` and/or `close/3`
+  The returned `query` can then be passed to `execute/4` and/or `close/3`
 
   ### Options
 
@@ -393,18 +393,19 @@ defmodule DBConnection do
     to hold the connection's state (ignored when using a run/transaction
     connection, default: `15_000`)
     * `:log` - A function to log information about a call, either
-    a 1-arity fun, `{module, function, args}` with `DBConnection.LogEntry.t`
+    a 1-arity fun, `{module, function, args}` with `t:DBConnection.LogEntry.t/0`
     prepended to `args` or `nil`. See `DBConnection.LogEntry` (default: `nil`)
 
   The pool and connection module may support other options. All options
-  are passed to `handle_prepare/3`.
+  are passed to `c:handle_prepare/3`.
 
   ### Example
 
       DBConnection.transaction(pool, fn conn ->
-        query = DBConnection.prepare!(conn)
+        query = %Query{statement: "SELECT * FROM table"}
+        query = DBConnection.prepare!(conn, query)
         try do
-          DBConnection.execute!(conn, "SELECT * FROM table", [])
+          DBConnection.execute!(conn, query, [])
         after
           DBConnection.close(conn, query)
         end
@@ -453,7 +454,7 @@ defmodule DBConnection do
     to hold the connection's state (ignored when using a run/transaction
     connection, default: `15_000`)
     * `:log` - A function to log information about a call, either
-    a 1-arity fun, `{module, function, args}` with `DBConnection.LogEntry.t`
+    a 1-arity fun, `{module, function, args}` with `t:DBConnection.LogEntry.t/0`
     prepended to `args` or `nil`. See `DBConnection.LogEntry` (default: `nil`)
 
   ### Example
@@ -513,7 +514,7 @@ defmodule DBConnection do
     to hold the connection's state (ignored when using a run/transaction
     connection, default: `15_000`)
     * `:log` - A function to log information about a call, either
-    a 1-arity fun, `{module, function, args}` with `DBConnection.LogEntry.t`
+    a 1-arity fun, `{module, function, args}` with `t:DBConnection.LogEntry.t/0`
     prepended to `args` or `nil`. See `DBConnection.LogEntry` (default: `nil`)
 
   The pool and connection module may support other options. All options
@@ -573,11 +574,11 @@ defmodule DBConnection do
     to hold the connection's state (ignored when using a run/transaction
     connection, default: `15_000`)
     * `:log` - A function to log information about a call, either
-    a 1-arity fun, `{module, function, args}` with `DBConnection.LogEntry.t`
+    a 1-arity fun, `{module, function, args}` with `t:DBConnection.LogEntry.t/0`
     prepended to `args` or `nil`. See `DBConnection.LogEntry` (default: `nil`)
 
   The pool and connection module may support other options. All options
-  are passed to `handle_close/3`.
+  are passed to `c:handle_close/3`.
 
   See `prepare/3`.
   """
@@ -630,9 +631,10 @@ defmodule DBConnection do
 
   ### Example
 
-      {:ok, res} = DBConnection.run(conn, fn(conn) ->
-        DBConnection.execute!(conn, "SELECT id FROM table", [])
+      {:ok, res} = DBConnection.run(conn, fn conn ->
+        DBConnection.execute!(conn, query, [])
       end)
+
   """
   @spec run(conn, (t -> result), opts :: Keyword.t) :: result when result: var
   def run(conn, fun, opts \\ [])
@@ -709,17 +711,17 @@ defmodule DBConnection do
     to hold the connection's state (default: `15_000`)
     * `:log` - A function to log information about begin, commit and rollback
     calls made as part of the transaction, either a 1-arity fun,
-    `{module, function, args}` with `DBConnection.LogEntry.t` prepended to
+    `{module, function, args}` with `t:DBConnection.LogEntry.t/0` prepended to
     `args` or `nil`. See `DBConnection.LogEntry` (default: `nil`)
 
   The pool and connection module may support other options. All options
-  are passed to `handle_begin/2`, `handle_commit/2` and
-  `handle_rollback/2`.
+  are passed to `c:handle_begin/2`, `c:handle_commit/2` and
+  `c:handle_rollback/2`.
 
   ### Example
 
-      {:ok, res} = DBConnection.transaction(conn, fn(conn) ->
-        DBConnection.execute!(conn, "SELECT id FROM table", [])
+      {:ok, res} = DBConnection.transaction(conn, fn conn ->
+        DBConnection.execute!(conn, query, [])
       end)
   """
   @spec transaction(conn, (conn -> result), opts :: Keyword.t) ::
@@ -804,11 +806,12 @@ defmodule DBConnection do
   ### Options
 
   See module documentation. The pool and connection module may support other
-  options. All options are passed to `handle_status/2`.
+  options. All options are passed to `c:handle_status/2`.
 
   ### Example
 
       {:ok, conn, _result} = DBConnection.begin(pool)
+
       try do
         fun.(conn)
       after
@@ -816,7 +819,7 @@ defmodule DBConnection do
           :transaction ->
             DBConnection.commit(conn)
           :error ->
-            DBConnection.rollback(conn)
+            DBConnection.rollback(conn, :aborted)
             raise "transaction is aborted!"
           :idle ->
             raise "transaction is not started!"
@@ -849,17 +852,17 @@ defmodule DBConnection do
     to hold the connection's state (ignored when using a run/transaction
     connection, default: `15_000`)
     * `:log` - A function to log information about a call, either
-    a 1-arity fun, `{module, function, args}` with `DBConnection.LogEntry.t`
+    a 1-arity fun, `{module, function, args}` with `t:DBConnection.LogEntry.t/0`
     prepended to `args` or `nil`. See `DBConnection.LogEntry` (default: `nil`)
 
   The pool and connection module may support other options. All options
-  are passed to `handle_prepare/3, `handle_close/3, `handle_declare/4`,
-  and `handle_deallocate/4`.
+  are passed to `c:handle_prepare/3`, `c:handle_close/3`, `c:handle_declare/4`,
+  and `c:handle_deallocate/4`.
 
   ### Example
 
-      {:ok, results} = DBConnection.transaction(conn, fn(conn) ->
-        query  = %Query{statement: "SELECT id FROM table"}
+      {:ok, results} = DBConnection.transaction(conn, fn conn ->
+        query = %Query{statement: "SELECT id FROM table"}
         stream = DBConnection.prepare_stream(conn, query, [])
         Enum.to_list(stream)
       end)
@@ -885,11 +888,11 @@ defmodule DBConnection do
     to hold the connection's state (ignored when using a run/transaction
     connection, default: `15_000`)
     * `:log` - A function to log information about a call, either
-    a 1-arity fun, `{module, function, args}` with `DBConnection.LogEntry.t`
+    a 1-arity fun, `{module, function, args}` with `t:DBConnection.LogEntry.t/0`
     prepended to `args` or `nil`. See `DBConnection.LogEntry` (default: `nil`)
 
   The pool and connection module may support other options. All options
-  are passed to `handle_declare/4` and `handle_deallocate/4`.
+  are passed to `c:handle_declare/4` and `c:handle_deallocate/4`.
 
   ### Example
 
