@@ -38,6 +38,7 @@ defmodule TCPConnection do
     DBConnection.run(conn, fun, opts)
   end
 
+  @impl true
   def connect(opts) do
     host        = Keyword.fetch!(opts, :hostname) |> String.to_charlist()
     port        = Keyword.fetch!(opts, :port)
@@ -55,6 +56,16 @@ defmodule TCPConnection do
     end
   end
 
+  @impl true
+  def disconnect(_, {sock, _} = state) do
+    :ok = :gen_tcp.close(sock)
+    # If socket is active we flush any socket messages so the next
+    # socket does not get the messages.
+    _ = flush(state)
+    :ok
+  end
+
+  @impl true
   def handle_execute(%Query{query: :send}, data, _, {sock, _} = state) do
     case :gen_tcp.send(sock, data) do
       :ok ->
@@ -108,16 +119,9 @@ defmodule TCPConnection do
     end
   end
 
+  @impl true
   def handle_close(_, _, s) do
     {:ok, nil, s}
-  end
-
-  def disconnect(_, {sock, _} = state) do
-    :ok = :gen_tcp.close(sock)
-    # If socket is active we flush any socket messages so the next
-    # socket does not get the messages.
-    _ = flush(state)
-    :ok
   end
 
   ## Helpers
