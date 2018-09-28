@@ -133,8 +133,8 @@ defmodule DBConnection do
   to allow the checkin or `{:disconnect, exception, state}` to disconnect.
 
   This callback is called when the control of the state is passed back
-  to the connection process. It should reverse any changes made in
-  `c:checkout/1`.
+  to the connection process. It should reverse any changes to the
+  connection state made in `c:checkout/1`.
 
   This callback is called in the connection process.
   """
@@ -810,21 +810,20 @@ defmodule DBConnection do
 
   ### Example
 
-      {:ok, conn, _result} = DBConnection.begin(pool)
+      # outside of the transaction, the status is `:idle`
+      DBConnection.status(conn) #=> :idle
 
-      try do
-        fun.(conn)
-      after
-        case DBConnection.status(conn) do
-          :transaction ->
-            DBConnection.commit(conn)
-          :error ->
-            DBConnection.rollback(conn, :aborted)
-            raise "transaction is aborted!"
-          :idle ->
-            raise "transaction is not started!"
-        end
-      end
+      DBConnection.transaction(conn, fn conn ->
+        DBConnection.status(conn) #=> :transaction
+
+        # run a query that will cause the transaction to rollback, e.g.
+        # uniqueness constraint violation
+        DBConnection.execute(conn, bad_query, [])
+
+        DBConnection.status(conn) #=> :error
+      end)
+
+      DBConnection.status(conn) #=> :idle
   """
   @spec status(conn, opts :: Keyword.t) :: status
   def status(conn, opts \\ []) do
