@@ -68,10 +68,10 @@ defmodule DBConnection.Holder do
   @spec checkin(pool_ref :: any) :: :ok
   def checkin(pool_ref) do
     now = System.monotonic_time(@time_unit)
-    # We do not change the status in checkin because
-    # it is either :ok or {:error, _}. Note it can't
-    # be aborted as aborted is always reverted at the
-    # of a transaction.
+    # Note we may call checkin after a disconnect/stop. For this reason, we choose
+    # to not change the status on checkin but strictly speaking nobody can access
+    # the holder after disconnect/stop unless they store a copy of %DBConnection{}.
+    # Note status can't be :aborted as aborted is always reverted at the of a transaction.
     done(pool_ref, [], :checkin, now)
   end
 
