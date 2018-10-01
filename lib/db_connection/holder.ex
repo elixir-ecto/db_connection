@@ -68,17 +68,21 @@ defmodule DBConnection.Holder do
   @spec checkin(pool_ref :: any) :: :ok
   def checkin(pool_ref) do
     now = System.monotonic_time(@time_unit)
-    done(pool_ref, :ok, :checkin, now)
+    # Note we may call checkin after a disconnect/stop. For this reason, we choose
+    # to not change the status on checkin but strictly speaking nobody can access
+    # the holder after disconnect/stop unless they store a copy of %DBConnection{}.
+    # Note status can't be :aborted as aborted is always reverted at the of a transaction.
+    done(pool_ref, [], :checkin, now)
   end
 
   @spec disconnect(pool_ref :: any, err :: Exception.t()) :: :ok
   def disconnect(pool_ref, err) do
-    done(pool_ref, :error, :disconnect, err)
+    done(pool_ref, [{conn(:status) + 1, :error}], :disconnect, err)
   end
 
   @spec stop(pool_ref :: any, err :: Exception.t()) :: :ok
   def stop(pool_ref, err) do
-    done(pool_ref, :error, :stop, err)
+    done(pool_ref, [{conn(:status) + 1, :error}], :stop, err)
   end
 
   @spec handle(pool_ref :: any, fun :: atom, args :: [term], Keyword.t()) :: tuple
@@ -287,12 +291,12 @@ defmodule DBConnection.Holder do
 
   defp augment_disconnect(result), do: result
 
-  defp done(pool_ref, status, tag, info) do
+  defp done(pool_ref, ops, tag, info) do
     pool_ref(pool: pool, reference: ref, deadline: deadline, holder: holder) = pool_ref
     cancel_deadline(deadline)
 
     try do
-      :ets.update_element(holder, :conn, [{conn(:deadline) + 1, nil}, {conn(:status) + 1, status}])
+      :ets.update_element(holder, :conn, [{conn(:deadline) + 1, nil} | ops])
       :ets.give_away(holder, pool, {tag, ref, info})
     rescue
       ArgumentError -> :ok
