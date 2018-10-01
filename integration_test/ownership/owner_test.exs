@@ -31,13 +31,18 @@ defmodule OwnerTest do
 
     assert_receive :allowed
 
-    assert capture_log(fn ->
-      assert P.run(pool, fn(_) ->
-        Process.exit(owner, :shutdown)
-        assert_receive :reconnected
-        :ok
-      end) == :ok
-    end) =~ ~r"owner #PID<\d+\.\d+\.\d+> exited while client #PID<\d+\.\d+\.\d+> is still running"
+    log =
+      capture_log(fn ->
+        assert P.run(pool, fn(_) ->
+          Process.exit(owner, :shutdown)
+          assert_receive :reconnected
+          :ok
+        end) == :ok
+      end)
+
+    assert log =~ ~r"owner #PID<\d+\.\d+\.\d+> exited"
+    assert log =~ ~r"Client #PID<\d+\.\d+\.\d+> is still using a connection from owner at location"
+    assert log =~ ~r"The connection itself was checked out by #PID<\d+\.\d+\.\d+> at location"
 
     assert [
       {:connect, _},

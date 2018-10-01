@@ -45,30 +45,27 @@ defmodule DBConnection.Ownership.Proxy do
     {:ok, start_poll(now, state)}
   end
 
-  def handle_info({:DOWN, ref, _, pid, _reason}, %{owner_ref: ref, client: nil} = state) do
+  def handle_info({:DOWN, ref, _, pid, _reason}, %{owner_ref: ref} = state) do
     down("owner #{inspect pid} exited", state)
-  end
-
-  def handle_info({:DOWN, ref, _, pid, reason},
-                  %{owner_ref: ref, client: {client, _}} = state) do
-    message = "owner #{inspect pid} exited while client #{inspect client} is still running with: " <> Exception.format_exit(reason)
-    down(message, state)
-  end
-
-  def handle_info({:timeout, timer, {__MODULE__, pid, timeout}}, %{ownership_timer: timer} = state) do
-    message = "owner #{inspect pid} timed out because " <>
-    "it owned the connection for longer than #{timeout}ms (set via the :ownership_timeout option)"
-    pool_disconnect(DBConnection.ConnectionError.exception(message), state)
   end
 
   def handle_info({:timeout, deadline, {_ref, holder, pid, len}}, %{holder: holder} = state) do
     if Holder.handle_deadline(holder, deadline) do
       message = "client #{inspect pid} timed out because " <>
         "it queued and checked out the connection for longer than #{len}ms"
-      pool_disconnect(DBConnection.ConnectionError.exception(message), state)
+      down(message, state)
     else
       {:noreply, state}
     end
+  end
+
+  def handle_info({:timeout, timer, {__MODULE__, pid, timeout}}, %{ownership_timer: timer} = state) do
+    message = "owner #{inspect pid} timed out because " <>
+    "it owned the connection for longer than #{timeout}ms (set via the :ownership_timeout option)"
+
+    # We don't invoke down because this is always a disconnect, even if there is no client.
+    # On the other hand, those timeouts are unlikely to trigger, as it defaults to 2 mins.
+    pool_disconnect(DBConnection.ConnectionError.exception(message), state)
   end
 
   def handle_info({:timeout, poll, time}, %{poll: poll} = state) do
@@ -116,7 +113,7 @@ defmodule DBConnection.Ownership.Proxy do
     end
   end
 
-  def handle_info({:"ETS-TRANSFER", holder, _, {msg, ref, extra}}, %{holder: holder, client: {_, ref}} = state) do
+  def handle_info({:"ETS-TRANSFER", holder, _, {msg, ref, extra}}, %{holder: holder, client: {_, ref, _}} = state) do
     case msg do
       :checkin -> checkin(state)
       :disconnect -> pool_disconnect(extra, state)
@@ -132,9 +129,9 @@ defmodule DBConnection.Ownership.Proxy do
     down("owner #{inspect pid} checked in the connection", state)
   end
 
-  defp checkout({_pid, ref} = from, %{holder: holder} = state) do
+  defp checkout({pid, ref} = from, %{holder: holder} = state) do
     if Holder.handle_checkout(holder, from, ref) do
-      {:noreply, %{state | client: from}}
+      {:noreply, %{state | client: {pid, ref, client_stacktrace(pid)}}}
     else
       next(state)
     end
@@ -168,8 +165,24 @@ defmodule DBConnection.Ownership.Proxy do
     pool_checkin(reason, state)
   end
 
-  # If it is down but it has a client, disconnect but do not log
-  defp down(reason, state) do
+  # If it is down but it has a client, disconnect
+  defp down(reason, %{client: {client, _, checkout_stack}} = state) do
+    reason =
+      case Process.info(client, :current_stacktrace) do
+        {:current_stacktrace, current_stack} ->
+          reason <> """
+          \n\nClient #{inspect(client)} is still using a connection from owner at location:
+
+          #{Exception.format_stacktrace(current_stack)}
+          The connection itself was checked out by #{inspect(client)} at location:
+
+          #{Exception.format_stacktrace(checkout_stack)}
+          """
+
+         _ ->
+          reason
+      end
+
     err = DBConnection.ConnectionError.exception(reason)
     pool_disconnect(err, state)
   end
@@ -230,5 +243,16 @@ defmodule DBConnection.Ownership.Proxy do
     message = "connection not available and request was dropped from queue after #{delay}ms"
     err = DBConnection.ConnectionError.exception(message)
     Holder.reply_error(from, err)
+  end
+
+  @prune_modules [DBConnection, DBConnection.Holder]
+
+  defp client_stacktrace(pid) do
+    case Process.info(pid, :current_stacktrace) do
+      {:current_stacktrace, stacktrace} ->
+        Enum.drop_while(stacktrace, &match?({mod, _, _, _} when mod in @prune_modules, &1))
+      _ ->
+        []
+    end
   end
 end
