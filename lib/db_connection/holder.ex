@@ -25,12 +25,17 @@ defmodule DBConnection.Holder do
     holder
   end
 
-  @spec update(pid, reference, module, term) :: t
+  @spec update(pid, reference, module, term) :: {:ok, t} | :error
   def update(pool, ref, mod, state) do
     holder = new(pool, ref, mod, state)
     now = System.monotonic_time(@time_unit)
-    :ets.give_away(holder, pool, {:checkin, ref, now})
-    holder
+
+    try do
+      :ets.give_away(holder, pool, {:checkin, ref, now})
+      {:ok, holder}
+    rescue
+      ArgumentError -> :error
+    end
   end
 
   @spec delete(t) :: {module, term}
