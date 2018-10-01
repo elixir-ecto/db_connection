@@ -215,7 +215,7 @@ defmodule ClientTest do
           send(parent, :done)
         end)
 
-        P.execute(conn, %Q{}, [:first])        
+        P.execute(conn, %Q{}, [:first])
       end, [timeout: 100])
     catch
       :throw, :oops ->
@@ -233,5 +233,35 @@ defmodule ClientTest do
       {:handle_status, _},
       {:handle_status, _},
       {:handle_execute, [%Q{}, [:second], _, :new_state]}] = A.record(agent)
+  end
+
+  test "fails when using an outdated connection reference" do
+    stack = [
+      {:ok, :state},
+      {:idle, :state},
+      {:idle, :state},
+      {:idle, :new_state},
+      {:idle, :new_state},
+    ]
+
+    {:ok, agent} = A.start_link(stack)
+    parent = self()
+    opts = [agent: agent, parent: parent]
+    {:ok, pool} = P.start_link(opts)
+
+    outdated_conn = P.run(pool, fn conn -> conn end)
+
+    P.run(pool, fn _ ->
+      assert_raise RuntimeError, "an outdated connection has been given to DBConnection", fn ->
+        P.execute(outdated_conn, %Q{}, [:first])
+      end
+    end)
+
+    assert [
+      {:connect, _},
+      {:handle_status, _},
+      {:handle_status, _},
+      {:handle_status, _},
+      {:handle_status, _}] = A.record(agent)
   end
 end
