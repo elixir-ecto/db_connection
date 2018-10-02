@@ -251,8 +251,12 @@ defmodule ClientTest do
 
     outdated_conn = P.run(pool, fn conn -> conn end)
 
+    assert_raise RuntimeError, ~r"an outdated connection has been given to DBConnection", fn ->
+      P.execute(outdated_conn, %Q{}, [:first])
+    end
+
     P.run(pool, fn _ ->
-      assert_raise RuntimeError, "an outdated connection has been given to DBConnection", fn ->
+      assert_raise RuntimeError, ~r"an outdated connection has been given to DBConnection", fn ->
         P.execute(outdated_conn, %Q{}, [:first])
       end
     end)

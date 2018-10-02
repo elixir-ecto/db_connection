@@ -72,7 +72,7 @@ defmodule DBConnection.Holder do
     # to not change the status on checkin but strictly speaking nobody can access
     # the holder after disconnect/stop unless they store a copy of %DBConnection{}.
     # Note status can't be :aborted as aborted is always reverted at the of a transaction.
-    done(pool_ref, [], :checkin, now)
+    done(pool_ref, [{conn(:lock) + 1, nil}], :checkin, now)
   end
 
   @spec disconnect(pool_ref :: any, err :: Exception.t()) :: :ok
@@ -106,7 +106,7 @@ defmodule DBConnection.Holder do
         {:disconnect, DBConnection.ConnectionError.exception(msg), _state = :unused}
     else
       [conn(lock: conn_lock)] when conn_lock != lock ->
-        raise "an outdated connection has been given to DBConnection"
+        raise "an outdated connection has been given to DBConnection on #{fun}/#{length(args) + 2}"
 
       [conn(status: :error)] ->
         msg = "connection is closed because of an error, disconnect or timeout"
