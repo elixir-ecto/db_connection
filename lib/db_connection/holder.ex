@@ -6,8 +6,8 @@ defmodule DBConnection.Holder do
   @timeout 15000
   @time_unit 1000
 
-  Record.defrecord(:conn, [:connection, :module, :state, deadline: nil, status: :ok])
-  Record.defrecord(:pool_ref, [:pool, :reference, :deadline, :holder])
+  Record.defrecord(:conn, [:connection, :module, :state, :lock, deadline: nil, status: :ok])
+  Record.defrecord(:pool_ref, [:pool, :reference, :deadline, :holder, :lock])
 
   @type t :: :ets.tid()
 
@@ -77,7 +77,7 @@ defmodule DBConnection.Holder do
     # to not change the status on checkin but strictly speaking nobody can access
     # the holder after disconnect/stop unless they store a copy of %DBConnection{}.
     # Note status can't be :aborted as aborted is always reverted at the of a transaction.
-    done(pool_ref, [], :checkin, now)
+    done(pool_ref, [{conn(:lock) + 1, nil}], :checkin, now)
   end
 
   @spec disconnect(pool_ref :: any, err :: Exception.t()) :: :ok
@@ -101,7 +101,7 @@ defmodule DBConnection.Holder do
   end
 
   defp handle_or_cleanup(type, pool_ref, fun, args, opts) do
-    pool_ref(holder: holder) = pool_ref
+    pool_ref(holder: holder, lock: lock) = pool_ref
 
     try do
       :ets.lookup(holder, :conn)
@@ -110,6 +110,9 @@ defmodule DBConnection.Holder do
         msg = "connection is closed because of an error, disconnect or timeout"
         {:disconnect, DBConnection.ConnectionError.exception(msg), _state = :unused}
     else
+      [conn(lock: conn_lock)] when conn_lock != lock ->
+        raise "an outdated connection has been given to DBConnection on #{fun}/#{length(args) + 2}"
+
       [conn(status: :error)] ->
         msg = "connection is closed because of an error, disconnect or timeout"
         {:disconnect, DBConnection.ConnectionError.exception(msg), _state = :unused}
@@ -223,21 +226,25 @@ defmodule DBConnection.Holder do
   end
 
   defp checkout_call(pid, caller, queue?, start, timeout) do
-    mref = Process.monitor(pid)
-    send(pid, {:db_connection, {self(), mref}, {:checkout, caller, start, queue?}})
+    lock = Process.monitor(pid)
+    send(pid, {:db_connection, {self(), lock}, {:checkout, caller, start, queue?}})
 
     receive do
-      {:"ETS-TRANSFER", holder, pool, {^mref, ref}} ->
-        Process.demonitor(mref, [:flush])
-        deadline = start_deadline(timeout, pool, ref, holder, start)
-        pool_ref = pool_ref(pool: pool, reference: ref, deadline: deadline, holder: holder)
+      {:"ETS-TRANSFER", holder, pool, {^lock, ref}} ->
+        Process.demonitor(lock, [:flush])
+        {deadline, ops} = start_deadline(timeout, pool, ref, holder, start)
+        :ets.update_element(holder, :conn, [{conn(:lock) + 1, lock} | ops])
+
+        pool_ref =
+          pool_ref(pool: pool, reference: ref, deadline: deadline, holder: holder, lock: lock)
+
         checkout_result(holder, pool_ref)
 
-      {^mref, reply} ->
-        Process.demonitor(mref, [:flush])
+      {^lock, reply} ->
+        Process.demonitor(lock, [:flush])
         reply
 
-      {:DOWN, ^mref, _, _, reason} ->
+      {:DOWN, ^lock, _, _, reason} ->
         {:exit, reason}
     end
   end
@@ -331,15 +338,14 @@ defmodule DBConnection.Holder do
   end
 
   defp start_deadline(nil, _, _, _, _) do
-    nil
+    {nil, []}
   end
 
   defp start_deadline(timeout, pid, ref, holder, start) do
     deadline =
       :erlang.start_timer(timeout, pid, {ref, holder, self(), timeout - start}, abs: true)
 
-    :ets.update_element(holder, :conn, {conn(:deadline) + 1, deadline})
-    deadline
+    {deadline, [{conn(:deadline) + 1, deadline}]}
   end
 
   defp cancel_deadline(nil) do
