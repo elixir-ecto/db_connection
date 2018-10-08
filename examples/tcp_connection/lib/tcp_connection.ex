@@ -25,13 +25,16 @@ defmodule TCPConnection do
 
   def send(conn, data) do
     case DBConnection.execute(conn, %Query{query: :send}, data) do
-      {:ok, :ok}        -> :ok
+      {:ok, _, :ok} -> :ok
       {:error, _} = err -> err
     end
   end
 
   def recv(conn, bytes, timeout \\ 3000) do
-    DBConnection.execute(conn, %Query{query: :recv}, [bytes, timeout])
+    case DBConnection.execute(conn, %Query{query: :recv}, [bytes, timeout]) do
+      {:ok, _query, result} -> {:ok, result}
+      {:error, _} = err -> err
+    end
   end
 
   def run(conn, fun, opts \\ []) when is_function(fun, 1) do
@@ -39,18 +42,30 @@ defmodule TCPConnection do
   end
 
   @impl true
-  def connect(opts) do
-    host        = Keyword.fetch!(opts, :hostname) |> String.to_charlist()
-    port        = Keyword.fetch!(opts, :port)
-    socket_opts = Keyword.get(opts, :socket_options, [])
-    timeout     = Keyword.get(opts, :connect_timeout, 5_000)
+  def checkout(state) do
+    {:ok, state}
+  end
 
-    enforced_opts = [packet: :raw, mode: :binary, active: :once]
+  @impl true
+  def ping(state) do
+    {:ok, state}
+  end
+
+  @impl true
+  def connect(opts) do
+    host = Keyword.fetch!(opts, :hostname) |> String.to_charlist()
+    port = Keyword.fetch!(opts, :port)
+    socket_opts = Keyword.get(opts, :socket_options, [])
+    timeout = Keyword.get(opts, :connect_timeout, 5_000)
+
+    enforced_opts = [packet: :raw, mode: :binary, active: false]
     # :gen_tcp.connect gives priority to options at tail, rather than head.
     socket_opts = Enum.reverse(socket_opts, enforced_opts)
+
     case :gen_tcp.connect(host, port, socket_opts, timeout) do
       {:ok, sock} ->
         {:ok, {sock, <<>>}}
+
       {:error, reason} ->
         {:error, TCPConnection.Error.exception({:connect, reason})}
     end
@@ -66,54 +81,63 @@ defmodule TCPConnection do
   end
 
   @impl true
-  def handle_execute(%Query{query: :send}, data, _, {sock, _} = state) do
+  def handle_execute(%Query{query: :send} = query, data, _, {sock, _} = state) do
     case :gen_tcp.send(sock, data) do
       :ok ->
         # A result is always required for handle_query/3
-        {:ok, :ok, state}
+        {:ok, query, :ok, state}
+
       {:error, reason} ->
         {:disconnect, TCPConnection.Error.exception({:send, reason}), state}
     end
   end
 
-  def handle_execute(%Query{query: :recv}, [bytes, timeout], _, {sock, <<>>} = state) do
+  def handle_execute(%Query{query: :recv} = query, [bytes, timeout], _, {sock, <<>>} = state) do
     # The simplest case when there is no buffer. This callback is called
     # in the process that called DBConnection.execute/4 so has
     # to block until there is a result or error. `active: :once` can't
     # be used.
     case :gen_tcp.recv(sock, bytes, timeout) do
       {:ok, data} ->
-        {:ok, data, state}
+        {:ok, query, data, state}
+
       {:error, :timeout} ->
         # Some errors can be handled without a disconnect. In most cases
         # though it might be better to disconnect on timeout or any
         # other socket error.
         {:error, TCPConnection.Error.exception({:recv, :timeout}), state}
+
       {:error, reason} ->
         {:disconnect, TCPConnection.Error.exception({:recv, reason}), state}
     end
   end
-  def handle_execute(%Query{query: :recv}, [bytes, _], _, {sock, buffer})
-  when byte_size(buffer) >= bytes do
+
+  def handle_execute(%Query{query: :recv} = query, [bytes, _], _, {sock, buffer})
+      when byte_size(buffer) >= bytes do
     # If the state contains a buffer of data the client calls will need
     # to use the buffer before receiving more data.
     case bytes do
       0 ->
-        {:ok, buffer, {sock, <<>>}}
+        {:ok, query, buffer, {sock, <<>>}}
+
       _ ->
         <<data::binary-size(bytes), buffer::binary>> = buffer
         {:ok, data, {sock, buffer}}
     end
   end
-  def handle_execute(%Query{query: :recv}, [bytes, timeout], _, {sock, buffer} = state) do
+
+  def handle_execute(%Query{query: :recv} = query, [bytes, timeout], _, {sock, buffer} = state) do
     # The buffer may not have enough data, so a combination might be
     # required.
     bytes = bytes - byte_size(buffer)
+
     case :gen_tcp.recv(sock, bytes, timeout) do
       {:ok, data} ->
-        {:ok, buffer <> data, {sock, <<>>}}
+        {:ok, query, buffer <> data, {sock, <<>>}}
+
       {:error, :timeout} ->
         {:error, TCPConnection.Error.exception({:recv, :timeout}), state}
+
       {:error, reason} ->
         {:disconnect, TCPConnection.Error.exception({:recv, reason}), state}
     end
@@ -130,8 +154,10 @@ defmodule TCPConnection do
     receive do
       {:tcp, ^sock, data} ->
         {:ok, {sock, buffer <> data}}
+
       {:tcp_closed, ^sock} ->
         {:disconnect, TCPConnection.Error.exception({:recv, :closed}), state}
+
       {:tcp_error, ^sock, reason} ->
         {:disconnect, TCPConnection.Error.exception({:recv, reason}), state}
     after

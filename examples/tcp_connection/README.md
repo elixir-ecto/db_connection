@@ -16,7 +16,9 @@ and checkout/checkin.
 :ok = TCPConnection.send(pid, "hi")
 {:ok, "hi"} = :gen_tcp.recv(socket, 2, 1000)
 ```
+
 The TCPConnection process will automatically reconnect:
+
 ```elixir
 :ok = :gen_tcp.close(socket)
 {:ok, socket} = :gen_tcp.accept(listener)
