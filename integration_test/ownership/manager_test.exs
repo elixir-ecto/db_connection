@@ -67,6 +67,9 @@ defmodule ManagerTest do
     parent = self()
 
     pid = spawn_link(fn() ->
+      assert_receive :assert_checkout
+      assert_checked_out pool, opts
+      send(parent, :checkout)
       assert_receive :refute_checkout
       refute_checked_out pool, opts
       send(parent, :no_checkout)
@@ -75,10 +78,12 @@ defmodule ManagerTest do
     {:ok, owner} = Task.start fn ->
       :ok = Ownership.ownership_checkout(pool, [])
       :ok = Ownership.ownership_allow(pool, self(), pid, [])
-      send parent, :checked_out
+      send(pid, :assert_checkout)
+      assert_receive :down
     end
 
-    assert_receive :checked_out
+    assert_receive :checkout
+    send(owner, :down)
     ref = Process.monitor(owner)
     assert_receive {:DOWN, ^ref, _, _, _}
 
