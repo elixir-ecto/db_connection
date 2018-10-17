@@ -42,7 +42,7 @@ defmodule DBConnection.ConnectionPool do
   ## GenServer api
 
   def init({mod, opts}) do
-    queue = :ets.new(__MODULE__.Queue, [:private, :ordered_set])
+    queue = :ets.new(__MODULE__.Queue, [:protected, :ordered_set])
     {:ok, _} = PoolSupervisor.start_pool(queue, mod, opts)
     target = Keyword.get(opts, :queue_target, @queue_target)
     interval = Keyword.get(opts, :queue_interval, @queue_interval)
