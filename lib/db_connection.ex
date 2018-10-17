@@ -148,7 +148,7 @@ defmodule DBConnection do
 
   This callback is called if no callbacks have been called after the
   idle timeout and a client process is not using the state. The idle
-  timeout can be configured by the `:idle_timeout` option. This function
+  timeout can be configured by the `:idle_interval` option. This function
   can be called whether the connection is checked in or checked out.
 
   This callback is called in the connection process.
@@ -354,7 +354,7 @@ defmodule DBConnection do
 
   ### Example
 
-      {:ok, conn} = DBConnection.start_link(mod, [idle_timeout: 5_000])
+      {:ok, conn} = DBConnection.start_link(mod, [idle_interval: 5_000])
   """
   @spec start_link(module, opts :: Keyword.t) :: GenServer.on_start
   def start_link(conn_mod, opts) do

@@ -4,8 +4,8 @@ defmodule TestIdle do
   alias TestPool, as: P
   alias TestAgent, as: A
 
-  @tag :idle_timeout
-  test "ping after idle timeout" do
+  @tag :idle_interval
+  test "ping after idle interval" do
     parent = self()
     stack = [
       fn(opts) ->
@@ -30,7 +30,7 @@ defmodule TestIdle do
       end]
     {:ok, agent} = A.start_link(stack)
 
-    opts = [agent: agent, parent: self(), idle_timeout: 50, idle_interval: 50]
+    opts = [agent: agent, parent: self(), idle_interval: 50]
     {:ok, pool} = P.start_link(opts)
     assert_receive {:hi, conn}
     assert_receive {:pong, ^conn}
