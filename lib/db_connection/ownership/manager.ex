@@ -14,7 +14,7 @@ defmodule DBConnection.Ownership.Manager do
   end
 
   @spec checkout(GenServer.server, Keyword.t) ::
-    :ok | {:already, :owner | :allowed}
+    {:ok, pid} | {:already, :owner | :allowed}
   def checkout(manager, opts) do
     GenServer.call(manager, {:checkout, opts}, :infinity)
   end
@@ -111,8 +111,8 @@ defmodule DBConnection.Ownership.Manager do
     if kind = already_checked_out(checkouts, caller) do
       {:reply, {:already, kind}, state}
     else
-      {_, state} = proxy_checkout(state, caller, opts)
-      {:reply, :ok, state}
+      {proxy, state} = proxy_checkout(state, caller, opts)
+      {:reply, {:ok, proxy}, state}
     end
   end
 

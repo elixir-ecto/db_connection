@@ -404,9 +404,8 @@ defmodule ManagerTest do
     end
 
     assert capture_log(fn ->
-      assert Ownership.ownership_checkout(pool, post_checkout: post_checkout) == :ok
       assert_raise RuntimeError, "oops", fn ->
-        assert_checked_out(pool, opts)
+        assert Ownership.ownership_checkout(pool, post_checkout: post_checkout) == :ok
       end
       assert Ownership.ownership_checkin(pool, []) == :not_found
       assert_receive :post_checkout
