@@ -231,9 +231,11 @@ defmodule DBConnection.Connection do
 
   def handle_info(
         {:"ETS-TRANSFER", holder, _pid, {msg, ref, extra}},
-        %{client: {ref, :after_connect}} = s
+        %{client: {ref, :after_connect}, timer: timer} = s
       ) do
     {_, state} = Holder.delete(holder)
+    cancel_timer(timer)
+    s = %{s | timer: nil}
 
     case msg do
       :checkin -> handle_checkin(state, s)

@@ -318,4 +318,24 @@ defmodule AfterConnectTest do
       handle_status: _,
       handle_prepare: [%Q{}, _, :newer_state]] = A.record(agent)
   end
+
+  test "after_connect cancels timeout" do
+    stack = [
+      {:ok, :state},
+      {:idle, :state},
+      {:idle, :newer_state},
+      {:ok, %Q{}, %R{}, :new_state}
+    ]
+    {:ok, agent} = A.start_link(stack)
+
+    after_connect = fn _conn -> :ok end
+    opts = [after_connect: after_connect, after_connect_timeout: 500, agent: agent, parent: self(), idle_interval: 10_000]
+    {:ok, pool} = P.start_link(opts)
+
+    # Wait until the after_connect could trigger by mistake
+    assert P.execute(pool, %Q{}, [:client])
+    Process.sleep(1000)
+
+    assert [connect: [_], handle_status: _, handle_status: _, handle_execute: _] = A.record(agent)
+  end
 end
