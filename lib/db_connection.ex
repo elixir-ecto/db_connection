@@ -172,7 +172,7 @@ defmodule DBConnection do
   @callback handle_begin(opts :: Keyword.t, state :: any) ::
     {:ok, result, new_state :: any} |
     {status, new_state :: any} |
-    {:error | :disconnect, Exception.t, new_state :: any}
+    {:disconnect, Exception.t, new_state :: any}
 
   @doc """
   Handle committing a transaction. Return `{:ok, result, state}` on successfully
@@ -189,7 +189,7 @@ defmodule DBConnection do
   @callback handle_commit(opts :: Keyword.t, state :: any) ::
     {:ok, result, new_state :: any} |
     {status, new_state :: any} |
-    {:error | :disconnect, Exception.t, new_state :: any}
+    {:disconnect, Exception.t, new_state :: any}
 
   @doc """
   Handle rolling back a transaction. Return `{:ok, result, state}` on successfully
@@ -207,7 +207,7 @@ defmodule DBConnection do
   @callback handle_rollback(opts :: Keyword.t, state :: any) ::
     {:ok, result, new_state :: any} |
     {:idle, new_state :: any} |
-    {:error | :disconnect, Exception.t, new_state :: any}
+    {:disconnect, Exception.t, new_state :: any}
 
   @doc """
   Handle getting the transaction status. Return `{:idle, state}` if outside a
