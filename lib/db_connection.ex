@@ -71,27 +71,6 @@ defmodule DBConnection do
   The `DBConnection.Query` protocol provide utility functions so that
   queries can be prepared or encoded and results decoding without
   blocking the connection or pool.
-
-  ## Queue config
-
-  Handling requests is done through a queue. When DBConnection is
-  started, there are two relevant options to control the queue:
-
-    * `:queue_target` in microseconds, defaults to 50
-    * `:queue_interval` in microseconds, defaults to 1000
-
-  Our goal is to stay under `:queue_target` for `:queue_interval`.
-  In case we can't reach that, then we double the :queue_target.
-  If we go above that, then we start dropping messages.
-
-  For example, by default our queue time is 50ms. If we stay above
-  50ms for a whole secnod, we double the target to 100ms and we
-  start dropping messages once it goes above the new limit.
-
-  This allows us to better plan for overloads as we can refuse
-  requests before they are sent to the database, which would
-  otherwise increase the burden on the database, making the
-  overload worse.
   """
   require Logger
 
@@ -372,10 +351,32 @@ defmodule DBConnection do
     in `GenServer.start_link/3`)
     * `:pool` - Chooses the pool to be started
     * `:pool_size` - Chooses the size of the pool
+    * `:queue_target` and `:queue_interval` - See "Queue config" below
 
   ### Example
 
       {:ok, conn} = DBConnection.start_link(mod, [idle_interval: 5_000])
+
+  ## Queue config
+
+  Handling requests is done through a queue. When DBConnection is
+  started, there are two relevant options to control the queue:
+
+    * `:queue_target` in microseconds, defaults to 50
+    * `:queue_interval` in microseconds, defaults to 1000
+
+  Our goal is to stay under `:queue_target` for `:queue_interval`.
+  In case we can't reach that, then we double the :queue_target.
+  If we go above that, then we start dropping messages.
+
+  For example, by default our queue time is 50ms. If we stay above
+  50ms for a whole secnod, we double the target to 100ms and we
+  start dropping messages once it goes above the new limit.
+
+  This allows us to better plan for overloads as we can refuse
+  requests before they are sent to the database, which would
+  otherwise increase the burden on the database, making the
+  overload worse.
   """
   @spec start_link(module, opts :: Keyword.t) :: GenServer.on_start
   def start_link(conn_mod, opts) do
@@ -408,7 +409,7 @@ defmodule DBConnection do
 
     * `:queue` - Whether to block waiting in an internal queue for the
     connection's state (boolean, default: `true`). See "Queue config" in
-    the module docs
+    `start_link/2` docs
     * `:timeout` - The maximum time that the caller is allowed to perform
     this operation (default: `15_000`)
     * `:log` - A function to log information about a call, either
@@ -467,7 +468,7 @@ defmodule DBConnection do
 
     * `:queue` - Whether to block waiting in an internal queue for the
     connection's state (boolean, default: `true`). See "Queue config" in
-    the module docs
+    `start_link/2` docs
     * `:timeout` - The maximum time that the caller is allowed to perform
     this operation (default: `15_000`)
     * `:log` - A function to log information about a call, either
@@ -525,7 +526,7 @@ defmodule DBConnection do
 
     * `:queue` - Whether to block waiting in an internal queue for the
     connection's state (boolean, default: `true`). See "Queue config" in
-    the module docs
+    `start_link/2` docs
     * `:timeout` - The maximum time that the caller is allowed to perform
     this operation (default: `15_000`)
     * `:log` - A function to log information about a call, either
@@ -583,7 +584,7 @@ defmodule DBConnection do
 
     * `:queue` - Whether to block waiting in an internal queue for the
     connection's state (boolean, default: `true`). See "Queue config" in
-    the module docs
+    `start_link/2` docs
     * `:timeout` - The maximum time that the caller is allowed to perform
     this operation (default: `15_000`)
     * `:log` - A function to log information about a call, either
@@ -635,7 +636,7 @@ defmodule DBConnection do
 
     * `:queue` - Whether to block waiting in an internal queue for the
     connection's state (boolean, default: `true`). See "Queue config" in
-    the module docs
+    `start_link/2` docs
     * `:timeout` - The maximum time that the caller is allowed to perform
     this operation (default: `15_000`)
 
@@ -717,7 +718,7 @@ defmodule DBConnection do
 
     * `:queue` - Whether to block waiting in an internal queue for the
     connection's state (boolean, default: `true`). See "Queue config" in
-    the module docs
+    `start_link/2` docs
     * `:timeout` - The maximum time that the caller is allowed to perform
     this operation (default: `15_000`)
     * `:log` - A function to log information about begin, commit and rollback
@@ -856,7 +857,7 @@ defmodule DBConnection do
 
     * `:queue` - Whether to block waiting in an internal queue for the
     connection's state (boolean, default: `true`). See "Queue config" in
-    the module docs
+    `start_link/2` docs
     * `:timeout` - The maximum time that the caller is allowed to perform
     this operation (default: `15_000`)
     * `:log` - A function to log information about a call, either
@@ -890,7 +891,7 @@ defmodule DBConnection do
 
     * `:queue` - Whether to block waiting in an internal queue for the
     connection's state (boolean, default: `true`). See "Queue config" in
-    the module docs
+    `start_link/2` docs
     * `:timeout` - The maximum time that the caller is allowed to perform
     this operation (default: `15_000`)
     * `:log` - A function to log information about a call, either
