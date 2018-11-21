@@ -13,25 +13,25 @@ defmodule DBAgent do
 
   @spec get(DBConnection.conn(), (state :: any -> value), timeout) :: value when value: var
   def get(conn, fun, timeout \\ 5_000) do
-    DBConnection.execute!(conn, %Query{query: :get}, fun, pool_timeout: timeout)
+    DBConnection.execute!(conn, %Query{query: :get}, fun, timeout: timeout)
   end
 
   @spec update(DBConnection.conn(), (state :: any -> new_state :: any), timeout) :: :ok
   def update(conn, fun, timeout \\ 5_000) do
-    DBConnection.execute!(conn, %Query{query: :update}, fun, pool_timeout: timeout)
+    DBConnection.execute!(conn, %Query{query: :update}, fun, timeout: timeout)
   end
 
   @spec get(DBConnection.conn(), (state :: any -> {value, new_state :: any}), timeout) :: value
         when value: var
   def get_and_update(conn, fun, timeout \\ 5_000) do
-    DBConnection.execute!(conn, %Query{query: :get_and_update}, fun, pool_timeout: timeout)
+    DBConnection.execute!(conn, %Query{query: :get_and_update}, fun, timeout: timeout)
   end
 
   @spec transaction(DBConnection.conn(), (DBConnection.t() -> res), timeout) ::
           {:ok, res} | {:error, reason :: any}
         when res: var
   def transaction(conn, fun, timeout \\ 5_000) when is_function(fun, 1) do
-    DBConnection.transaction(conn, fun, pool_timeout: timeout)
+    DBConnection.transaction(conn, fun, timeout: timeout)
   end
 
   @spec rollback(DBConnection.t(), reason :: any) :: no_return

@@ -22,7 +22,7 @@ defmodule DBConnection.Ownership.Manager do
   @spec checkin(GenServer.server, Keyword.t) ::
     :ok | :not_owner | :not_found
   def checkin(manager, opts) do
-    timeout = Keyword.get(opts, :pool_timeout, @timeout)
+    timeout = Keyword.get(opts, :timeout, @timeout)
     GenServer.call(manager, :checkin, timeout)
   end
 
@@ -31,14 +31,14 @@ defmodule DBConnection.Ownership.Manager do
   def mode(manager, mode, opts)
       when mode in [:auto, :manual]
       when elem(mode, 0) == :shared and is_pid(elem(mode, 1)) do
-    timeout = Keyword.get(opts, :pool_timeout, @timeout)
+    timeout = Keyword.get(opts, :timeout, @timeout)
     GenServer.call(manager, {:mode, mode}, timeout)
   end
 
   @spec allow(GenServer.server, parent :: pid, allow :: pid, Keyword.t) ::
     :ok | {:already, :owner | :allowed} | :not_found
   def allow(manager, parent, allow, opts) do
-    timeout = Keyword.get(opts, :pool_timeout, @timeout)
+    timeout = Keyword.get(opts, :timeout, @timeout)
     GenServer.call(manager, {:allow, parent, allow}, timeout)
   end
 

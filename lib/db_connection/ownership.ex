@@ -50,9 +50,8 @@ defmodule DBConnection.Ownership do
 
   If the `:caller` option is given on checkout with a pid and no pool is
   assigned to the current process, a connection will be allowed from the
-  given pid and used on checkout with `:pool_timeout` of `:infinity`.
-  This is useful when multiple tasks need to collaborate on the same
-  connection (hence the `:infinity` timeout).
+  given pid and used on checkout. This is useful when multiple tasks need
+  to collaborate on the same connection (hence the `:infinity` timeout).
   """
 
   alias DBConnection.Ownership.Manager
