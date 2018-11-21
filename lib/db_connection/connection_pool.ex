@@ -244,7 +244,11 @@ defmodule DBConnection.ConnectionPool do
   end
 
   defp drop(delay, from) do
-    message = "connection not available and request was dropped from queue after #{delay}ms"
+    message =
+      "connection not available and request was dropped from queue after #{delay}ms. " <>
+        "You can configure how long requests wait in the queue using :queue_target and " <>
+        ":queue_interval. See DBConnection.start_link/2 for more information"
+
     err = DBConnection.ConnectionError.exception(message)
     Holder.reply_error(from, err)
   end

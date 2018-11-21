@@ -139,7 +139,7 @@ defmodule QueueTest do
 
     P.run(pool, fn(_) ->
       assert_raise DBConnection.ConnectionError,
-        ~r"^connection not available and request was dropped from queue after \d+ms$",
+        ~r"connection not available and request was dropped from queue after \d+ms",
         fn() -> P.run(pool, fn(_) -> flunk("got connection") end, opts) end
     end)
 
