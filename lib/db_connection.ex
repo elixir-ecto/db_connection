@@ -362,15 +362,15 @@ defmodule DBConnection do
   Handling requests is done through a queue. When DBConnection is
   started, there are two relevant options to control the queue:
 
-    * `:queue_target` in microseconds, defaults to 50
-    * `:queue_interval` in microseconds, defaults to 1000
+    * `:queue_target` in milliseconds, defaults to 50
+    * `:queue_interval` in milliseconds, defaults to 1000
 
   Our goal is to stay under `:queue_target` for `:queue_interval`.
   In case we can't reach that, then we double the :queue_target.
   If we go above that, then we start dropping messages.
 
   For example, by default our queue time is 50ms. If we stay above
-  50ms for a whole secnod, we double the target to 100ms and we
+  50ms for a whole second, we double the target to 100ms and we
   start dropping messages once it goes above the new limit.
 
   This allows us to better plan for overloads as we can refuse
