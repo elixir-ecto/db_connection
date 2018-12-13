@@ -240,7 +240,6 @@ defmodule DBConnection do
 
   @doc """
   Execute a query prepared by `c:handle_prepare/3`. Return
-  `{:ok, result, state}` to return the result `result` and continue,
   `{:ok, query, result, state}` to return altered query `query` and result
   `result` and continue, `{:error, exception, state}` to return an error and
   continue or `{:disconnect, exception, state}` to return an error and
