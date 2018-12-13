@@ -206,7 +206,7 @@ defmodule DBConnection do
   """
   @callback handle_rollback(opts :: Keyword.t, state :: any) ::
     {:ok, result, new_state :: any} |
-    {:idle, new_state :: any} |
+    {status, new_state :: any} |
     {:disconnect, Exception.t, new_state :: any}
 
   @doc """
@@ -219,7 +219,7 @@ defmodule DBConnection do
   `:error`.
   """
   @callback handle_status(opts :: Keyword.t, state :: any) ::
-    {:idle | :transaction | :error, new_state :: any} |
+    {status, new_state :: any} |
     {:disconnect, Exception.t, new_state :: any}
 
   @doc """
@@ -240,7 +240,6 @@ defmodule DBConnection do
 
   @doc """
   Execute a query prepared by `c:handle_prepare/3`. Return
-  `{:ok, result, state}` to return the result `result` and continue,
   `{:ok, query, result, state}` to return altered query `query` and result
   `result` and continue, `{:error, exception, state}` to return an error and
   continue or `{:disconnect, exception, state}` to return an error and
@@ -266,7 +265,6 @@ defmodule DBConnection do
 
   @doc """
   Declare a cursor using a query prepared by `c:handle_prepare/3`. Return
-  `{:ok, cursor, state}` to start a cursor for a stream and continue,
   `{:ok, query, cursor, state}` to return altered query `query` and cursor
   `cursor` for a stream and continue, `{:error, exception, state}` to return an
   error and continue or `{:disconnect, exception, state}` to return an error
