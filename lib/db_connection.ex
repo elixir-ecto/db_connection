@@ -206,7 +206,7 @@ defmodule DBConnection do
   """
   @callback handle_rollback(opts :: Keyword.t, state :: any) ::
     {:ok, result, new_state :: any} |
-    {:idle, new_state :: any} |
+    {status, new_state :: any} |
     {:disconnect, Exception.t, new_state :: any}
 
   @doc """
