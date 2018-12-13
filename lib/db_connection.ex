@@ -266,7 +266,6 @@ defmodule DBConnection do
 
   @doc """
   Declare a cursor using a query prepared by `c:handle_prepare/3`. Return
-  `{:ok, cursor, state}` to start a cursor for a stream and continue,
   `{:ok, query, cursor, state}` to return altered query `query` and cursor
   `cursor` for a stream and continue, `{:error, exception, state}` to return an
   error and continue or `{:disconnect, exception, state}` to return an error
