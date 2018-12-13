@@ -219,7 +219,7 @@ defmodule DBConnection do
   `:error`.
   """
   @callback handle_status(opts :: Keyword.t, state :: any) ::
-    {:idle | :transaction | :error, new_state :: any} |
+    {status, new_state :: any} |
     {:disconnect, Exception.t, new_state :: any}
 
   @doc """
