@@ -97,7 +97,7 @@ defmodule DBConnection do
   """
   @type t :: %__MODULE__{pool_ref: any, conn_ref: reference}
   @type conn :: GenServer.server | t
-  @type query :: any
+  @type query :: DBConnection.Query.t
   @type params :: any
   @type result :: any
   @type cursor :: any
