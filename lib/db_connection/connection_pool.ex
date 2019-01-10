@@ -1,22 +1,5 @@
 defmodule DBConnection.ConnectionPool do
-  @moduledoc """
-  Default implementation of connection pool.
-
-  ## Options
-
-    * `:name` - the name of the pool
-    * `:spawn_opt` - options given to the pool manager
-    * `:pool_size` - defaults to 1
-    * `:queue_target`
-    * `:queue_interval`
-    * `:idle_interval`
-    * `:max_restarts`
-    * `:max_seconds`
-    * `:backoff_min`
-    * `:backoff_max`
-    * `:backoff_type`
-
-  """
+  @moduledoc false
 
   use GenServer
   alias DBConnection.ConnectionPool.PoolSupervisor

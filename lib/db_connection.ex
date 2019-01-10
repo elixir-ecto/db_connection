@@ -346,10 +346,15 @@ defmodule DBConnection do
     a 1-arity fun, `{module, function, args}` with `t:DBConnection.t/0` prepended
     to `args` or `nil` (default: `nil`)
     * `:name` - A name to register the started process (see the `:name` option
-    in `GenServer.start_link/3`)
+      in `GenServer.start_link/3`)
     * `:pool` - Chooses the pool to be started
     * `:pool_size` - Chooses the size of the pool
+    * `:idle_interval` - Controls the frequency we ping the database when the
+      connection is idle
     * `:queue_target` and `:queue_interval` - See "Queue config" below
+    * `:max_restarts` and `:max_seconds` - Configures the `:max_restarts` and
+      `:max_seconds` for the connection pool supervisor (see the `Supervisor`
+      docs)
 
   ### Example
 
