@@ -51,11 +51,13 @@ defmodule DBConnection.Holder do
               {:ok, pool_ref :: any, module, state :: any} | {:error, Exception.t()}
   def checkout(pool, opts) do
     caller = Keyword.get(opts, :caller, self())
+    callers = [caller | Process.get(:"$callers") || []]
+
     queue? = Keyword.get(opts, :queue, @queue)
     now = System.monotonic_time(@time_unit)
     timeout = abs_timeout(now, opts)
 
-    case checkout(pool, caller, queue?, now, timeout) do
+    case checkout(pool, callers, queue?, now, timeout) do
       {:ok, _, _, _} = ok ->
         ok
 
@@ -209,10 +211,10 @@ defmodule DBConnection.Holder do
 
   ## Private
 
-  defp checkout(pool, caller, queue?, start, timeout) do
+  defp checkout(pool, callers, queue?, start, timeout) do
     case GenServer.whereis(pool) do
       pid when node(pid) == node() ->
-        checkout_call(pid, caller, queue?, start, timeout)
+        checkout_call(pid, callers, queue?, start, timeout)
 
       pid when node(pid) != node() ->
         {:exit, {:badnode, node(pid)}}
@@ -225,9 +227,9 @@ defmodule DBConnection.Holder do
     end
   end
 
-  defp checkout_call(pid, caller, queue?, start, timeout) do
+  defp checkout_call(pid, callers, queue?, start, timeout) do
     lock = Process.monitor(pid)
-    send(pid, {:db_connection, {self(), lock}, {:checkout, caller, start, queue?}})
+    send(pid, {:db_connection, {self(), lock}, {:checkout, callers, start, queue?}})
 
     receive do
       {:"ETS-TRANSFER", holder, pool, {^lock, ref}} ->

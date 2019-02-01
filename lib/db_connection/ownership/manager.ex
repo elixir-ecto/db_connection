@@ -116,8 +116,10 @@ defmodule DBConnection.Ownership.Manager do
     end
   end
 
-  def handle_info({:db_connection, from, {:checkout, caller, _now, queue?}}, state) do
+  def handle_info({:db_connection, from, {:checkout, callers, _now, queue?}}, state) do
     %{checkouts: checkouts, mode: mode} = state
+    caller = Enum.find(callers, &Map.has_key?(checkouts, &1)) || hd(callers)
+
     case Map.get(checkouts, caller, :not_found) do
       {status, _ref, proxy} when status in [:owner, :allowed] ->
         DBConnection.Holder.reply_redirect(from, proxy)

@@ -46,12 +46,17 @@ defmodule DBConnection.Ownership do
       module is the module given to `:post_checkout` Defaults to simply returning
       the given connection module and state.
 
-  ## Caller handling
+  ## Callers lookup
 
-  If the `:caller` option is given on checkout with a pid and no pool is
-  assigned to the current process, a connection will be allowed from the
-  given pid and used on checkout. This is useful when multiple tasks need
-  to collaborate on the same connection (hence the `:infinity` timeout).
+  When checking out, the ownership pool first looks if there is a connection
+  assigned to the current process and then checks if there is a connection
+  assigned to any of the processes listed under the `$callers` process
+  dictionary entry. The `$callers` entry is set by default for tasks from
+  Elixir v1.8.
+
+  You can also pass the `:caller` option on checkout with a pid and that
+  pid will be looked up first, instead of `self()`, and then we fall back
+  to `$callers`.
   """
 
   alias DBConnection.Ownership.Manager

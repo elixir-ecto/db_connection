@@ -37,7 +37,7 @@ defmodule ManagerTest do
     {:ok, pool, _opts} = start_pool()
     parent = self()
 
-    Task.await Task.async fn ->
+    Task.await async_no_callers fn ->
       assert Ownership.ownership_allow(pool, parent, self(), []) ==
              :not_found
     end
@@ -46,7 +46,7 @@ defmodule ManagerTest do
     assert Ownership.ownership_allow(pool, self(), self(), []) ==
            {:already, :owner}
 
-    Task.await Task.async fn ->
+    Task.await async_no_callers fn ->
       assert Ownership.ownership_allow(pool, parent, self(), []) ==
              :ok
       assert Ownership.ownership_allow(pool, parent, self(), []) ==
@@ -55,7 +55,7 @@ defmodule ManagerTest do
       assert Ownership.ownership_checkin(pool, []) == :not_owner
 
       parent = self()
-      Task.await Task.async fn ->
+      Task.await async_no_callers fn ->
         assert Ownership.ownership_allow(pool, parent, self(), []) ==
                :ok
       end
@@ -75,7 +75,7 @@ defmodule ManagerTest do
       send(parent, :no_checkout)
     end)
 
-    {:ok, owner} = Task.start fn ->
+    owner = async_no_callers fn ->
       :ok = Ownership.ownership_checkout(pool, [])
       :ok = Ownership.ownership_allow(pool, self(), pid, [])
       send(pid, :assert_checkout)
@@ -83,8 +83,8 @@ defmodule ManagerTest do
     end
 
     assert_receive :checkout
-    send(owner, :down)
-    ref = Process.monitor(owner)
+    send(owner.pid, :down)
+    ref = Process.monitor(owner.pid)
     assert_receive {:DOWN, ^ref, _, _, _}
 
     :ok = Ownership.ownership_checkout(pool, [])
@@ -97,7 +97,7 @@ defmodule ManagerTest do
     {:ok, pool, opts} = start_pool()
     parent = self()
 
-    Task.start_link fn ->
+    async_no_callers fn ->
       :ok = Ownership.ownership_checkout(pool, [])
       :ok = Ownership.ownership_allow(pool, self(), parent, [])
       :ok = Ownership.ownership_checkin(pool, [])
@@ -115,14 +115,14 @@ defmodule ManagerTest do
 
     assert Ownership.ownership_mode(pool, :manual, [])
     :ok = Ownership.ownership_checkout(pool, [])
-    Task.start_link fn ->
+    async_no_callers fn ->
       assert_checked_out pool, [caller: parent] ++ opts
       send parent, :checkin
     end
     assert_receive :checkin
 
     assert Ownership.ownership_mode(pool, {:shared, parent}, [])
-    Task.start_link fn ->
+    async_no_callers fn ->
       assert_checked_out pool, [caller: parent] ++ opts
       send parent, :checkin
     end
@@ -130,7 +130,7 @@ defmodule ManagerTest do
 
     assert Ownership.ownership_mode(pool, :auto, [])
     :ok = Ownership.ownership_checkout(pool, [])
-    Task.start_link fn ->
+    async_no_callers fn ->
       assert_checked_out pool, [caller: parent] ++ opts
       send parent, :checkin
     end
@@ -144,7 +144,7 @@ defmodule ManagerTest do
     parent = self()
 
     assert Ownership.ownership_mode(pool, :manual, [])
-    Task.start_link fn ->
+    async_no_callers fn ->
       refute_checked_out pool, [caller: parent] ++ opts
       send parent, :checkin
     end
@@ -153,9 +153,9 @@ defmodule ManagerTest do
     assert Ownership.ownership_checkout(pool, [])
     :ok = Ownership.ownership_mode(pool, {:shared, parent}, [])
 
-    Task.start_link fn ->
+    async_no_callers fn ->
       untracked = self()
-      Task.start_link fn ->
+      async_no_callers fn ->
         assert_checked_out pool, [caller: untracked] ++ opts
         send untracked, :checkin
       end
@@ -168,7 +168,7 @@ defmodule ManagerTest do
     Ownership.ownership_checkin(pool, [])
     assert Ownership.ownership_mode(pool, :auto, [])
 
-    Task.start_link fn ->
+    async_no_callers fn ->
       assert_checked_out pool, [caller: parent] ++ opts
       send parent, :checkin
     end
@@ -185,7 +185,7 @@ defmodule ManagerTest do
     parent = self()
     assert Ownership.ownership_mode(pool, :auto, []) == :ok
 
-    task = Task.async(fn ->
+    task = async_no_callers(fn ->
       assert_checked_out pool, opts
       send parent, :checked_out
       assert_receive :manual
@@ -205,7 +205,7 @@ defmodule ManagerTest do
     :ok = Ownership.ownership_checkout(pool, [])
     assert_checked_out pool, opts
 
-    task = Task.async fn ->
+    task = async_no_callers fn ->
       :ok = Ownership.ownership_allow(pool, parent, self(), [])
       assert_checked_out pool, opts
       send parent, :allowed
@@ -227,7 +227,7 @@ defmodule ManagerTest do
     :ok = Ownership.ownership_checkout(pool, [])
     assert_checked_out pool, opts
 
-    task = Task.async fn ->
+    task = async_no_callers fn ->
       :ok = Ownership.ownership_allow(pool, parent, self(), [])
       assert_checked_out pool, opts
       send parent, :allowed
@@ -243,6 +243,18 @@ defmodule ManagerTest do
     Task.await(task)
   end
 
+  @tag :requires_callers
+  test "does automatic checkouts for tasks" do
+    {:ok, pool, opts} = start_pool()
+    :ok = Ownership.ownership_checkout(pool, [])
+    assert_checked_out pool, opts
+
+    Task.async(fn ->
+      assert_checked_out pool, opts
+      Task.async(fn -> assert_checked_out pool, opts end) |> Task.await
+    end) |> Task.await()
+  end
+
   test "does not require explicit checkout on shared mode" do
     {:ok, pool, opts} = start_pool()
     parent = self()
@@ -252,17 +264,17 @@ defmodule ManagerTest do
 
     # Checkout but still do not share
     assert Ownership.ownership_checkout(pool, []) == :ok
-    Task.async(fn -> refute_checked_out(pool, opts) end) |> Task.await
+    async_no_callers(fn -> refute_checked_out(pool, opts) end) |> Task.await
 
     # Cannot change mode from allowed process as well
-    Task.async(fn ->
+    async_no_callers(fn ->
       Ownership.ownership_allow(pool, parent, self(), [])
       assert Ownership.ownership_mode(pool, {:shared, self()}, []) == :not_owner
     end) |> Task.await
 
     # Finally enable shared mode
     assert Ownership.ownership_mode(pool, {:shared, self()}, []) == :ok
-    Task.async(fn -> assert_checked_out pool, opts end) |> Task.await
+    async_no_callers(fn -> assert_checked_out pool, opts end) |> Task.await
   end
 
   test "shared mode checks in previous connections" do
@@ -271,7 +283,7 @@ defmodule ManagerTest do
     {:ok, pool} = P.start_link(opts)
     parent = self()
 
-    task = Task.async(fn ->
+    task = async_no_callers(fn ->
       assert Ownership.ownership_checkout(pool, []) == :ok
       send parent, :checked_out
       assert_receive :shared
@@ -290,7 +302,7 @@ defmodule ManagerTest do
     {:ok, pool, opts} = start_pool()
     parent = self()
 
-    Task.start fn ->
+    async_no_callers fn ->
       assert Ownership.ownership_checkout(pool, []) == :ok
       assert Ownership.ownership_mode(pool, {:shared, self()}, []) == :ok
       send parent, :shared
@@ -308,7 +320,7 @@ defmodule ManagerTest do
     {:ok, pool, opts} = start_pool()
     parent = self()
 
-    {:ok, pid} = Task.start fn ->
+    task = async_no_callers fn ->
       assert Ownership.ownership_checkout(pool, []) == :ok
       assert Ownership.ownership_mode(pool, {:shared, self()}, []) == :ok
       send parent, :shared
@@ -318,8 +330,9 @@ defmodule ManagerTest do
     assert_receive :shared
     assert Ownership.ownership_mode(pool, {:shared, self()}, []) == :already_shared
 
+    Process.flag(:trap_exit, true)
     :erlang.trace(pool, true, [:receive])
-    Process.exit(pid, :shutdown)
+    Process.exit(task.pid, :shutdown)
     assert_receive {:trace, ^pool, :receive, {:DOWN, _, _, _, _}}
 
     refute_checked_out pool, opts
@@ -511,6 +524,13 @@ defmodule ManagerTest do
     opts = [agent: agent, parent: self(), ownership_mode: :manual] ++ opts
     {:ok, pid} = P.start_link(opts)
     {:ok, pid, opts}
+  end
+
+  defp async_no_callers(fun) do
+    Task.async(fn ->
+      Process.delete(:"$callers")
+      fun.()
+    end)
   end
 
   defp assert_checked_out(pool, opts) do
