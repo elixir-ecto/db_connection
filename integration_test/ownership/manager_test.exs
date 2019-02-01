@@ -244,8 +244,10 @@ defmodule ManagerTest do
   end
 
   @tag :requires_callers
-  test "does automatic checkouts for tasks" do
+  test "performs callers checkout on manual mode" do
     {:ok, pool, opts} = start_pool()
+    assert Ownership.ownership_mode(pool, :manual, []) == :ok
+
     :ok = Ownership.ownership_checkout(pool, [])
     assert_checked_out pool, opts
 
@@ -253,6 +255,19 @@ defmodule ManagerTest do
       assert_checked_out pool, opts
       Task.async(fn -> assert_checked_out pool, opts end) |> Task.await
     end) |> Task.await()
+  end
+
+  @tag :requires_callers
+  test "does not perform callers checkout on auto mode" do
+    {:ok, agent} = A.start_link([{:ok, :state}, {:ok, :state}] ++ List.duplicate({:idle, :state}, 10))
+    opts = [agent: agent, parent: self(), ownership_mode: :auto, pool_size: 2]
+    {:ok, pool} = P.start_link(opts)
+
+    P.run(pool, fn _ ->
+      Task.async(fn ->
+        assert_checked_out pool, opts
+      end) |> Task.await()
+    end)
   end
 
   test "does not require explicit checkout on shared mode" do
@@ -338,6 +353,25 @@ defmodule ManagerTest do
     refute_checked_out pool, opts
     assert Ownership.ownership_checkout(pool, []) == :ok
     assert Ownership.ownership_mode(pool, {:shared, self()}, []) == :ok
+  end
+
+  test "shared mode is not permanent" do
+    {:ok, pool, opts} = start_pool()
+    assert Ownership.ownership_checkout(pool, []) == :ok
+    assert Ownership.ownership_mode(pool, {:shared, self()}, []) == :ok
+    parent = self()
+
+    task = async_no_callers fn ->
+      assert_checked_out pool, opts
+      send parent, :manual
+      assert_receive :refute
+      refute_checked_out pool, opts
+    end
+
+    assert_receive :manual
+    assert Ownership.ownership_mode(pool, :manual, []) == :ok
+    send task.pid, :refute
+    Task.await(task)
   end
 
   ## Callbacks

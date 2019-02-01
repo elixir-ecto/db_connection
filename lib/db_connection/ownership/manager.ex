@@ -118,7 +118,7 @@ defmodule DBConnection.Ownership.Manager do
 
   def handle_info({:db_connection, from, {:checkout, callers, _now, queue?}}, state) do
     %{checkouts: checkouts, mode: mode} = state
-    caller = Enum.find(callers, &Map.has_key?(checkouts, &1)) || hd(callers)
+    caller = find_caller(callers, checkouts, mode)
 
     case Map.get(checkouts, caller, :not_found) do
       {status, _ref, proxy} when status in [:owner, :allowed] ->
@@ -133,9 +133,9 @@ defmodule DBConnection.Ownership.Manager do
         {:noreply, state}
       :not_found ->
         {:shared, shared} = mode
-        {:owner, ref, proxy} = Map.fetch!(checkouts, shared)
+        {:owner, _ref, proxy} = Map.fetch!(checkouts, shared)
         DBConnection.Holder.reply_redirect(from, proxy)
-        {:noreply, owner_allow(state, caller, ref, proxy)}
+        {:noreply, state}
     end
   end
 
@@ -232,6 +232,14 @@ defmodule DBConnection.Ownership.Manager do
   end
   defp unshare(state, _ref) do
     state
+  end
+
+  defp find_caller(callers, checkouts, :manual) do
+    Enum.find(callers, &Map.has_key?(checkouts, &1)) || hd(callers)
+  end
+
+  defp find_caller([caller | _], _checkouts, _mode) do
+    caller
   end
 
   defp not_found({pid, _} = from) do
