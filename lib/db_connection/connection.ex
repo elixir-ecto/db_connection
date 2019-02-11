@@ -98,10 +98,10 @@ defmodule DBConnection.Connection do
       {e, stack}
     else
       message =
-        "connect raised #{inspect(e.__struct__)} exception#{sanitized_message(e)}." <>
+        "connect raised #{inspect(e.__struct__)} exception#{sanitized_message(e)}. " <>
           "The exception details are hidden, as they may contain sensitive data such as " <>
           "database credentials. You may set :show_sensitive_data_on_connection_error " <>
-          "to true if you wish to see all of the details"
+          "to true when starting your connection if you wish to see all of the details"
 
       {RuntimeError.exception(message), cleanup_stacktrace(stack)}
     end
