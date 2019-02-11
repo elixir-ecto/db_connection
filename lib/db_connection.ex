@@ -355,8 +355,11 @@ defmodule DBConnection do
       connection is idle
     * `:queue_target` and `:queue_interval` - See "Queue config" below
     * `:max_restarts` and `:max_seconds` - Configures the `:max_restarts` and
-      `:max_seconds` for the connection pool supervisor (see the `Supervisor`
-      docs)
+      `:max_seconds` for the connection pool supervisor (see the `Supervisor` docs)
+    * `:show_sensitive_data_on_connection_error` - By default, `DBConnection`
+      hides all information during connection errors to avoid leaking credentials
+      or other sensitive information. You can set this option if you wish to
+      see complete errors and stacktraces during connection errors
 
   ### Example
 
