@@ -32,9 +32,15 @@ defmodule DBConnection.ConnectionPool do
     idle_interval = Keyword.get(opts, :idle_interval, @idle_interval)
     now = System.monotonic_time(@time_unit)
     codel = %{target: target, interval: interval, delay: 0, slow: false,
-              next: now, poll: nil, idle_interval: idle_interval, idle: nil}
+              next: now, poll: nil, idle_interval: idle_interval, idle: nil,
+              metrics: empty_metrics()}
     codel = start_idle(now, now, start_poll(now, now, codel))
     {:ok, {:busy, queue, codel}}
+  end
+
+  def handle_call(:metrics, _from, {_, _, codel} = data) do
+    data = put_elem(data, 2, %{codel | metrics: empty_metrics()})
+    {:reply, codel.metrics, data}
   end
 
   def handle_info({:db_connection, from, {:checkout, _caller, now, queue?}}, {:busy, queue, _} = busy) do
@@ -215,12 +221,32 @@ defmodule DBConnection.ConnectionPool do
     end
   end
 
-  defp go(delay, from, time, holder, queue, %{delay: min} = codel) do
+  defp go(delay, from, time, holder, queue, %{delay: min, metrics: metrics} = codel) do
     case Holder.handle_checkout(holder, from, queue) do
-      true when delay < min ->
-        {:noreply, {:busy, queue, %{codel | delay: delay}}}
       true ->
-        {:noreply, {:busy, queue, codel}}
+        codel = case delay < min do
+          true -> %{codel | delay: delay}
+          false -> codel
+        end
+
+        wait_bucket = cond do
+          delay < 500 -> :waited_a
+          delay < 2000 -> :waited_b
+          true -> :waited_c
+        end
+
+        metrics = %{metrics |
+          wait_bucket => metrics[wait_bucket] + 1,
+          waited_total: metrics.waited_total + 1,
+          total_wait_time: metrics.total_wait_time + delay,
+        }
+
+        metrics = case delay > metrics.longest do
+          true -> %{metrics | longest: delay}
+          false -> metrics
+        end
+
+        {:noreply, {:busy, queue, %{codel | metrics: metrics}}}
       false ->
         dequeue(time, holder, queue, codel)
     end
@@ -250,5 +276,9 @@ defmodule DBConnection.ConnectionPool do
     timeout = now + interval
     idle = :erlang.start_timer(timeout, self(), {timeout, last_sent}, [abs: true])
     %{codel | idle: idle}
+  end
+
+  defp empty_metrics() do
+    %{total_wait_time: 0, longest: 0, waited_total: 0, waited_a: 0, waited_b: 0, waited_c: 0}
   end
 end
