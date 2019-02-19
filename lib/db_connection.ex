@@ -103,6 +103,28 @@ defmodule DBConnection do
   @type cursor :: any
   @type status :: :idle | :transaction | :error
 
+  @type start_option ::
+          {:after_connect, (t -> any) | {module, atom, [any]} | nil}
+          | {:after_connect_timeout, timeout}
+          | {:backoff_max, non_neg_integer}
+          | {:backoff_min, non_neg_integer}
+          | {:backoff_type, :stop | :exp | :rand | :rand_exp}
+          | {:configure, (keyword -> keyword) | {module, atom, [any]} | nil}
+          | {:idle_interval, non_neg_integer}
+          | {:max_restarts, non_neg_integer}
+          | {:max_seconds, pos_integer}
+          | {:name, GenServer.name()}
+          | {:pool, module}
+          | {:pool_size, pos_integer}
+          | {:queue_interval, non_neg_integer}
+          | {:queue_target, non_neg_integer}
+          | {:show_sensitive_data_on_connection_error, boolean}
+
+  @type option ::
+          {:log, (DBConnection.LogEntry.t -> any) | {module, atom, [any]} | nil}
+          | {:queue, boolean}
+          | {:timeout, timeout}
+
   @doc """
   Connect to the database. Return `{:ok, state}` on success or
   `{:error, exception}` on failure.
