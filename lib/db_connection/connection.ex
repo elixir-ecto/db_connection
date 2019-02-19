@@ -52,7 +52,8 @@ defmodule DBConnection.Connection do
       timer: nil,
       backoff: Backoff.new(opts),
       after_connect: Keyword.get(opts, :after_connect),
-      after_connect_timeout: Keyword.get(opts, :after_connect_timeout, @timeout)
+      after_connect_timeout: Keyword.get(opts, :after_connect_timeout, @timeout),
+      ping_timeout: Keyword.get(opts, :ping_timeout, 1_000)
     }
 
     {:connect, :init, s}
@@ -139,13 +140,9 @@ defmodule DBConnection.Connection do
   end
 
   @doc false
-  def handle_cast({:ping, ref, state}, %{client: {ref, :pool}, mod: mod} = s) do
-    case apply(mod, :ping, [state]) do
-      {:ok, state} ->
-        pool_update(state, s)
-
-      {:disconnect, err, state} ->
-        {:disconnect, {:log, err}, %{s | state: state}}
+  def handle_cast({:ping, ref, state}, %{client: {ref, :pool}} = s) do
+    with {:ok, state} <- handle_ping(state, s) do
+      pool_update(state, s)
     end
   end
 
@@ -220,12 +217,10 @@ defmodule DBConnection.Connection do
   end
 
   def handle_info(:timeout, %{client: nil} = s) do
-    %{mod: mod, state: state} = s
-    case apply(mod, :ping, [state]) do
-      {:ok, state} ->
-        handle_timeout(%{s | state: state})
-      {:disconnect, err, state} ->
-        {:disconnect, {:log, err}, %{s | state: state}}
+    %{state: state} = s
+
+    with {:ok, state} <- handle_ping(state, s) do
+      handle_timeout(%{s | state: state})
     end
   end
 
@@ -379,6 +374,31 @@ defmodule DBConnection.Connection do
 
       [{mod, fun, args, info} | rest] when is_list(args) ->
         [{mod, fun, length(args), info} | rest]
+    end
+  end
+
+  defp handle_ping(state, s) do
+    %{mod: mod, ping_timeout: timeout} = s
+
+    task =
+      Task.async(fn ->
+        case apply(mod, :ping, [state]) do
+          {:ok, _state} = ok ->
+            ok
+
+          {:disconnect, err, state} ->
+            {:disconnect, {:log, err}, %{s | state: state}}
+        end
+      end)
+
+    case Task.yield(task, timeout) || Task.shutdown(task) do
+      {:ok, result} ->
+        result
+
+      nil ->
+        message = "ping timed out because it was executing for longer than #{timeout}ms"
+        err = DBConnection.ConnectionError.exception(message)
+        {:disconnect, {:log, err}, s}
     end
   end
 end
