@@ -82,7 +82,7 @@ defmodule DBConnection.Ownership.Manager do
   def handle_call({:mode, mode}, _from, %{mode: mode} = state) do
     {:reply, :ok, state}
   end
-  def handle_call({:mode, mode}, {caller, _from}, state) do
+  def handle_call({:mode, mode}, {caller, _}, state) do
     state = proxy_checkin_all_except(state, [], caller)
     {:reply, :ok, %{state | mode: mode, mode_ref: nil}}
   end
