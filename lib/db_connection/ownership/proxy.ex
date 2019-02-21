@@ -126,12 +126,24 @@ defmodule DBConnection.Ownership.Proxy do
   end
 
   def handle_cast({:stop, caller}, %{owner: {owner, _}} = state) do
-    down("#{inspect caller} checked in the connection owned by #{inspect owner}", state)
+    message = "#{inspect caller} checked in the connection owned by #{inspect owner}"
+
+    message =
+      case pruned_stacktrace(caller) do
+        [] ->
+          message
+
+        current_stack ->
+          message <> "\n\n#{inspect caller} triggered the checkin at location:\n\n" <>
+            Exception.format_stacktrace(current_stack)
+      end
+
+    down(message, state)
   end
 
   defp checkout({pid, ref} = from, %{holder: holder} = state) do
     if Holder.handle_checkout(holder, from, ref) do
-      {:noreply, %{state | client: {pid, ref, client_stacktrace(pid)}}}
+      {:noreply, %{state | client: {pid, ref, pruned_stacktrace(pid)}}}
     else
       next(state)
     end
@@ -168,8 +180,11 @@ defmodule DBConnection.Ownership.Proxy do
   # If it is down but it has a client, disconnect
   defp down(reason, %{client: {client, _, checkout_stack}} = state) do
     reason =
-      case Process.info(client, :current_stacktrace) do
-        {:current_stacktrace, current_stack} ->
+      case pruned_stacktrace(client) do
+        [] ->
+          reason
+
+        current_stack ->
           reason <> """
           \n\nClient #{inspect(client)} is still using a connection from owner at location:
 
@@ -178,9 +193,6 @@ defmodule DBConnection.Ownership.Proxy do
 
           #{Exception.format_stacktrace(checkout_stack)}
           """
-
-         _ ->
-          reason
       end
 
     err = DBConnection.ConnectionError.exception(reason)
@@ -249,9 +261,9 @@ defmodule DBConnection.Ownership.Proxy do
     Holder.reply_error(from, err)
   end
 
-  @prune_modules [DBConnection, DBConnection.Holder]
+  @prune_modules [:gen, GenServer, DBConnection, DBConnection.Holder, DBConnection.Ownership]
 
-  defp client_stacktrace(pid) do
+  defp pruned_stacktrace(pid) do
     case Process.info(pid, :current_stacktrace) do
       {:current_stacktrace, stacktrace} ->
         Enum.drop_while(stacktrace, &match?({mod, _, _, _} when mod in @prune_modules, &1))

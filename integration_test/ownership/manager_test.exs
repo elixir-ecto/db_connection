@@ -209,6 +209,8 @@ defmodule ManagerTest do
         send parent, :checked_out
         Process.sleep(:infinity)
       end, opts)
+
+      :ok
     end)
 
     assert capture_log(fn ->
