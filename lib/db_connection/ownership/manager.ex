@@ -66,29 +66,29 @@ defmodule DBConnection.Ownership.Manager do
             mode: mode, mode_ref: nil, ets: ets, log: log}}
   end
 
-  def handle_call({:mode, {:shared, pid}}, _from, %{mode: {:shared, current}} = state) do
+  def handle_call({:mode, {:shared, shared}}, {caller, _}, %{mode: {:shared, current}} = state) do
     cond do
-      pid == current ->
+      shared == current ->
         {:reply, :ok, state}
       Process.alive?(current) ->
         {:reply, :already_shared, state}
       true ->
-        share_and_reply(state, pid)
+        share_and_reply(state, shared, caller)
     end
   end
-  def handle_call({:mode, {:shared, pid}}, _from, state) do
-    share_and_reply(state, pid)
+  def handle_call({:mode, {:shared, shared}}, {caller, _}, state) do
+    share_and_reply(state, shared, caller)
   end
   def handle_call({:mode, mode}, _from, %{mode: mode} = state) do
     {:reply, :ok, state}
   end
-  def handle_call({:mode, mode}, _from, state) do
-    state = proxy_checkin_all(state, nil)
+  def handle_call({:mode, mode}, {caller, _}, state) do
+    state = proxy_checkin_all_except(state, [], caller)
     {:reply, :ok, %{state | mode: mode, mode_ref: nil}}
   end
 
   def handle_call(:checkin, {caller, _}, state) do
-    {reply, state} = proxy_checkin(state, caller)
+    {reply, state} = proxy_checkin(state, caller, caller)
     {:reply, reply, state}
   end
 
@@ -167,8 +167,8 @@ defmodule DBConnection.Ownership.Manager do
     {proxy, %{state | checkouts: checkouts, owners: owners}}
   end
 
-  defp proxy_checkin(state, caller) do
-    case get_and_update_in(state.checkouts, &Map.pop(&1, caller, :not_found)) do
+  defp proxy_checkin(state, maybe_owner, caller) do
+    case get_and_update_in(state.checkouts, &Map.pop(&1, maybe_owner, :not_found)) do
       {{:owner, ref, proxy}, state} ->
         Proxy.stop(proxy, caller)
         {:ok, state |> owner_down(ref) |> unshare(ref)}
@@ -179,12 +179,12 @@ defmodule DBConnection.Ownership.Manager do
     end
   end
 
-  defp proxy_checkin_all(state, pid) do
-    Enum.reduce(state.checkouts, state, fn {key, _}, state ->
-      if key == pid do
+  defp proxy_checkin_all_except(state, except, caller) do
+    Enum.reduce(state.checkouts, state, fn {pid, _}, state ->
+      if pid in except do
         state
       else
-        {_, state} = proxy_checkin(state, key)
+        {_, state} = proxy_checkin(state, pid, caller)
         state
       end
     end)
@@ -215,11 +215,11 @@ defmodule DBConnection.Ownership.Manager do
     end
   end
 
-  defp share_and_reply(%{checkouts: checkouts} = state, pid) do
-    case Map.get(checkouts, pid, :not_found) do
+  defp share_and_reply(%{checkouts: checkouts} = state, shared, caller) do
+    case Map.get(checkouts, shared, :not_found) do
       {:owner, ref, _} ->
-        state = proxy_checkin_all(state, pid)
-        {:reply, :ok, %{state | mode: {:shared, pid}, mode_ref: ref}}
+        state = proxy_checkin_all_except(state, [shared], caller)
+        {:reply, :ok, %{state | mode: {:shared, shared}, mode_ref: ref}}
       {:allowed, _, _} ->
         {:reply, :not_owner, state}
       :not_found ->

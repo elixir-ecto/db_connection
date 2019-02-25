@@ -177,13 +177,11 @@ defmodule ManagerTest do
     assert_checked_out pool, [caller: parent] ++ opts
   end
 
-  test "setting manual mode checks in previous connections" do
-    {:ok, agent} = A.start_link([{:ok, :state}, {:ok, :state}] ++ List.duplicate({:idle, :state}, 10))
-    opts = [agent: agent, parent: self(), ownership_mode: :auto, pool_size: 2]
+  test "setting mode checks in previous connections" do
+    {:ok, agent} = A.start_link([{:ok, :state}] ++ List.duplicate({:idle, :state}, 10))
+    opts = [agent: agent, parent: self(), ownership_mode: :auto, pool_size: 1]
     {:ok, pool} = P.start_link(opts)
-
     parent = self()
-    assert Ownership.ownership_mode(pool, :auto, []) == :ok
 
     task = async_no_callers(fn ->
       assert_checked_out pool, opts
@@ -196,6 +194,30 @@ defmodule ManagerTest do
     assert Ownership.ownership_mode(pool, :manual, []) == :ok
     send task.pid, :manual
     Task.await(task)
+  end
+
+  test "setting mode checks in previous connections even during checkout" do
+    {:ok, agent} = A.start_link([{:ok, :state}, {:idle, :state}, :ok, {:ok, :state}])
+    opts = [agent: agent, parent: self(), ownership_mode: :auto, pool_size: 1]
+    {:ok, pool} = P.start_link(opts)
+    parent = self()
+
+    task = async_no_callers(fn ->
+      assert Ownership.ownership_checkout(pool, []) == :ok
+
+      P.run(pool, fn _ ->
+        send parent, :checked_out
+        Process.sleep(:infinity)
+      end, opts)
+
+      :ok
+    end)
+
+    assert capture_log(fn ->
+      assert_receive :checked_out
+      assert Ownership.ownership_mode(pool, :manual, []) == :ok
+      assert Ownership.ownership_checkout(pool, []) == :ok
+    end) =~ "#{inspect self()} checked in the connection owned by #{inspect task.pid}"
   end
 
   test "uses ETS when the pool is named (with pid access)" do
