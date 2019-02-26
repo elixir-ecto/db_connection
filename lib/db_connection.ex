@@ -103,6 +103,29 @@ defmodule DBConnection do
   @type cursor :: any
   @type status :: :idle | :transaction | :error
 
+  @type start_option ::
+          {:after_connect, (t -> any) | {module, atom, [any]} | nil}
+          | {:after_connect_timeout, timeout}
+          | {:backoff_max, non_neg_integer}
+          | {:backoff_min, non_neg_integer}
+          | {:backoff_type, :stop | :exp | :rand | :rand_exp}
+          | {:configure, (keyword -> keyword) | {module, atom, [any]} | nil}
+          | {:idle_interval, non_neg_integer}
+          | {:max_restarts, non_neg_integer}
+          | {:max_seconds, pos_integer}
+          | {:name, GenServer.name()}
+          | {:pool, module}
+          | {:pool_size, pos_integer}
+          | {:queue_interval, non_neg_integer}
+          | {:queue_target, non_neg_integer}
+          | {:show_sensitive_data_on_connection_error, boolean}
+
+  @type option ::
+          {:log, (DBConnection.LogEntry.t -> any) | {module, atom, [any]} | nil}
+          | {:queue, boolean}
+          | {:timeout, timeout}
+          | {:deadline, integer | nil}
+
   @doc """
   Connect to the database. Return `{:ok, state}` on success or
   `{:error, exception}` on failure.
@@ -423,6 +446,10 @@ defmodule DBConnection do
     `start_link/2` docs
     * `:timeout` - The maximum time that the caller is allowed to perform
     this operation (default: `15_000`)
+    * `:deadline` - If set, overrides `:timeout` option and specifies absolute
+    monotonic time in milliseconds by which caller must perform operation.
+    See `System` module documentation for more information on monotonic time
+    (default: `nil`)
     * `:log` - A function to log information about a call, either
     a 1-arity fun, `{module, function, args}` with `t:DBConnection.LogEntry.t/0`
     prepended to `args` or `nil`. See `DBConnection.LogEntry` (default: `nil`)
@@ -482,6 +509,10 @@ defmodule DBConnection do
     `start_link/2` docs
     * `:timeout` - The maximum time that the caller is allowed to perform
     this operation (default: `15_000`)
+    * `:deadline` - If set, overrides `:timeout` option and specifies absolute
+    monotonic time in milliseconds by which caller must perform operation.
+    See `System` module documentation for more information on monotonic time
+    (default: `nil`)
     * `:log` - A function to log information about a call, either
     a 1-arity fun, `{module, function, args}` with `t:DBConnection.LogEntry.t/0`
     prepended to `args` or `nil`. See `DBConnection.LogEntry` (default: `nil`)
@@ -540,6 +571,10 @@ defmodule DBConnection do
     `start_link/2` docs
     * `:timeout` - The maximum time that the caller is allowed to perform
     this operation (default: `15_000`)
+    * `:deadline` - If set, overrides `:timeout` option and specifies absolute
+    monotonic time in milliseconds by which caller must perform operation.
+    See `System` module documentation for more information on monotonic time
+    (default: `nil`)
     * `:log` - A function to log information about a call, either
     a 1-arity fun, `{module, function, args}` with `t:DBConnection.LogEntry.t/0`
     prepended to `args` or `nil`. See `DBConnection.LogEntry` (default: `nil`)
@@ -598,6 +633,10 @@ defmodule DBConnection do
     `start_link/2` docs
     * `:timeout` - The maximum time that the caller is allowed to perform
     this operation (default: `15_000`)
+    * `:deadline` - If set, overrides `:timeout` option and specifies absolute
+    monotonic time in milliseconds by which caller must perform operation.
+    See `System` module documentation for more information on monotonic time
+    (default: `nil`)
     * `:log` - A function to log information about a call, either
     a 1-arity fun, `{module, function, args}` with `t:DBConnection.LogEntry.t/0`
     prepended to `args` or `nil`. See `DBConnection.LogEntry` (default: `nil`)
@@ -650,6 +689,10 @@ defmodule DBConnection do
     `start_link/2` docs
     * `:timeout` - The maximum time that the caller is allowed to perform
     this operation (default: `15_000`)
+    * `:deadline` - If set, overrides `:timeout` option and specifies absolute
+    monotonic time in milliseconds by which caller must perform operation.
+    See `System` module documentation for more information on monotonic time
+    (default: `nil`)
 
   The pool may support other options.
 
@@ -732,6 +775,10 @@ defmodule DBConnection do
     `start_link/2` docs
     * `:timeout` - The maximum time that the caller is allowed to perform
     this operation (default: `15_000`)
+    * `:deadline` - If set, overrides `:timeout` option and specifies absolute
+    monotonic time in milliseconds by which caller must perform operation.
+    See `System` module documentation for more information on monotonic time
+    (default: `nil`)
     * `:log` - A function to log information about begin, commit and rollback
     calls made as part of the transaction, either a 1-arity fun,
     `{module, function, args}` with `t:DBConnection.LogEntry.t/0` prepended to
@@ -871,6 +918,10 @@ defmodule DBConnection do
     `start_link/2` docs
     * `:timeout` - The maximum time that the caller is allowed to perform
     this operation (default: `15_000`)
+    * `:deadline` - If set, overrides `:timeout` option and specifies absolute
+    monotonic time in milliseconds by which caller must perform operation.
+    See `System` module documentation for more information on monotonic time
+    (default: `nil`)
     * `:log` - A function to log information about a call, either
     a 1-arity fun, `{module, function, args}` with `t:DBConnection.LogEntry.t/0`
     prepended to `args` or `nil`. See `DBConnection.LogEntry` (default: `nil`)
@@ -905,6 +956,10 @@ defmodule DBConnection do
     `start_link/2` docs
     * `:timeout` - The maximum time that the caller is allowed to perform
     this operation (default: `15_000`)
+    * `:deadline` - If set, overrides `:timeout` option and specifies absolute
+    monotonic time in milliseconds by which caller must perform operation.
+    See `System` module documentation for more information on monotonic time
+    (default: `nil`)
     * `:log` - A function to log information about a call, either
     a 1-arity fun, `{module, function, args}` with `t:DBConnection.LogEntry.t/0`
     prepended to `args` or `nil`. See `DBConnection.LogEntry` (default: `nil`)
