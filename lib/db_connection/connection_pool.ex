@@ -71,7 +71,13 @@ defmodule DBConnection.ConnectionPool do
   def handle_info({:"ETS-TRANSFER", holder, _, {msg, queue, extra}}, {_, queue, _} = data) do
     case msg do
       :checkin ->
-        handle_checkin(holder, extra, data)
+        owner = self()
+        case :ets.info(holder, :owner) do
+          ^owner ->
+            handle_checkin(holder, extra, data)
+          :undefined ->
+            {:noreply, data}
+        end
       :disconnect ->
         Holder.handle_disconnect(holder, extra)
         {:noreply, data}
