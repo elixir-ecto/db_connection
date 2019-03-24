@@ -145,4 +145,20 @@ defmodule QueueTest do
 
     assert P.run(pool, fn(_) -> :hi end) == :hi
   end
+
+  test "queue handles holder that has been deleted" do
+    stack = [{:ok, :state}, {:idle, :state}, {:idle, :state}, :ok, {:ok, :new_state}, {:idle, :new_state}, {:idle, :new_state}]
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self()]
+    {:ok, pool} = P.start_link(opts)
+
+    P.run(pool, fn(_) ->
+      :sys.suspend(pool)
+      :timer.sleep(1000)
+      :sys.resume(pool)
+    end, [timeout: 100])
+
+    P.run(pool, fn(_) -> :ok end)
+  end
 end
