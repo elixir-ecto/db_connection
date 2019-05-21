@@ -90,10 +90,20 @@ defmodule DBConnection.ConnectionPool do
   def handle_info({:timeout, deadline, {queue, holder, pid, len}}, {_, queue, _} = data) do
     # Check that timeout refers to current holder (and not previous)
     if Holder.handle_deadline(holder, deadline) do
-      message = "client #{inspect pid} timed out because " <>
-        "it queued and checked out the connection for longer than #{len}ms"
-      err = DBConnection.ConnectionError.exception(message)
-      Holder.handle_disconnect(holder, err)
+      message =
+        "client #{inspect(pid)} timed out because " <>
+          "it queued and checked out the connection for longer than #{len}ms"
+
+      exc = case Process.info(pid, :current_stacktrace) do
+              {:current_stacktrace, stacktrace} ->
+                message <> "\n\n#{inspect pid} was at location:\n\n" <>
+                  Exception.format_stacktrace(stacktrace)
+              _ ->
+                message
+            end
+            |> DBConnection.ConnectionError.exception()
+
+      Holder.handle_disconnect(holder, exc)
     end
     {:noreply, data}
   end

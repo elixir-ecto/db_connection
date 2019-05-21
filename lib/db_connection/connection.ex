@@ -215,8 +215,16 @@ defmodule DBConnection.Connection do
       "client #{inspect pid} timed out because it checked out " <>
         "the connection for longer than #{timeout}ms"
 
-    exception = DBConnection.ConnectionError.exception(message)
-    {:disconnect, {:log, exception}, %{s | timer: nil}}
+    exc = case Process.info(pid, :current_stacktrace) do
+            {:current_stacktrace, stacktrace} ->
+              message <> "\n\n#{inspect pid} was at location:\n\n" <>
+                Exception.format_stacktrace(stacktrace)
+            _ ->
+              message
+          end
+          |> DBConnection.ConnectionError.exception()
+
+    {:disconnect, {:log, exc}, %{s | timer: nil}}
   end
 
   def handle_info(:timeout, %{client: nil} = s) do
