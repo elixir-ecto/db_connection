@@ -5,11 +5,18 @@ defmodule DBConnection.App do
   def start(_, _) do
     children = [
       {Task.Supervisor, name: DBConnection.Task},
-      {DynamicSupervisor, name: DBConnection.Ownership.Supervisor, strategy: :one_for_one},
-      {DynamicSupervisor, name: DBConnection.ConnectionPool.Supervisor, strategy: :one_for_one},
+      dynamic_supervisor(DBConnection.Ownership.Supervisor),
+      dynamic_supervisor(DBConnection.ConnectionPool.Supervisor),
       DBConnection.Watcher,
     ]
 
     Supervisor.start_link(children, strategy: :one_for_all, name: __MODULE__)
+  end
+
+  defp dynamic_supervisor(name) do
+    Supervisor.child_spec(
+      {DynamicSupervisor, name: name, strategy: :one_for_one},
+      id: name
+    )
   end
 end
