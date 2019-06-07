@@ -20,7 +20,10 @@ defmodule DBConnection.Connection do
 
   @doc false
   def child_spec(mod, opts, pool, tag, child_opts) do
-    Supervisor.Spec.worker(__MODULE__, [mod, opts, pool, tag], child_opts)
+    Supervisor.child_spec(
+      %{id: __MODULE__, start: {__MODULE__, :start_link, [mod, opts, pool, tag]}},
+      child_opts
+    )
   end
 
   @doc false

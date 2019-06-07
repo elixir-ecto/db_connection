@@ -2,7 +2,6 @@ defmodule DBConnection.ConnectionPool do
   @moduledoc false
 
   use GenServer
-  alias DBConnection.ConnectionPool.PoolSupervisor
   alias DBConnection.Holder
 
   @queue_target 50
@@ -10,14 +9,6 @@ defmodule DBConnection.ConnectionPool do
   @idle_interval 1000
   @time_unit 1000
 
-  ## child_spec API
-
-  @doc false
-  def child_spec(args) do
-    Supervisor.Spec.worker(__MODULE__, [args])
-  end
-
-  @doc false
   def start_link({mod, opts}) do
     GenServer.start_link(__MODULE__, {mod, opts}, start_opts(opts))
   end
@@ -26,7 +17,7 @@ defmodule DBConnection.ConnectionPool do
 
   def init({mod, opts}) do
     queue = :ets.new(__MODULE__.Queue, [:protected, :ordered_set])
-    {:ok, _} = PoolSupervisor.start_pool(queue, mod, opts)
+    {:ok, _} = DBConnection.ConnectionPool.Pool.start_supervised(queue, mod, opts)
     target = Keyword.get(opts, :queue_target, @queue_target)
     interval = Keyword.get(opts, :queue_interval, @queue_interval)
     idle_interval = Keyword.get(opts, :idle_interval, @idle_interval)

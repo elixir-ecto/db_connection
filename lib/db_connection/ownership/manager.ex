@@ -2,7 +2,7 @@ defmodule DBConnection.Ownership.Manager do
   @moduledoc false
   use GenServer
   require Logger
-  alias DBConnection.Ownership.{Proxy, ProxySupervisor}
+  alias DBConnection.Ownership.Proxy
 
   @timeout 5_000
 
@@ -156,9 +156,14 @@ defmodule DBConnection.Ownership.Manager do
   end
 
   defp proxy_checkout(state, caller, opts) do
-    %{pool: pool, checkouts: checkouts, owners: owners,
-      ets: ets, log: log} = state
-    {:ok, proxy} = ProxySupervisor.start_owner(caller, pool, opts)
+    %{pool: pool, checkouts: checkouts, owners: owners, ets: ets, log: log} = state
+
+    {:ok, proxy} =
+      DynamicSupervisor.start_child(
+        DBConnection.Ownership.Supervisor,
+        {DBConnection.Ownership.Proxy, {caller, pool, opts}}
+      )
+
     log && Logger.log(log, fn -> [inspect(caller), " owns proxy " | inspect(proxy)] end)
     ref = Process.monitor(proxy)
     checkouts = Map.put(checkouts, caller, {:owner, ref, proxy})

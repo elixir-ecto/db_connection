@@ -1,11 +1,23 @@
 defmodule DBConnection.ConnectionPool.Pool do
   @moduledoc false
+  use Supervisor, restart: :temporary
 
-  def start_link(owner, tag, mod, opts) do
+  def start_supervised(tag, mod, opts) do
+    DBConnection.Watcher.watch(
+      DBConnection.ConnectionPool.Supervisor,
+      {DBConnection.ConnectionPool.Pool, {self(), tag, mod, opts}}
+    )
+  end
+
+  def start_link(arg) do
+    Supervisor.start_link(__MODULE__, arg)
+  end
+
+  def init({owner, tag, mod, opts}) do
     size = Keyword.get(opts, :pool_size, 1)
     children = for id <- 1..size, do: conn(owner, tag, id, mod, opts)
     sup_opts = [strategy: :one_for_one] ++ Keyword.take(opts, [:max_restarts, :max_seconds])
-    Supervisor.start_link(children, sup_opts)
+    Supervisor.init(children, sup_opts)
   end
 
   ## Helpers

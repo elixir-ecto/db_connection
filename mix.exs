@@ -2,12 +2,12 @@ defmodule DBConnection.Mixfile do
   use Mix.Project
 
   @pools [:connection_pool, :ownership]
-  @version "2.0.6"
+  @version "2.1.0-dev"
 
   def project do
     [app: :db_connection,
      version: @version,
-     elixir: "~> 1.2",
+     elixir: "~> 1.6",
      deps: deps(),
      docs: docs(),
      description: description(),

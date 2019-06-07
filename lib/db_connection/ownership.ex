@@ -64,7 +64,7 @@ defmodule DBConnection.Ownership do
 
   @doc false
   def child_spec(args) do
-    Supervisor.Spec.worker(Manager, [args])
+    Manager.child_spec(args)
   end
 
   @doc """

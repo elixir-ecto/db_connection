@@ -4,19 +4,6 @@ defmodule DBConnection.Task do
 
   require DBConnection.Holder
 
-  def start_link() do
-    Task.Supervisor.start_link(name: @name)
-  end
-
-  def start_link(_, _) do
-    raise ArgumentError, "can not start the DBConnection.Task pool"
-  end
-
-  def child_spec(_, _, _) do
-    raise ArgumentError,
-      "can not create a child spec for the DBConnection.Task pool"
-  end
-
   def run_child(mod, state, fun, opts) do
     arg = [fun, self(), opts]
     {:ok, pid} = Task.Supervisor.start_child(@name, __MODULE__, :init, arg)

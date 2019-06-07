@@ -4,11 +4,11 @@ defmodule DBConnection.Watcher do
 
   use GenServer
 
-  def start_link do
+  def start_link(_) do
     GenServer.start_link(__MODULE__, :ok, name: @name)
   end
 
-  def watch(supervisor, args) when is_list(args) do
+  def watch(supervisor, args) do
     GenServer.call(@name, {:watch, supervisor, args}, :infinity)
   end
 
@@ -18,7 +18,7 @@ defmodule DBConnection.Watcher do
   end
 
   def handle_call({:watch, supervisor, args}, {caller_pid, _ref}, {caller_refs, started_refs}) do
-    case Supervisor.start_child(supervisor, args) do
+    case DynamicSupervisor.start_child(supervisor, args) do
       {:ok, started_pid} ->
         Process.link(caller_pid)
         caller_ref = Process.monitor(caller_pid)
@@ -35,7 +35,7 @@ defmodule DBConnection.Watcher do
     case caller_refs do
       %{^ref => {supervisor, started_pid, started_ref}} ->
         Process.demonitor(started_ref, [:flush])
-        Supervisor.terminate_child(supervisor, started_pid)
+        DynamicSupervisor.terminate_child(supervisor, started_pid)
         {:noreply, {Map.delete(caller_refs, ref), Map.delete(started_refs, started_ref)}}
       %{} ->
         %{^ref => {caller_pid, caller_ref}} = started_refs
