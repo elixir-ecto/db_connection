@@ -122,11 +122,11 @@ defmodule DBConnection.Ownership.Manager do
 
     case Map.get(checkouts, caller, :not_found) do
       {status, _ref, proxy} when status in [:owner, :allowed] ->
-        DBConnection.Holder.reply_redirect(from, proxy)
+        DBConnection.Holder.reply_redirect(from, caller, proxy)
         {:noreply, state}
       :not_found when mode == :auto ->
         {proxy, state} = proxy_checkout(state, caller, [queue: queue?])
-        DBConnection.Holder.reply_redirect(from, proxy)
+        DBConnection.Holder.reply_redirect(from, caller, proxy)
         {:noreply, state}
       :not_found when mode == :manual ->
         not_found(from)
@@ -134,7 +134,7 @@ defmodule DBConnection.Ownership.Manager do
       :not_found ->
         {:shared, shared} = mode
         {:owner, _ref, proxy} = Map.fetch!(checkouts, shared)
-        DBConnection.Holder.reply_redirect(from, proxy)
+        DBConnection.Holder.reply_redirect(from, shared, proxy)
         {:noreply, state}
     end
   end

@@ -64,8 +64,24 @@ defmodule DBConnection.Holder do
       {:error, _} = error ->
         error
 
-      {:redirect, proxy} ->
-        checkout(proxy, opts)
+      {:redirect, caller, proxy} ->
+        case checkout(proxy, opts) do
+          {:ok, _, _, _} = ok ->
+            ok
+
+          {:error, %DBConnection.ConnectionError{message: message} = exception} ->
+            {:error,
+             %{
+               exception
+               | message:
+                   "could not checkout the connection owned by #{inspect(caller)}. " <>
+                     "When using the sandbox, connections are shared, so this may imply " <>
+                     "another process is using a connection. Reason: #{message}"
+             }}
+
+          {:error, _} = error ->
+            error
+        end
 
       {:exit, reason} ->
         exit({reason, {__MODULE__, :checkout, [pool, opts]}})
@@ -156,9 +172,9 @@ defmodule DBConnection.Holder do
 
   ## Pool callbacks (invoked by pools)
 
-  @spec reply_redirect({pid, reference}, GenServer.server()) :: :ok
-  def reply_redirect(from, redirect) do
-    GenServer.reply(from, {:redirect, redirect})
+  @spec reply_redirect({pid, reference}, pid | :shared | :auto, GenServer.server()) :: :ok
+  def reply_redirect(from, caller, redirect) do
+    GenServer.reply(from, {:redirect, caller, redirect})
     :ok
   end
 
