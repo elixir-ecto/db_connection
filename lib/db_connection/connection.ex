@@ -1,5 +1,5 @@
 defmodule DBConnection.ConnectionError do
-  defexception [:message]
+  defexception [:message, severity: :error]
 end
 
 defmodule DBConnection.Connection do
@@ -115,27 +115,35 @@ defmodule DBConnection.Connection do
 
   @doc false
   def disconnect({log, err}, %{mod: mod} = s) do
-    case log do
-      :nolog ->
-        :ok
-      :log ->
-        _ = Logger.error(fn() ->
-          [inspect(mod), ?\s, ?(, inspect(self()),
-            ") disconnected: " | Exception.format_banner(:error, err, [])]
-        end)
-        :ok
+    if log == :log do
+      severity =
+        case err do
+          %DBConnection.ConnectionError{severity: severity} -> severity
+          _ -> :error
+        end
+
+      Logger.log(severity, fn() ->
+        [inspect(mod), ?\s, ?(, inspect(self()),
+          ") disconnected: " | Exception.format_banner(:error, err, [])]
+      end)
+
+      :ok
     end
+
     %{state: state, client: client, timer: timer, backoff: backoff} = s
     demonitor(client)
     cancel_timer(timer)
     :ok = apply(mod, :disconnect, [err, state])
     s = %{s | state: nil, client: :closed, timer: nil}
+
     case client do
       _ when backoff == :nil ->
         {:stop, {:shutdown, err}, s}
+
       {_, :after_connect} ->
         {timeout, backoff} = Backoff.backoff(backoff)
         {:backoff, timeout, %{s | backoff: backoff}}
+
       _ ->
         {:connect, :disconnect, s}
     end

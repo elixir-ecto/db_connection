@@ -54,7 +54,7 @@ defmodule DBConnection.ConnectionPool do
 
   def handle_info({:"ETS-TRANSFER", holder, pid, queue}, {_, queue, _} = data) do
     message = "client #{inspect pid} exited"
-    err = DBConnection.ConnectionError.exception(message)
+    err = DBConnection.ConnectionError.exception(message: message, severity: :info)
     Holder.handle_disconnect(holder, err)
     {:noreply, data}
   end
