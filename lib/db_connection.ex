@@ -868,7 +868,7 @@ defmodule DBConnection do
   Return the transaction status of a connection.
 
   The callback implementation should return the transaction status according to
-  the database, and not make assumption based.
+  the database, and not make assumptions based on client-side state.
 
   This function will raise a `DBConnection.ConnectionError` when called inside a
   deprecated `transaction/3`.
