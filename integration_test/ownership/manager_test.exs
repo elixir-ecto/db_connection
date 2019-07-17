@@ -24,6 +24,19 @@ defmodule ManagerTest do
     assert_checked_out pool, opts
   end
 
+  test "respects ownership timeout on automatic mode" do
+    Process.flag(:trap_exit, true)
+    {:ok, pool, opts} = start_pool(ownership_timeout: 0)
+
+    Task.start(fn ->
+      refute_checked_out pool, opts
+      assert Ownership.ownership_mode(pool, :auto, []) == :ok
+      assert P.run(pool, fn _ -> Process.sleep(:infinity) end, opts)
+    end)
+
+    assert_receive {:EXIT, ^pool, :killed}
+  end
+
   test "returns {:already, status} when already checked out" do
     {:ok, pool, _opts} = start_pool()
 

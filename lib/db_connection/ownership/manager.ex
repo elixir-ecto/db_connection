@@ -59,10 +59,11 @@ defmodule DBConnection.Ownership.Manager do
     pool_opts = Keyword.delete(pool_opts, :pool)
     {:ok, pool} = DBConnection.start_link(module, pool_opts)
 
-    mode = Keyword.get(pool_opts, :ownership_mode, :auto)
     log = Keyword.get(pool_opts, :ownership_log, nil)
+    mode = Keyword.get(pool_opts, :ownership_mode, :auto)
+    checkout_opts = Keyword.take(pool_opts, [:ownership_timeout, :queue_target, :queue_interval])
 
-    {:ok, %{pool: pool, checkouts: %{}, owners: %{},
+    {:ok, %{pool: pool, checkouts: %{}, owners: %{}, checkout_opts: checkout_opts,
             mode: mode, mode_ref: nil, ets: ets, log: log}}
   end
 
@@ -117,7 +118,7 @@ defmodule DBConnection.Ownership.Manager do
   end
 
   def handle_info({:db_connection, from, {:checkout, callers, _now, queue?}}, state) do
-    %{checkouts: checkouts, mode: mode} = state
+    %{checkouts: checkouts, mode: mode, checkout_opts: checkout_opts} = state
     caller = find_caller(callers, checkouts, mode)
 
     case Map.get(checkouts, caller, :not_found) do
@@ -125,7 +126,7 @@ defmodule DBConnection.Ownership.Manager do
         DBConnection.Holder.reply_redirect(from, caller, proxy)
         {:noreply, state}
       :not_found when mode == :auto ->
-        {proxy, state} = proxy_checkout(state, caller, [queue: queue?])
+        {proxy, state} = proxy_checkout(state, caller, [queue: queue?] ++ checkout_opts)
         DBConnection.Holder.reply_redirect(from, caller, proxy)
         {:noreply, state}
       :not_found when mode == :manual ->
