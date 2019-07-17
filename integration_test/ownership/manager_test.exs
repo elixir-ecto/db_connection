@@ -26,7 +26,7 @@ defmodule ManagerTest do
 
   test "respects ownership timeout on automatic mode" do
     Process.flag(:trap_exit, true)
-    {:ok, pool, opts} = start_pool(ownership_timeout: 0)
+    {:ok, pool, opts} = start_pool(ownership_timeout: 100)
 
     Task.start(fn ->
       refute_checked_out pool, opts
