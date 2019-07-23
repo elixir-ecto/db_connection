@@ -7,6 +7,17 @@ describe/encode/decode.
 Examples of using the `DBConnection` behaviour are available in
 `./examples/db_agent/` and `./examples/tcp_connection/`.
 
+## Testing
+
+This library contains a small set of unit tests in `test/` and
+a larger set of integration tests in `integration_test`. See
+`mix.exs` for various way to invoke the integration tests. The
+most concise and complete way is:
+
+```
+mix test.all
+```
+
 ## License
 
 Copyright 2015 James Fish
