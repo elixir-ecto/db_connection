@@ -7,6 +7,25 @@ describe/encode/decode.
 Examples of using the `DBConnection` behaviour are available in
 `./examples/db_agent/` and `./examples/tcp_connection/`.
 
+There is also [a series of articles on building database adapters](http://blog.plataformatec.com.br/2018/11/building-a-new-mysql-adapter-for-ecto-part-i-hello-world/). It includes articles covering both DBConnection and Ecto integrations.
+
+## Contributing
+
+Run unit tests with:
+
+    $ mix test
+
+To run the integration tests (for each available pool):
+
+    $ mix test.pools
+
+To run all tests:
+
+    $ mix test.all
+
+For a small introduction to DBConnection's design, see the
+documentation in `DBConnection.Holder`'s source code.
+
 ## License
 
 Copyright 2015 James Fish

@@ -1,17 +1,46 @@
 defmodule DBConnection.Holder do
   @moduledoc false
-  # The holder is responsible for keeping the checkout state.
-  # It is modelled by using an ETS table.
+  # This library is made of four main modules:
+  #
+  #   * `DBConnection` - this is the code running on the client
+  #     and the specification of the DBConnection API
+  #
+  #   * `DBConnection.Connection` - this is the process that
+  #     establishes the database connection
+  #
+  #   * `DBConnection.ConnectionPool` - this is the connection
+  #     pool. A client asks the connection pool for a connection.
+  #     There is also an ownership pool, which we won't discuss
+  #     here.
+  #
+  #   * `DBConnection.Holder` - the holder is repsonsible for
+  #     keeping the connection and checkout state. It is modelled
+  #     by using an ETS table.
   #
   # Once a connection is created, it creates a holder and
   # assigns the connection pool as the heir. Then the holder
-  # is promptly given away to the pool too, which checks it in.
+  # is promptly given away to the pool. The connection itself
+  # is mostly dummy. It is there to handle connections and pings.
+  # The state itself (such as the socket) is all in the holder.
   #
   # Once there is a checkout, the pool gives the holder to the
   # client process and store all relevant information in the
   # holder table itself. If the client terminates without
   # checking in, then the holder is given back to the pool via
   # the heir mechanism.
+  #
+  # One important design in DBConnection is to avoid copying of
+  # information. Other database libraries would send a request
+  # to the connection process, do the query in the connection
+  # process and send it back to the client. This means a lot of
+  # data copying in Elixir. DBConnection works by keeping the
+  # socket in the holder and works on the socket directly.
+  #
+  # DBConnection also takes all of the care necessary to handle
+  # failures and it shuts down the connection and the socket
+  # whenever the client does not checkin the connection, to avoid
+  # recycling sockets/connection in a corrupted state (such as a socket
+  # that is stuck inside a transaction).
   #
   # ## Deadlines
   #

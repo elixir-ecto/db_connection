@@ -165,8 +165,6 @@ defmodule DBConnection.Connection do
   end
 
   def handle_cast({:stop, ref, err, state}, %{client: {ref, _}} = s) do
-    ## Terrible hack so the stacktrace points here and we get the new
-    ## state in logs
     {_, stack} = :erlang.process_info(self(), :current_stacktrace)
     {:stop, {err, stack}, %{s | state: state}}
   end
