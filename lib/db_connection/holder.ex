@@ -212,7 +212,7 @@ defmodule DBConnection.Holder do
   rescue
     ArgumentError ->
       if Process.alive?(pid) do
-        raise ArgumentError, no_holder(holder)
+        raise ArgumentError, no_holder(holder, pid)
       else
         false
       end
@@ -233,7 +233,7 @@ defmodule DBConnection.Holder do
     :ets.lookup(holder, :conn)
   rescue
     ArgumentError ->
-      raise ArgumentError, no_holder(holder)
+      raise ArgumentError, no_holder(holder, nil)
   else
     [conn(connection: conn, state: state)] ->
       DBConnection.Connection.ping({conn, holder}, state)
@@ -306,8 +306,21 @@ defmodule DBConnection.Holder do
     end
   end
 
-  defp no_holder(holder) do
-    "#{inspect(__MODULE__)} #{inspect(holder)} does not exist, pool inconsistent, please report at https://github.com/elixir-ecto/db_connection/issues"
+  defp no_holder(holder, maybe_pid) do
+    reason =
+      case :ets.info(holder, :owner) do
+        :undefined -> "does not exist"
+        ^maybe_pid -> "is being given to its current owner"
+        _ -> "could not be given away"
+      end
+
+    """
+    #{inspect(__MODULE__)} #{inspect(holder)} #{reason}, pool inconsistent.
+
+    ETS INFO: #{inspect(:ets.info(holder))}
+
+    Please report at https://github.com/elixir-ecto/db_connection/issues"
+    """
   end
 
   defp holder_apply(holder, module, fun, args) do
