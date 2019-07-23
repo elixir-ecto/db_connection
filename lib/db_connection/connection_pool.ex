@@ -1,4 +1,6 @@
 defmodule DBConnection.ConnectionPool do
+  # The queueing algorithm is based on CoDel:
+  # https://queue.acm.org/appendices/codel.html
   @moduledoc false
 
   use GenServer

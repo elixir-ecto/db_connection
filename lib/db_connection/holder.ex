@@ -1,5 +1,26 @@
 defmodule DBConnection.Holder do
   @moduledoc false
+  # The holder is responsible for keeping the checkout state.
+  # It is modelled by using an ETS table.
+  #
+  # Once a connection is created, it creates a holder and
+  # assigns the connection pool as the heir. Then the holder
+  # is promptly given away to the pool too, which checks it in.
+  #
+  # Once there is a checkout, the pool gives the holder to the
+  # client process and store all relevant information in the
+  # holder table itself. If the client terminates without
+  # checking in, then the holder is given back to the pool via
+  # the heir mechanism.
+  #
+  # ## Deadlines
+  #
+  # When a checkout happens, a deadline is started by the client
+  # to send a message to the pool after a time interval. If the
+  # deadline is reached and the connection is still checked out,
+  # the holder is deleted and the connection is terminated. If the
+  # client tries to use a terminated connection, an error will
+  # be raised when the client tries to use (see `Holder.handle/4`).
   require Record
 
   @queue true
@@ -94,7 +115,8 @@ defmodule DBConnection.Holder do
     # Note we may call checkin after a disconnect/stop. For this reason, we choose
     # to not change the status on checkin but strictly speaking nobody can access
     # the holder after disconnect/stop unless they store a copy of %DBConnection{}.
-    # Note status can't be :aborted as aborted is always reverted at the of a transaction.
+    # Note status can't be :aborted as aborted is always reverted at the end of a
+    # transaction.
     done(pool_ref, [{conn(:lock) + 1, nil}], :checkin, now)
   end
 
@@ -298,9 +320,6 @@ defmodule DBConnection.Holder do
       result when is_tuple(result) ->
         state = :erlang.element(:erlang.tuple_size(result), result)
 
-        # This means a disconnect happened from the connection side
-        # but, since we succeed, we can return the result and the client
-        # will notice the disconnect anyway.
         try do
           :ets.update_element(holder, :conn, {conn(:state) + 1, state})
           result
