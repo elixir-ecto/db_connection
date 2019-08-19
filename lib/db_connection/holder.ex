@@ -240,7 +240,7 @@ defmodule DBConnection.Holder do
     :ets.give_away(holder, pid, {mref, ref})
   rescue
     ArgumentError ->
-      if Process.alive?(pid) do
+      if Process.alive?(pid) or :ets.info(holder, :owner) != self() do
         raise ArgumentError, no_holder(holder, pid)
       else
         false
@@ -340,12 +340,23 @@ defmodule DBConnection.Holder do
       case :ets.info(holder, :owner) do
         :undefined -> "does not exist"
         ^maybe_pid -> "is being given to its current owner"
+        owner when owner != self() -> "does not belong to the giving process"
         _ -> "could not be given away"
+      end
+
+    call_reason =
+      if maybe_pid do
+        "Error happened when attempting to transfer to #{inspect(maybe_pid)} " <>
+          "(alive: #{Process.alive?(maybe_pid)})"
+      else
+        "Error happened when looking up connection"
       end
 
     """
     #{inspect(__MODULE__)} #{inspect(holder)} #{reason}, pool inconsistent.
+    #{call_reason}.
 
+    SELF: #{inspect(self())}
     ETS INFO: #{inspect(:ets.info(holder))}
 
     Please report at https://github.com/elixir-ecto/db_connection/issues"
