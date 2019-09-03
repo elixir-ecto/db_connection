@@ -1403,7 +1403,7 @@ defmodule DBConnection do
   defp log_raised(entry, kind, reason, stack) do
     Logger.error(fn() ->
       "an exception was raised logging #{inspect entry}: " <> Exception.format(kind, reason, stack)
-    end)
+    end, [crash_reason: {reason, stack}])
   catch
     _, _ ->
       :ok

@@ -33,51 +33,34 @@ defmodule DBConnection.Ownership.Proxy do
     pre_checkin = Keyword.get(pool_opts, :pre_checkin, fn _, mod, state -> {:ok, mod, state} end)
     post_checkout = Keyword.get(pool_opts, :post_checkout, &{:ok, &1, &2})
 
-    state = %{
-      client: nil,
-      timer: nil,
-      holder: nil,
-      timeout: timeout,
-      interval: interval,
-      poll: nil,
-      owner: {caller, owner_ref},
-      pool: pool,
-      pool_ref: nil,
-      pool_opts: pool_opts,
-      queue: :queue.new(),
-      mod: nil,
-      pre_checkin: pre_checkin,
-      post_checkout: post_checkout,
-      ownership_timer: start_timer(caller, ownership_timeout)
-    }
+    state = %{client: nil, timer: nil, holder: nil,
+              timeout: timeout, interval: interval, poll: nil,
+              owner: {caller, owner_ref}, pool: pool, pool_ref: nil,
+              pool_opts: pool_opts,  queue: :queue.new, mod: nil,
+              pre_checkin: pre_checkin, post_checkout: post_checkout,
+              ownership_timer: start_timer(caller, ownership_timeout)}
 
     now = System.monotonic_time(@time_unit)
     {:ok, start_poll(now, state)}
   end
 
   def handle_info({:DOWN, ref, _, pid, _reason}, %{owner: {_, ref}} = state) do
-    down("owner #{inspect(pid)} exited", state)
+    down("owner #{inspect pid} exited", state)
   end
 
   def handle_info({:timeout, deadline, {_ref, holder, pid, len}}, %{holder: holder} = state) do
     if Holder.handle_deadline(holder, deadline) do
-      message =
-        "client #{inspect(pid)} timed out because " <>
-          "it queued and checked out the connection for longer than #{len}ms"
-
+      message = "client #{inspect pid} timed out because " <>
+        "it queued and checked out the connection for longer than #{len}ms"
       down(message, state)
     else
       {:noreply, state}
     end
   end
 
-  def handle_info(
-        {:timeout, timer, {__MODULE__, pid, timeout}},
-        %{ownership_timer: timer} = state
-      ) do
-    message =
-      "owner #{inspect(pid)} timed out because " <>
-        "it owned the connection for longer than #{timeout}ms (set via the :ownership_timeout option)"
+  def handle_info({:timeout, timer, {__MODULE__, pid, timeout}}, %{ownership_timer: timer} = state) do
+    message = "owner #{inspect pid} timed out because " <>
+    "it owned the connection for longer than #{timeout}ms (set via the :ownership_timeout option)"
 
     # We don't invoke down because this is always a disconnect, even if there is no client.
     # On the other hand, those timeouts are unlikely to trigger, as it defaults to 2 mins.
@@ -89,12 +72,8 @@ defmodule DBConnection.Ownership.Proxy do
     {:noreply, start_poll(time, state)}
   end
 
-  def handle_info(
-        {:db_connection, from, {:checkout, _caller, _now, _queue?}},
-        %{holder: nil} = state
-      ) do
-    %{pool: pool, pool_opts: pool_opts, owner: {_, owner_ref}, post_checkout: post_checkout} =
-      state
+  def handle_info({:db_connection, from, {:checkout, _caller, _now, _queue?}}, %{holder: nil} = state) do
+    %{pool: pool, pool_opts: pool_opts, owner: {_, owner_ref}, post_checkout: post_checkout} = state
 
     case Holder.checkout(pool, pool_opts) do
       {:ok, pool_ref, original_mod, conn_state} ->
@@ -116,10 +95,7 @@ defmodule DBConnection.Ownership.Proxy do
     end
   end
 
-  def handle_info(
-        {:db_connection, from, {:checkout, _caller, _now, _queue?}},
-        %{client: nil} = state
-      ) do
+  def handle_info({:db_connection, from, {:checkout, _caller, _now, _queue?}}, %{client: nil} = state) do
     checkout(from, state)
   end
 
@@ -136,10 +112,7 @@ defmodule DBConnection.Ownership.Proxy do
     end
   end
 
-  def handle_info(
-        {:"ETS-TRANSFER", holder, _, {msg, ref, extra}},
-        %{holder: holder, client: {_, ref, _}} = state
-      ) do
+  def handle_info({:"ETS-TRANSFER", holder, _, {msg, ref, extra}}, %{holder: holder, client: {_, ref, _}} = state) do
     case msg do
       :checkin -> checkin(state)
       :disconnect -> pool_disconnect(extra, state)
@@ -148,11 +121,11 @@ defmodule DBConnection.Ownership.Proxy do
   end
 
   def handle_info({:"ETS-TRANSFER", holder, pid, ref}, %{holder: holder, owner: {_, ref}} = state) do
-    down("client #{inspect(pid)} exited", state)
+    down("client #{inspect pid} exited", state)
   end
 
   def handle_cast({:stop, caller}, %{owner: {owner, _}} = state) do
-    message = "#{inspect(caller)} checked in the connection owned by #{inspect(owner)}"
+    message = "#{inspect caller} checked in the connection owned by #{inspect owner}"
 
     message =
       case pruned_stacktrace(caller) do
@@ -160,8 +133,7 @@ defmodule DBConnection.Ownership.Proxy do
           message
 
         current_stack ->
-          message <>
-            "\n\n#{inspect(caller)} triggered the checkin at location:\n\n" <>
+          message <> "\n\n#{inspect caller} triggered the checkin at location:\n\n" <>
             Exception.format_stacktrace(current_stack)
       end
 
@@ -181,17 +153,15 @@ defmodule DBConnection.Ownership.Proxy do
   end
 
   defp next(%{queue: queue} = state) do
-    case :queue.out(queue) do
+   case :queue.out(queue) do
       {{:value, {_, from}}, queue} ->
         checkout(from, %{state | queue: queue})
-
       {:empty, queue} ->
         {:noreply, %{state | queue: queue}}
     end
   end
 
   defp start_timer(_, :infinity), do: nil
-
   defp start_timer(pid, timeout) do
     :erlang.start_timer(timeout, self(), {__MODULE__, pid, timeout})
   end
@@ -214,15 +184,14 @@ defmodule DBConnection.Ownership.Proxy do
           reason
 
         current_stack ->
-          reason <>
-            """
-            \n\nClient #{inspect(client)} is still using a connection from owner at location:
+          reason <> """
+          \n\nClient #{inspect(client)} is still using a connection from owner at location:
 
-            #{Exception.format_stacktrace(current_stack)}
-            The connection itself was checked out by #{inspect(client)} at location:
+          #{Exception.format_stacktrace(current_stack)}
+          The connection itself was checked out by #{inspect(client)} at location:
 
-            #{Exception.format_stacktrace(checkout_stack)}
-            """
+          #{Exception.format_stacktrace(checkout_stack)}
+          """
       end
 
     err = DBConnection.ConnectionError.exception(reason)
@@ -236,7 +205,7 @@ defmodule DBConnection.Ownership.Proxy do
   end
 
   defp pool_disconnect(err, state) do
-    pool_done(err, state, {:disconnect, err}, &Holder.disconnect/2)
+    pool_done(err, state, {:disconnect, err},  &Holder.disconnect/2)
   end
 
   defp pool_stop(err, state) do
@@ -267,7 +236,7 @@ defmodule DBConnection.Ownership.Proxy do
 
   defp start_poll(now, %{interval: interval} = state) do
     timeout = now + interval
-    poll = :erlang.start_timer(timeout, self(), timeout, abs: true)
+    poll = :erlang.start_timer(timeout, self(), timeout, [abs: true])
     %{state | poll: poll}
   end
 
@@ -276,7 +245,6 @@ defmodule DBConnection.Ownership.Proxy do
       {{:value, {sent, from}}, queue} when sent + timeout < time ->
         drop(time - sent, from)
         timeout(time, %{state | queue: queue})
-
       {_, _} ->
         state
     end
@@ -298,7 +266,6 @@ defmodule DBConnection.Ownership.Proxy do
     case Process.info(pid, :current_stacktrace) do
       {:current_stacktrace, stacktrace} ->
         Enum.drop_while(stacktrace, &match?({mod, _, _, _} when mod in @prune_modules, &1))
-
       _ ->
         []
     end
