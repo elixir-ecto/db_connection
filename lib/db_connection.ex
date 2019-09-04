@@ -1401,13 +1401,18 @@ defmodule DBConnection do
   defp log_result(other), do: other
 
   defp log_raised(entry, kind, reason, stack) do
+    reason = Exception.normalize(kind, reason, stack)
+
     Logger.error(fn() ->
       "an exception was raised logging #{inspect entry}: " <> Exception.format(kind, reason, stack)
-    end, [crash_reason: {reason, stack}])
+    end, crash_reason: {crash_reason(kind, reason), stack})
   catch
     _, _ ->
       :ok
   end
+
+  defp crash_reason(:throw, value), do: {:nocatch, value}
+  defp crash_reason(_, value), do: value
 
   defp run_transaction(conn, fun, run, opts) do
     %DBConnection{conn_ref: conn_ref} = conn
