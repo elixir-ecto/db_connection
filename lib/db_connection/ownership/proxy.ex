@@ -3,7 +3,6 @@ defmodule DBConnection.Ownership.Proxy do
 
   alias DBConnection.Holder
   use GenServer, restart: :temporary
-  require Logger
 
   @time_unit 1000
   @ownership_timeout 60_000

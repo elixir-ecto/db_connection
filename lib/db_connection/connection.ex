@@ -90,7 +90,7 @@ defmodule DBConnection.Connection do
         Logger.error(fn() ->
           [inspect(mod), ?\s, ?(, inspect(self()), ") failed to connect: " |
             Exception.format_banner(:error, err, [])]
-        end)
+        end, crash_reason: {err, []})
         {timeout, backoff} = Backoff.backoff(backoff)
         {:backoff, timeout, %{s | backoff: backoff}}
     end
