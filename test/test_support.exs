@@ -156,7 +156,14 @@ defmodule TestConnection do
   end
 
   defp put_agent_from_opts(opts) do
-    Process.get(:agent) || Process.put(:agent, Keyword.fetch!(opts, :agent))
+    Process.get(:agent) || Process.put(:agent, agent_from_opts(opts))
+  end
+
+  defp agent_from_opts(opts) do
+    case opts[:agent] do
+      [_ | _] = agent -> Enum.fetch!(agent, Keyword.fetch!(opts, :pool_index) - 1)
+      agent -> agent
+    end
   end
 end
 

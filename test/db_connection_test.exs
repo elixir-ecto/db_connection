@@ -15,7 +15,7 @@ defmodule DBConnectionTest do
     assert conn in links
 
     _ = :sys.get_state(conn)
-    assert A.record(agent) == [{:connect, [opts]}]
+    assert A.record(agent) == [{:connect, [[pool_index: 1] ++ opts]}]
   end
 
   test "start_link workflow with registered name" do
@@ -28,6 +28,6 @@ defmodule DBConnectionTest do
     assert Process.info(conn, :registered_name) == {:registered_name, :conn}
 
     _ = :sys.get_state(conn)
-    assert A.record(agent) == [{:connect, [opts]}]
+    assert A.record(agent) == [{:connect, [[pool_index: 1] ++ opts]}]
   end
 end
