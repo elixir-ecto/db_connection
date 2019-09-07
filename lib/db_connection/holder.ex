@@ -10,10 +10,10 @@ defmodule DBConnection.Holder do
   #
   #   * `DBConnection.ConnectionPool` - this is the connection
   #     pool. A client asks the connection pool for a connection.
-  #     There is also an ownership pool, which we won't discuss
-  #     here.
+  #     There is also an ownership pool, used mostly during tests,
+  #     which we won't discuss here.
   #
-  #   * `DBConnection.Holder` - the holder is repsonsible for
+  #   * `DBConnection.Holder` - the holder is responsible for
   #     keeping the connection and checkout state. It is modelled
   #     by using an ETS table.
   #
@@ -27,7 +27,7 @@ defmodule DBConnection.Holder do
   # client process and store all relevant information in the
   # holder table itself. If the client terminates without
   # checking in, then the holder is given back to the pool via
-  # the heir mechanism.
+  # the heir mechanism. The pool will then discard the connection.
   #
   # One important design in DBConnection is to avoid copying of
   # information. Other database libraries would send a request
@@ -49,7 +49,7 @@ defmodule DBConnection.Holder do
   # deadline is reached and the connection is still checked out,
   # the holder is deleted and the connection is terminated. If the
   # client tries to use a terminated connection, an error will
-  # be raised when the client tries to use (see `Holder.handle/4`).
+  # be raised (see `Holder.handle/4`).
   require Record
 
   @queue true
