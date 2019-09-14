@@ -2,6 +2,10 @@ defprotocol DBConnection.Query do
   @moduledoc """
   The `DBConnection.Query` protocol is responsible for preparing and
   encoding queries.
+
+  All `DBConnection.Query` functions are executed in the caller process which
+  means it's safe to, for example, raise exceptions or do blocking calls as
+  they won't affect the connection process.
   """
 
   @doc """

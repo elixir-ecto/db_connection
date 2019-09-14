@@ -69,8 +69,7 @@ defmodule DBConnection do
   lost when a connection disconnects but the process is reused.
 
   The `DBConnection.Query` protocol provide utility functions so that
-  queries can be prepared or encoded and results decoding without
-  blocking the connection or pool.
+  queries can be encoded and decoded without blocking the connection or pool.
   """
   require Logger
 
