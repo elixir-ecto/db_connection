@@ -118,12 +118,16 @@ defmodule DBConnection.ConnectionPool do
 
   def handle_info({:timeout, idle, {time, last_sent}}, {_, _, %{idle: idle}} = data) do
     {status, queue, codel} = data
+    drop_idle(time, last_sent, status, queue, codel)
+  end
 
+  defp drop_idle(time, last_sent, status, queue, codel) do
     # If no queue progress since last idle check oldest connection
     case :ets.first(queue) do
       {sent, holder} = key when sent <= last_sent and status == :ready ->
         :ets.delete(queue, key)
-        ping(holder, queue, start_idle(time, last_sent, codel))
+        Holder.handle_ping(holder)
+        drop_idle(time, last_sent, status, queue, codel)
       {sent, _} ->
         {:noreply, {status, queue, start_idle(time, sent, codel)}}
       _ ->
@@ -155,11 +159,6 @@ defmodule DBConnection.ConnectionPool do
       drop(time - sent, from)
     end
     :ets.select_delete(queue, [{match, guards, [true]}])
-  end
-
-  defp ping(holder, queue, codel) do
-    Holder.handle_ping(holder)
-    {:noreply, {:ready, queue, codel}}
   end
 
   defp handle_checkin(holder, now, {:ready, queue, _} = data) do

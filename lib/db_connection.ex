@@ -60,9 +60,9 @@ defmodule DBConnection do
   timeout and its request will be cancelled. This prevents requests
   building up when the database can not keep up.
 
-  If no requests are received for a period of time the connection will
-  trigger an idle timeout and the database can be pinged to keep the
-  connection alive.
+  If no requests are received for an idle interval, the pool will
+  ping all stale connections which can then ping the database to keep
+  the connection alive.
 
   Should the connection be lost, attempts will be made to reconnect with
   (configurable) exponential random backoff to reconnect. All state is
