@@ -793,7 +793,7 @@ defmodule DBConnection do
         DBConnection.execute!(conn, query, [])
       end)
   """
-  @spec transaction(conn, (conn -> result), opts :: Keyword.t) ::
+  @spec transaction(conn, (t -> result), opts :: Keyword.t) ::
     {:ok, result} | {:error, reason :: any} when result: var
   def transaction(conn, fun, opts \\ [])
 
