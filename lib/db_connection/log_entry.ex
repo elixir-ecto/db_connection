@@ -3,7 +3,16 @@ defmodule DBConnection.LogEntry do
   Struct containing log entry information.
   """
 
-  defstruct [:call, :query, :params, :result, :pool_time, :connection_time, :decode_time]
+  defstruct [
+    :call,
+    :query,
+    :params,
+    :result,
+    :pool_time,
+    :connection_time,
+    :decode_time,
+    :idle_time
+  ]
 
   @typedoc """
   Log entry information.
@@ -18,17 +27,21 @@ defmodule DBConnection.LogEntry do
     connection was used)
     * `:decode_time` - The length of time decoding the result (if decoded the
     result using `DBConnection.Query.decode/3`)
+    * `:idle_time` - The amount of time the connection was idle before use
 
   All times are in the native time units of the VM, see
   `System.monotonic_time/0`.
   """
-  @type t :: %__MODULE__{call: atom,
-                         query: any,
-                         params: any,
-                         result: {:ok, any} | {:ok, any, any} | {:error, Exception.t},
-                         pool_time: non_neg_integer | nil,
-                         connection_time: non_neg_integer | nil,
-                         decode_time: non_neg_integer | nil}
+  @type t :: %__MODULE__{
+          call: atom,
+          query: any,
+          params: any,
+          result: {:ok, any} | {:ok, any, any} | {:error, Exception.t()},
+          pool_time: non_neg_integer | nil,
+          connection_time: non_neg_integer | nil,
+          idle_time: non_neg_integer | nil,
+          decode_time: non_neg_integer | nil
+        }
 
   @doc false
   def new(call, query, params, times, result) do
@@ -39,6 +52,7 @@ defmodule DBConnection.LogEntry do
   ## Helpers
 
   defp parse_times([], entry), do: entry
+
   defp parse_times(times, entry) do
     stop = :erlang.monotonic_time()
     {_, entry} = Enum.reduce(times, {stop, entry}, &parse_time/2)
@@ -48,9 +62,18 @@ defmodule DBConnection.LogEntry do
   defp parse_time({:decode, start}, {stop, entry}) do
     {start, %{entry | decode_time: stop - start}}
   end
+
   defp parse_time({:checkout, start}, {stop, entry}) do
     {start, %{entry | pool_time: stop - start}}
   end
+
+  defp parse_time({:checkin, start}, {stop, entry}) do
+    # The checkin time was most likely before checkout but it is
+    # not guaranteed as they are tracked by different processes.
+    # There should be no further measurements after checkin.
+    {stop, %{entry | idle_time: max(stop - start, 0)}}
+  end
+
   defp parse_time({_, start}, {stop, entry}) do
     %{connection_time: connection_time} = entry
     {start, %{entry | connection_time: (connection_time || 0) + (stop - start)}}

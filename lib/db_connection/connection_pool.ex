@@ -23,10 +23,11 @@ defmodule DBConnection.ConnectionPool do
     target = Keyword.get(opts, :queue_target, @queue_target)
     interval = Keyword.get(opts, :queue_interval, @queue_interval)
     idle_interval = Keyword.get(opts, :idle_interval, @idle_interval)
-    now = System.monotonic_time(@time_unit)
+    now_in_native = System.monotonic_time()
+    now_in_ms = System.convert_time_unit(now_in_native, :native, @time_unit)
     codel = %{target: target, interval: interval, delay: 0, slow: false,
-              next: now, poll: nil, idle_interval: idle_interval, idle: nil}
-    codel = start_idle(now, now, start_poll(now, now, codel))
+              next: now_in_ms, poll: nil, idle_interval: idle_interval, idle: nil}
+    codel = start_idle(now_in_ms, now_in_native, start_poll(now_in_ms, now_in_ms, codel))
     {:ok, {:busy, queue, codel}}
   end
 
@@ -43,11 +44,10 @@ defmodule DBConnection.ConnectionPool do
     end
   end
 
-  def handle_info({:db_connection, from, {:checkout, _caller, _now, _queue?}} = checkout, ready) do
-    {:ready, queue, _codel} = ready
+  def handle_info({:db_connection, from, {:checkout, _caller, _now, _queue?}} = checkout, {:ready, queue, _codel} = ready) do
     case :ets.first(queue) do
-      {_time, holder} = key ->
-        Holder.handle_checkout(holder, from, queue) and :ets.delete(queue, key)
+      {queued_in_native, holder} = key ->
+        Holder.handle_checkout(holder, from, queue, queued_in_native) and :ets.delete(queue, key)
         {:noreply, ready}
       :"$end_of_table" ->
         handle_info(checkout, put_elem(ready, 0, :busy))
@@ -116,22 +116,23 @@ defmodule DBConnection.ConnectionPool do
     end
   end
 
-  def handle_info({:timeout, idle, {time, last_sent}}, {_, _, %{idle: idle}} = data) do
+  def handle_info({:timeout, idle, {time, last_queued_in_native}}, {_, _, %{idle: idle}} = data) do
     {status, queue, codel} = data
-    drop_idle(time, last_sent, status, queue, codel)
+    drop_idle(time, last_queued_in_native, status, queue, codel)
   end
 
-  defp drop_idle(time, last_sent, status, queue, codel) do
+  defp drop_idle(time, last_queued_in_native, status, queue, codel) do
     # If no queue progress since last idle check oldest connection
     case :ets.first(queue) do
-      {sent, holder} = key when sent <= last_sent and status == :ready ->
+      {queued_in_native, holder} = key
+      when queued_in_native <= last_queued_in_native and status == :ready ->
         :ets.delete(queue, key)
         Holder.handle_ping(holder)
-        drop_idle(time, last_sent, status, queue, codel)
-      {sent, _} ->
-        {:noreply, {status, queue, start_idle(time, sent, codel)}}
+        drop_idle(time, last_queued_in_native, status, queue, codel)
+      {queued_in_native, _} ->
+        {:noreply, {status, queue, start_idle(time, queued_in_native, codel)}}
       _ ->
-        {:noreply, {status, queue, start_idle(time, time, codel)}}
+        {:noreply, {status, queue, start_idle(time, System.monotonic_time(), codel)}}
     end
   end
 
@@ -161,13 +162,22 @@ defmodule DBConnection.ConnectionPool do
     :ets.select_delete(queue, [{match, guards, [true]}])
   end
 
-  defp handle_checkin(holder, now, {:ready, queue, _} = data) do
-    :ets.insert(queue, {{now, holder}})
+  defp handle_checkin(holder, now_in_native, {:ready, queue, _} = data) do
+    :ets.insert(queue, {{now_in_native, holder}})
     {:noreply, data}
   end
 
-  defp handle_checkin(holder, now, {:busy, queue, codel}) do
-    dequeue(now, holder, queue, codel)
+  defp handle_checkin(holder, now_in_native, {:busy, queue, codel}) do
+    now_in_ms = System.convert_time_unit(now_in_native, :native, @time_unit)
+
+    case dequeue(now_in_ms, holder, queue, codel) do
+      {:busy, _, _} = busy ->
+        {:noreply, busy}
+
+      {:ready, _, _} = ready ->
+        :ets.insert(queue, {{now_in_native, holder}})
+        {:noreply, ready}
+    end
   end
 
   defp dequeue(time, holder, queue, codel) do
@@ -192,8 +202,7 @@ defmodule DBConnection.ConnectionPool do
         go(delay, from, time, holder, queue, codel)
       :"$end_of_table" ->
         codel = %{codel | next: next, delay: 0, slow: slow?}
-        :ets.insert(queue, {{time, holder}})
-        {:noreply, {:ready, queue, codel}}
+        {:ready, queue, codel}
     end
   end
 
@@ -203,8 +212,7 @@ defmodule DBConnection.ConnectionPool do
         :ets.delete(queue, key)
         go(time - sent, from, time, holder, queue, codel)
       :"$end_of_table" ->
-        :ets.insert(queue, {{time, holder}})
-        {:noreply, {:ready, queue, %{codel | delay: 0}}}
+        {:ready, queue, %{codel | delay: 0}}
     end
   end
 
@@ -218,17 +226,16 @@ defmodule DBConnection.ConnectionPool do
         :ets.delete(queue, key)
         go(time - sent, from, time, holder, queue, codel)
       :"$end_of_table" ->
-        :ets.insert(queue, {{time, holder}})
-        {:noreply, {:ready, queue, %{codel | delay: 0}}}
+        {:ready, queue, %{codel | delay: 0}}
     end
   end
 
   defp go(delay, from, time, holder, queue, %{delay: min} = codel) do
-    case Holder.handle_checkout(holder, from, queue) do
+    case Holder.handle_checkout(holder, from, queue, 0) do
       true when delay < min ->
-        {:noreply, {:busy, queue, %{codel | delay: delay}}}
+        {:busy, queue, %{codel | delay: delay}}
       true ->
-        {:noreply, {:busy, queue, codel}}
+        {:busy, queue, codel}
       false ->
         dequeue(time, holder, queue, codel)
     end
@@ -254,9 +261,9 @@ defmodule DBConnection.ConnectionPool do
     %{codel | poll: poll}
   end
 
-  defp start_idle(now, last_sent, %{idle_interval: interval} = codel) do
+  defp start_idle(now, last_queued_in_native, %{idle_interval: interval} = codel) do
     timeout = now + interval
-    idle = :erlang.start_timer(timeout, self(), {timeout, last_sent}, [abs: true])
+    idle = :erlang.start_timer(timeout, self(), {timeout, last_queued_in_native}, [abs: true])
     %{codel | idle: idle}
   end
 end

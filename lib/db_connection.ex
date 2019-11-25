@@ -1020,7 +1020,7 @@ defmodule DBConnection do
   ## Helpers
 
   defp checkout(pool, meter, opts) do
-    meter = event(meter, :checkout)
+    checkout = System.monotonic_time()
 
     # The holder is only used internally by DBConnection.Task
     holder = Keyword.get(opts, :holder, DBConnection.Holder)
@@ -1030,13 +1030,14 @@ defmodule DBConnection do
     catch
       kind, reason ->
         stack = System.stacktrace()
-        {kind, reason, stack, meter}
+        {kind, reason, stack, past_event(meter, :checkout, checkout)}
     else
-      {:ok, pool_ref, _conn_mod, _conn_state} ->
+      {:ok, pool_ref, _conn_mod, checkin, _conn_state} ->
         conn = %DBConnection{pool_ref: pool_ref, conn_ref: make_ref()}
+        meter = meter |> past_event(:checkin, checkin) |> past_event(:checkout, checkout)
         {:ok, conn, meter}
       {:error, err} ->
-        {:error, err, meter}
+        {:error, err, past_event(meter, :checkout, checkout)}
     end
   end
 
@@ -1355,7 +1356,14 @@ defmodule DBConnection do
   defp event(nil, _),
     do: nil
   defp event({log, events}, event),
-    do: {log, [{event, :erlang.monotonic_time()} | events]}
+    do: {log, [{event, System.monotonic_time()} | events]}
+
+  defp past_event(nil, _, _),
+    do: nil
+  defp past_event(log_events, _, nil),
+    do: log_events
+  defp past_event({log, events}, event, time),
+    do: {log, [{event, time} | events]}
 
   defp log({:ok, res, meter}, call, query, params),
     do: log(meter, call, query, params, {:ok, res})

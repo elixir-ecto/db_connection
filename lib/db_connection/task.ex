@@ -31,7 +31,7 @@ defmodule DBConnection.Task do
   end
 
   def checkout({:via, __MODULE__, pool_ref}, _opts) do
-    {:ok, pool_ref, _mod = :unused, _state = :unused}
+    {:ok, pool_ref, _mod = :unused, _idle_time = nil, _state = :unused}
   end
 
   defp make_fun(fun) when is_function(fun, 1) do

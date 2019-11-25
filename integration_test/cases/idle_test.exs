@@ -3,6 +3,43 @@ defmodule TestIdle do
 
   alias TestPool, as: P
   alias TestAgent, as: A
+  alias TestQuery, as: Q
+  alias TestResult, as: R
+
+  @tag :idle_time
+  test "includes idle time in log entries" do
+    parent = self()
+
+    stack = [
+      {:ok, :state},
+      {:ok, %Q{}, %R{}, :state},
+      {:ok, %Q{}, %R{}, :state}
+    ]
+
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self()]
+    {:ok, pool} = P.start_link(opts)
+
+    assert P.execute(pool, %Q{}, [:param1]) == {:ok, %Q{}, %R{}}
+    Process.sleep(10)
+
+    log = fn(entry) ->
+      assert %DBConnection.LogEntry{idle_time: idle_time} = entry
+      assert is_integer(entry.idle_time)
+      assert entry.idle_time > 0
+      send(parent, :logged)
+    end
+
+    assert P.execute(pool, %Q{}, [:param2], log: log) == {:ok, %Q{}, %R{}}
+    assert_receive :logged
+
+    assert [
+             connect: [_],
+             handle_execute: _,
+             handle_execute: _,
+           ] = A.record(agent)
+  end
 
   @tag :idle_interval
   test "ping after idle interval" do
