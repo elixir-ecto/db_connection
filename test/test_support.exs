@@ -51,30 +51,6 @@ defmodule TestConnection do
         DBConnection.prepare_stream(conn, query, params, opts2 ++ unquote(opts))
       end
 
-      def declare(pool, query, params, opts2 \\ []) do
-        DBConnection.declare(pool, query, params, opts2 ++ unquote(opts))
-      end
-
-      def declare!(pool, query, params, opts2 \\ []) do
-        DBConnection.declare!(pool, query, params, opts2 ++ unquote(opts))
-      end
-
-      def fetch(pool, query, cursor, opts2 \\ []) do
-        DBConnection.fetch(pool, query, cursor, opts2 ++ unquote(opts))
-      end
-
-      def fetch!(pool, query, cursor, opts2 \\ []) do
-        DBConnection.fetch!(pool, query, cursor, opts2 ++ unquote(opts))
-      end
-
-      def deallocate(pool, query, cursor, opts2 \\ []) do
-        DBConnection.deallocate(pool, query, cursor, opts2 ++ unquote(opts))
-      end
-
-      def deallocate!(pool, query, cursor, opts2 \\ []) do
-        DBConnection.deallocate!(pool, query, cursor, opts2 ++ unquote(opts))
-      end
-
       def close(pool, query, opts2 \\ []) do
         DBConnection.close(pool, query, opts2 ++ unquote(opts))
       end
