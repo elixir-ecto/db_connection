@@ -3,6 +3,8 @@
 ## v2.2.0
 
 * Enhancements
+  * Add `:idle_time` to `DBConnection.LogEntry`
+  * Ping all stale connections on idle interval
   * Add `crash_reason` to relevant Logger error reports
   * Ping all stale connections on idle interval. One possible downside of this approach is that we may shut down all connections at once and if there is a request around this time, the response time will be higher. However, this is likely better than the current approach, where we ping only the first one, which means we can have a pool of stale connections. The current behaviour is the same as in v1.0
 

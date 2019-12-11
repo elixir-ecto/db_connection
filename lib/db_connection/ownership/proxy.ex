@@ -5,7 +5,7 @@ defmodule DBConnection.Ownership.Proxy do
   use GenServer, restart: :temporary
 
   @time_unit 1000
-  @ownership_timeout 60_000
+  @ownership_timeout 120_000
   @queue_target 50
   @queue_interval 1000
 

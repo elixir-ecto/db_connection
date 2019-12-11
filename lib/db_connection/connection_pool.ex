@@ -243,9 +243,17 @@ defmodule DBConnection.ConnectionPool do
 
   defp drop(delay, from) do
     message =
-      "connection not available and request was dropped from queue after #{delay}ms. " <>
-        "You can configure how long requests wait in the queue using :queue_target and " <>
-        ":queue_interval. See DBConnection.start_link/2 for more information"
+      """
+      connection not available and request was dropped from queue after #{delay}ms. \
+      This means requests are coming in and your connection pool cannot serve them fast enough. \
+      You can address this by:
+
+        1. By tracking down slow queries and making sure they are unning fast enough
+        2. Increasing the pool_size (albeit it increases resource consumption)
+        3. Allow requests to wait longer by increasing :queue_target and :queue_interval
+
+      See DBConnection.start_link/2 for more information
+      """
 
     err = DBConnection.ConnectionError.exception(message)
     Holder.reply_error(from, err)
