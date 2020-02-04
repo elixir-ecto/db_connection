@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.2.1
+
+* Enhancements
+  * Remove warnings
+
 ## v2.2.0
 
 * Enhancements
