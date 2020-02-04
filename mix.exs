@@ -14,7 +14,7 @@ defmodule DBConnection.Mixfile do
      package: package(),
      build_per_environment: false,
      consolidate_protocols: false,
-     test_paths: test_paths(Mix.env),
+     test_paths: test_paths(Mix.env()),
      aliases: ["test.all": ["test", "test.pools"],
                "test.pools": &test_pools/1],
      preferred_cli_env: ["test.all": :test]]
@@ -56,7 +56,7 @@ defmodule DBConnection.Mixfile do
   end
 
   defp env_run(env, args) do
-    args = if IO.ANSI.enabled?, do: ["--color"|args], else: ["--no-color"|args]
+    args = if IO.ANSI.enabled?(), do: ["--color"|args], else: ["--no-color"|args]
 
     IO.puts "==> Running tests for MIX_ENV=#{env} mix test"
     {_, res} = System.cmd "mix", ["test"|args],

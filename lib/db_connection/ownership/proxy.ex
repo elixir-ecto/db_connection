@@ -36,7 +36,7 @@ defmodule DBConnection.Ownership.Proxy do
     state = %{client: nil, timer: nil, holder: nil,
               timeout: timeout, interval: interval, poll: nil,
               owner: {caller, owner_ref}, pool: pool, pool_ref: nil,
-              pool_opts: pool_opts,  queue: :queue.new, mod: nil,
+              pool_opts: pool_opts,  queue: :queue.new(), mod: nil,
               pre_checkin: pre_checkin, post_checkout: post_checkout,
               ownership_timer: start_timer(caller, ownership_timeout)}
 
