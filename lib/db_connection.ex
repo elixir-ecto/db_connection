@@ -374,7 +374,7 @@ defmodule DBConnection do
     * `:pool` - Chooses the pool to be started
     * `:pool_size` - Chooses the size of the pool
     * `:idle_interval` - Controls the frequency we ping the database when the
-      connection is idle
+      connection is idle. Defaults to 1000ms.
     * `:queue_target` and `:queue_interval` - See "Queue config" below
     * `:max_restarts` and `:max_seconds` - Configures the `:max_restarts` and
       `:max_seconds` for the connection pool supervisor (see the `Supervisor` docs)
