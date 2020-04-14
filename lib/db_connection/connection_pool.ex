@@ -9,6 +9,7 @@ defmodule DBConnection.ConnectionPool do
   @queue_target 50
   @queue_interval 1000
   @idle_interval 1000
+  @idle_threshold 500
   @time_unit 1000
 
   def start_link({mod, opts}) do
@@ -23,10 +24,11 @@ defmodule DBConnection.ConnectionPool do
     target = Keyword.get(opts, :queue_target, @queue_target)
     interval = Keyword.get(opts, :queue_interval, @queue_interval)
     idle_interval = Keyword.get(opts, :idle_interval, @idle_interval)
+    idle_threshold = Keyword.get(opts, :idle_threshold, @idle_threshold)
     now_in_native = System.monotonic_time()
     now_in_ms = System.convert_time_unit(now_in_native, :native, @time_unit)
     codel = %{target: target, interval: interval, delay: 0, slow: false,
-              next: now_in_ms, poll: nil, idle_interval: idle_interval, idle: nil}
+              next: now_in_ms, poll: nil, idle_interval: idle_interval, idle_threshold: idle_threshold, idle: nil}
     codel = start_idle(now_in_ms, now_in_native, start_poll(now_in_ms, now_in_ms, codel))
     {:ok, {:busy, queue, codel}}
   end
@@ -121,11 +123,11 @@ defmodule DBConnection.ConnectionPool do
     drop_idle(time, last_queued_in_native, status, queue, codel)
   end
 
-  defp drop_idle(time, last_queued_in_native, status, queue, codel) do
+  defp drop_idle(time, last_queued_in_native, status, queue, %{idle_threshold: idle_threshold } = codel) do
     # If no queue progress since last idle check oldest connection
     case :ets.first(queue) do
       {queued_in_native, holder} = key
-      when queued_in_native <= last_queued_in_native and status == :ready ->
+      when (time - queued_in_native/1000/1000) > idle_threshold and status == :ready ->
         :ets.delete(queue, key)
         Holder.handle_ping(holder)
         drop_idle(time, last_queued_in_native, status, queue, codel)

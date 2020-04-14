@@ -110,6 +110,7 @@ defmodule DBConnection do
           | {:backoff_type, :stop | :exp | :rand | :rand_exp}
           | {:configure, (keyword -> keyword) | {module, atom, [any]} | nil}
           | {:idle_interval, non_neg_integer}
+          | {:idle_threshold, non_neg_integer}
           | {:max_restarts, non_neg_integer}
           | {:max_seconds, pos_integer}
           | {:name, GenServer.name()}
@@ -375,6 +376,8 @@ defmodule DBConnection do
     * `:pool_size` - Chooses the size of the pool
     * `:idle_interval` - Controls the frequency we ping the database when the
       connection is idle. Defaults to 1000ms.
+    * `:idle_threshold` - Controls how long a thread can be idle before it is
+       refreshed. Defaults to 500ms.
     * `:queue_target` and `:queue_interval` - See "Queue config" below
     * `:max_restarts` and `:max_seconds` - Configures the `:max_restarts` and
       `:max_seconds` for the connection pool supervisor (see the `Supervisor` docs)
