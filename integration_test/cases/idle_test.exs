@@ -25,7 +25,7 @@ defmodule TestIdle do
     Process.sleep(10)
 
     log = fn(entry) ->
-      assert %DBConnection.LogEntry{idle_time: idle_time} = entry
+      assert %DBConnection.LogEntry{} = entry
       assert is_integer(entry.idle_time)
       assert entry.idle_time > 0
       send(parent, :logged)
@@ -99,12 +99,12 @@ defmodule TestIdle do
         {:ok, :state}
       end,
       fn _ ->
-        send(parent, {:pong, self()})
+        send(parent, {:pong, self(), System.system_time(:millisecond)})
         :timer.sleep(10)
         {:ok, :state}
       end,
       fn _ ->
-        send(parent, {:pong, self()})
+        send(parent, {:pong, self(), System.system_time(:millisecond)})
         assert_receive {:continue, ^parent}
         {:ok, :state}
       end,
@@ -119,14 +119,20 @@ defmodule TestIdle do
     {:ok, agent1} = A.start_link(stack)
     {:ok, agent2} = A.start_link(stack)
 
-    opts = [agent: [agent1, agent2], parent: self(), idle_interval: 50, pool_size: 2]
+    opts = [agent: [agent1, agent2], parent: self(), idle_interval: 100, pool_size: 2]
     {:ok, pool} = P.start_link(opts)
     assert_receive {:hi, conn1}
     assert_receive {:hi, conn2}
-    assert_receive {:pong, ^conn1}
-    assert_receive {:pong, ^conn2}
-    assert_receive {:pong, ^conn1}
-    assert_receive {:pong, ^conn2}
+    assert_receive {:pong, ^conn1, _time1}
+    assert_receive {:pong, ^conn2, _time2}
+    assert_receive {:pong, ^conn1, _time3}
+    assert_receive {:pong, ^conn2, _time4}
+
+    # We want to asset that time1/time2 and time3/time4
+    # happen within the same ping *most times* but unfortunately
+    # that will lead to many false positives in test runs.
+    # IO.inspect {_time1, _time2, _time3, _time4}
+
     send(conn1, {:continue, self()})
     send(conn2, {:continue, self()})
 

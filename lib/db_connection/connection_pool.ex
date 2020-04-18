@@ -27,7 +27,7 @@ defmodule DBConnection.ConnectionPool do
     now_in_ms = System.convert_time_unit(now_in_native, :native, @time_unit)
     codel = %{target: target, interval: interval, delay: 0, slow: false,
               next: now_in_ms, poll: nil, idle_interval: idle_interval, idle: nil}
-    codel = start_idle(now_in_ms, now_in_native, start_poll(now_in_ms, now_in_ms, codel))
+    codel = start_idle(now_in_native, start_poll(now_in_ms, now_in_ms, codel))
     {:ok, {:busy, queue, codel}}
   end
 
@@ -116,23 +116,21 @@ defmodule DBConnection.ConnectionPool do
     end
   end
 
-  def handle_info({:timeout, idle, {time, last_queued_in_native}}, {_, _, %{idle: idle}} = data) do
+  def handle_info({:timeout, idle, past_in_native}, {_, _, %{idle: idle}} = data) do
     {status, queue, codel} = data
-    drop_idle(time, last_queued_in_native, status, queue, codel)
+    drop_idle(past_in_native, status, queue, codel)
   end
 
-  defp drop_idle(time, last_queued_in_native, status, queue, codel) do
+  defp drop_idle(past_in_native, status, queue, codel) do
     # If no queue progress since last idle check oldest connection
     case :ets.first(queue) do
       {queued_in_native, holder} = key
-      when queued_in_native <= last_queued_in_native and status == :ready ->
+      when queued_in_native <= past_in_native and status == :ready ->
         :ets.delete(queue, key)
         Holder.handle_ping(holder)
-        drop_idle(time, last_queued_in_native, status, queue, codel)
-      {queued_in_native, _} ->
-        {:noreply, {status, queue, start_idle(time, queued_in_native, codel)}}
+        drop_idle(past_in_native, status, queue, codel)
       _ ->
-        {:noreply, {status, queue, start_idle(time, System.monotonic_time(), codel)}}
+        {:noreply, {status, queue, start_idle(System.monotonic_time(), codel)}}
     end
   end
 
@@ -269,9 +267,9 @@ defmodule DBConnection.ConnectionPool do
     %{codel | poll: poll}
   end
 
-  defp start_idle(now, last_queued_in_native, %{idle_interval: interval} = codel) do
-    timeout = now + interval
-    idle = :erlang.start_timer(timeout, self(), {timeout, last_queued_in_native}, [abs: true])
+  defp start_idle(now_in_native, %{idle_interval: interval} = codel) do
+    timeout = System.convert_time_unit(now_in_native, :native, :millisecond) + interval
+    idle = :erlang.start_timer(timeout, self(), now_in_native, [abs: true])
     %{codel | idle: idle}
   end
 end
