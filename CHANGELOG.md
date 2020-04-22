@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.2.2
+
+* Bug fixes
+  * Make sure all idle connections in the pool are pinged on each idle interval
+
 ## v2.2.1
 
 * Enhancements
