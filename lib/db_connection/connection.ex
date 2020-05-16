@@ -1,5 +1,17 @@
 defmodule DBConnection.ConnectionError do
-  defexception [:message, severity: :error]
+  defexception [:message, severity: :error, reason: :error]
+
+  @moduledoc """
+  The raised exception might include the reason which would be useful
+  to programatically determine what was causing the error.
+  """
+
+  @doc false
+  def exception(message, reason) do
+    message
+    |> exception()
+    |> Map.replace!(:reason, reason)
+  end
 end
 
 defmodule DBConnection.Connection do
