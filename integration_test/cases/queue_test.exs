@@ -143,7 +143,7 @@ defmodule QueueTest do
           ~r"connection not available and request was dropped from queue after \d+ms",
           fn() -> P.run(pool, fn(_) -> flunk("got connection") end, opts) end
 
-      assert exception.metadata == [reason: :queue_timeout]
+      assert exception.reason == :queue_timeout
     end)
 
     assert P.run(pool, fn(_) -> :hi end) == :hi
