@@ -1,5 +1,5 @@
 defmodule DBConnection.ConnectionError do
-  defexception [:message, severity: :error, metadata: []]
+  defexception [:message, severity: :error, reason: :error]
 
   @moduledoc """
   The raised exception might include metadata which would be useful
