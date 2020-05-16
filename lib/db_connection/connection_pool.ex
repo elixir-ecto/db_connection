@@ -253,7 +253,8 @@ defmodule DBConnection.ConnectionPool do
       See DBConnection.start_link/2 for more information
       """
 
-    err = DBConnection.ConnectionError.exception(message)
+    err = DBConnection.ConnectionError.exception(message, reason: :queue_timeout)
+
     Holder.reply_error(from, err)
   end
 
