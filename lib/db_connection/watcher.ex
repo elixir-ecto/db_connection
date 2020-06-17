@@ -48,6 +48,10 @@ defmodule DBConnection.Watcher do
   def handle_info({:EXIT, _, _}, state) do
     {:noreply, state}
   end
+  
+  def handle_info(_, state) do
+    {:noreply, state}
+  end
 
   def terminate(_, {_, started_refs}) do
     for {_, {caller_pid, _}} <- started_refs do
