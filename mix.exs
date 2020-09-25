@@ -43,7 +43,7 @@ defmodule DBConnection.Mixfile do
   end
 
   defp package do
-    %{licenses: ["Apache 2.0"],
+    %{licenses: ["Apache-2.0"],
       maintainers: ["James Fish"],
       links: %{"Github" => "https://github.com/elixir-ecto/db_connection"}}
   end
