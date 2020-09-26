@@ -316,7 +316,7 @@ defmodule DBConnection.Holder do
       apply(module, fun, args)
     catch
       kind, reason ->
-        {:catch, kind, reason, System.stacktrace()}
+        {:catch, kind, reason, __STACKTRACE__}
     else
       result when is_tuple(result) ->
         state = :erlang.element(:erlang.tuple_size(result), result)
