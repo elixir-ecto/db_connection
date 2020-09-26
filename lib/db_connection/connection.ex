@@ -81,7 +81,7 @@ defmodule DBConnection.Connection do
       apply(mod, :connect, [connect_opts(opts)])
     rescue
       e ->
-        {e, stack} = maybe_sanitize_exception(e, System.stacktrace(), opts)
+        {e, stack} = maybe_sanitize_exception(e, __STACKTRACE__, opts)
         reraise e, stack
     else
       {:ok, state} when after_connect != nil ->

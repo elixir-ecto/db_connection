@@ -717,9 +717,8 @@ defmodule DBConnection do
           {result, run(conn, &run_status/3, nil, opts)}
         catch
           kind, error ->
-            stacktrace = System.stacktrace()
             checkin(conn)
-            :erlang.raise(kind, error, stacktrace)
+            :erlang.raise(kind, error, __STACKTRACE__)
         else
           {result, {:error, _, _}} ->
             checkin(conn)
@@ -807,7 +806,7 @@ defmodule DBConnection do
         fail(conn)
         {:error, reason}
       kind, reason ->
-        stack = System.stacktrace()
+        stack = __STACKTRACE__
         fail(conn)
         :erlang.raise(kind, reason, stack)
     else
@@ -1029,7 +1028,7 @@ defmodule DBConnection do
       holder.checkout(pool, opts)
     catch
       kind, reason ->
-        stack = System.stacktrace()
+        stack = __STACKTRACE__
         {kind, reason, stack, past_event(meter, :checkout, checkout)}
     else
       {:ok, pool_ref, _conn_mod, checkin, _conn_state} ->
@@ -1111,7 +1110,7 @@ defmodule DBConnection do
       raise DBConnection.ConnectionError, "bad return value: #{inspect other}"
     catch
       :error, reason ->
-        stack = System.stacktrace()
+        stack = __STACKTRACE__
         stop(conn, :error, reason, stack)
         {:error, reason, stack, meter}
     end
@@ -1122,7 +1121,7 @@ defmodule DBConnection do
       DBConnection.Query.parse(query, opts)
     catch
       kind, reason ->
-        stack = System.stacktrace()
+        stack = __STACKTRACE__
         {kind, reason, stack, meter}
     else
       query ->
@@ -1135,7 +1134,7 @@ defmodule DBConnection do
       DBConnection.Query.describe(query, opts)
     catch
       kind, reason ->
-        stack = System.stacktrace()
+        stack = __STACKTRACE__
         raised_close(conn, query, meter, opts, kind, reason, stack)
     else
       query ->
@@ -1148,7 +1147,7 @@ defmodule DBConnection do
       DBConnection.Query.encode(query, params, opts)
     catch
       kind, reason ->
-        stack = System.stacktrace()
+        stack = __STACKTRACE__
         raised_close(conn, query, meter, opts, kind, reason, stack)
     else
       params ->
@@ -1163,7 +1162,7 @@ defmodule DBConnection do
       DBConnection.EncodeError -> {:prepare, meter}
     catch
       kind, reason ->
-        stack = System.stacktrace()
+        stack = __STACKTRACE__
         {kind, reason, stack, meter}
     else
       params ->
@@ -1177,7 +1176,7 @@ defmodule DBConnection do
       DBConnection.Query.decode(query, result, opts)
     catch
       kind, reason ->
-        stack = System.stacktrace()
+        stack = __STACKTRACE__
         {kind, reason, stack, meter}
     else
       result ->
@@ -1384,7 +1383,7 @@ defmodule DBConnection do
       log(log, entry)
     catch
       kind, reason ->
-        stack = System.stacktrace()
+        stack = __STACKTRACE__
         log_raised(entry, kind, reason, stack)
     end
     log_result(result)
@@ -1440,7 +1439,7 @@ defmodule DBConnection do
             raise err
         end
       kind, reason ->
-        stack = System.stacktrace()
+        stack = __STACKTRACE__
         reset(conn)
         _ = rollback(conn, run, opts)
         :erlang.raise(kind, reason, stack)
