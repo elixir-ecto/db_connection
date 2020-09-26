@@ -717,9 +717,8 @@ defmodule DBConnection do
           {result, run(conn, &run_status/3, nil, opts)}
         catch
           kind, error ->
-            stacktrace = __STACKTRACE__
             checkin(conn)
-            :erlang.raise(kind, error, stacktrace)
+            :erlang.raise(kind, error, __STACKTRACE__)
         else
           {result, {:error, _, _}} ->
             checkin(conn)
