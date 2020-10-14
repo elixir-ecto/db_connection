@@ -1,5 +1,12 @@
 # Changelog
 
+## v2.3.0
+
+This release requires Elixir v1.7+.
+
+* Bug fixes
+  * Fix deprecation warnings related to the use of `System.stacktrace()`
+
 ## v2.2.2
 
 * Bug fixes
