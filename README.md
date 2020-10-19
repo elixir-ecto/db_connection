@@ -57,7 +57,7 @@ the heir mechanism. The pool will then discard the connection.
 One important design detail in DBConnection is that it avoids
 copying data. Other database libraries would send a request
 to the connection process, perform the query in the connection
-process, and send it back to the client. This means a lot of
+process, and then send it back to the client. This means a lot of
 data copying in Elixir. DBConnection keeps the socket in the
 holder and works on it directly.
 
