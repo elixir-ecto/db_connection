@@ -45,26 +45,26 @@ This library is made of four main modules:
 Once a connection is created, it creates a holder and
 assigns the connection pool as the heir. Then the holder
 is promptly given away to the pool. The connection itself
-is mostly dummy. It is there to handle connections and pings.
+is mostly a dummy. It is there to handle connections and pings.
 The state itself (such as the socket) is all in the holder.
 
 Once there is a checkout, the pool gives the holder to the
-client process and store all relevant information in the
+client process and stores all relevant information in the
 holder table itself. If the client terminates without
 checking in, then the holder is given back to the pool via
 the heir mechanism. The pool will then discard the connection.
 
-One important design in DBConnection is to avoid copying of
-information. Other database libraries would send a request
-to the connection process, do the query in the connection
-process and send it back to the client. This means a lot of
-data copying in Elixir. DBConnection works by keeping the
-socket in the holder and works on the socket directly.
+One important design detail in DBConnection is that it avoids
+copying data. Other database libraries would send a request
+to the connection process, perform the query in the connection
+process, and then send it back to the client. This means a lot of
+data copying in Elixir. DBConnection keeps the socket in the
+holder and works on it directly.
 
 DBConnection also takes all of the care necessary to handle
-failures and it shuts down the connection and the socket
-whenever the client does not checkin the connection, to avoid
-recycling sockets/connection in a corrupted state (such as a socket
+failures, and it shuts down the connection and the socket
+whenever the client does not check in the connection to avoid
+recycling sockets/connections in a corrupted state (such as a socket
 that is stuck inside a transaction).
 
 ### Deadlines
