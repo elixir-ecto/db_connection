@@ -66,6 +66,7 @@ defmodule DBConnection.Connection do
       tag: tag,
       timer: nil,
       backoff: Backoff.new(opts),
+      connection_listeners: Keyword.get(opts, :connection_listeners, []),
       after_connect: Keyword.get(opts, :after_connect),
       after_connect_timeout: Keyword.get(opts, :after_connect_timeout, @timeout)
     }
@@ -148,6 +149,8 @@ defmodule DBConnection.Connection do
     :ok = apply(mod, :disconnect, [err, state])
     s = %{s | state: nil, client: :closed, timer: nil}
 
+    notify_connection_listeners({:disconnected, self()}, s)
+
     case client do
       _ when backoff == :nil ->
         {:stop, {:shutdown, err}, s}
@@ -188,6 +191,9 @@ defmodule DBConnection.Connection do
   def handle_cast({:after_connect, ref}, %{client: {ref, :connect}} = s) do
     %{mod: mod, state: state, after_connect: after_connect,
       after_connect_timeout: timeout, opts: opts} = s
+
+    notify_connection_listeners({:connected, self()}, s)
+
     case apply(mod, :checkout, [state]) do
       {:ok, state} ->
         opts = [timeout: timeout] ++ opts
@@ -206,6 +212,9 @@ defmodule DBConnection.Connection do
 
   def handle_cast({:connected, ref}, %{client: {ref, :connect}} = s) do
     %{mod: mod, state: state} = s
+
+    notify_connection_listeners({:connected, self()}, s)
+
     case apply(mod, :checkout, [state]) do
       {:ok, state} ->
         pool_update(state, s)
@@ -409,5 +418,11 @@ defmodule DBConnection.Connection do
       [{mod, fun, args, info} | rest] when is_list(args) ->
         [{mod, fun, length(args), info} | rest]
     end
+  end
+
+  defp notify_connection_listeners(message, %{} = state) do
+    %{connection_listeners: connection_listeners} = state
+
+    Enum.each(connection_listeners, &send(&1, message))
   end
 end
