@@ -105,6 +105,7 @@ defmodule DBConnection do
   @type start_option ::
           {:after_connect, (t -> any) | {module, atom, [any]} | nil}
           | {:after_connect_timeout, timeout}
+          | {:connection_listeners, list(Process.dest()) | nil}
           | {:backoff_max, non_neg_integer}
           | {:backoff_min, non_neg_integer}
           | {:backoff_type, :stop | :exp | :rand | :rand_exp}
@@ -369,6 +370,9 @@ defmodule DBConnection do
     to `args` or `nil` (default: `nil`)
     * `:after_connect_timeout` - The maximum time allowed to perform
     function specified by `:after_connect` option (default: `15_000`)
+    * `:connection_listeners` - A list of process destinations to send
+      notification messages whenever a connection is connected or disconnected.
+      See "Connection listeners" below
     * `:name` - A name to register the started process (see the `:name` option
       in `GenServer.start_link/3`)
     * `:pool` - Chooses the pool to be started
@@ -410,6 +414,20 @@ defmodule DBConnection do
   requests before they are sent to the database, which would
   otherwise increase the burden on the database, making the
   overload worse.
+
+  ## Connection listeners
+
+  The `:connection_listeners` option allows one or more processes to be notified
+  whenever a connection is connected or disconnected. A listener may be a remote
+  or local PID, a locally registered name, or a tuple in the form of
+  `{registered_name, node}` for a registered name at another node.
+
+  Each listener process may receive the following messages where `pid`
+  identifies the connection process:
+
+    * `{:connected, pid}`
+    * `{:disconnected, pid}`
+
   """
   @spec start_link(module, opts :: Keyword.t) :: GenServer.on_start
   def start_link(conn_mod, opts) do
