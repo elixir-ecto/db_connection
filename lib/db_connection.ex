@@ -419,11 +419,11 @@ defmodule DBConnection do
 
   The `:connection_listeners` option allows one or more processes to be notified
   whenever a connection is connected or disconnected. A listener may be a remote
-  or local PID, a local port, a locally registered name, or a tuple in the form
-  of `{registered_name, node}` for a registered name at another node.
+  or local PID, a locally registered name, or a tuple in the form of
+  `{registered_name, node}` for a registered name at another node.
 
-  Each listener process may receive the following messages where `pid` 
-  identifies the connection process.
+  Each listener process may receive the following messages where `pid`
+  identifies the connection process:
 
     * `{:connected, pid}`
     * `{:disconnected, pid}`
