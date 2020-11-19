@@ -1,5 +1,10 @@
 # Changelog
 
+## Next release
+
+* Enhancements
+  * Add `:connection_listeners` to `DBConnection.start_link/2`
+
 ## v2.3.0
 
 This release requires Elixir v1.7+.

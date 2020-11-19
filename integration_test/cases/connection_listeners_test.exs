@@ -12,7 +12,7 @@ defmodule ConnectionListenersTest do
 
     {:ok, agent} = A.start_link(stack)
 
-    opts = [agent: agent, parent: self(), connection_listeners: [self()]]
+    opts = [agent: agent, parent: self(), connection_listeners: [self()], backoff_min: 1_000]
     {:ok, _pool} = P.start_link(opts)
 
     assert_receive {:connected, conn}
@@ -45,7 +45,8 @@ defmodule ConnectionListenersTest do
       after_connect: after_connect,
       agent: agent,
       parent: self(),
-      connection_listeners: [self()]
+      connection_listeners: [self()],
+      backoff_min: 1_000
     ]
 
     {:ok, _pool} = P.start_link(opts)
@@ -69,7 +70,7 @@ defmodule ConnectionListenersTest do
 
     {:ok, agent} = A.start_link(stack)
 
-    opts = [agent: agent, parent: self(), connection_listeners: [self()]]
+    opts = [agent: agent, parent: self(), connection_listeners: [self()], backoff_min: 1_000]
     {:ok, pool} = P.start_link(opts)
 
     assert P.close(pool, %Q{})
@@ -98,7 +99,7 @@ defmodule ConnectionListenersTest do
 
     {:ok, agent} = A.start_link(stack)
 
-    opts = [agent: agent, parent: self(), connection_listeners: [self()]]
+    opts = [agent: agent, parent: self(), connection_listeners: [self()], backoff_min: 1_000]
     {:ok, pool} = P.start_link(opts)
 
     assert P.close(pool, %Q{})
@@ -120,7 +121,7 @@ defmodule ConnectionListenersTest do
 
     {:ok, agent} = A.start_link(stack)
 
-    opts = [agent: agent, parent: self(), connection_listeners: [self()], pool_size: 3]
+    opts = [agent: agent, parent: self(), connection_listeners: [self()], pool_size: 3, backoff_min: 1_000]
     {:ok, _pool} = P.start_link(opts)
 
     assert_receive {:connected, conn1}
