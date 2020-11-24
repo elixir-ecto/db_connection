@@ -26,7 +26,7 @@ defmodule DBConnection.Mixfile do
   end
 
   defp deps do
-    [{:connection, "~> 1.0.2"},
+    [{:connection, "~> 1.0"},
      {:ex_doc, "~> 0.12", only: :dev}]
   end
 
