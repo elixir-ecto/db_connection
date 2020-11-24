@@ -1,9 +1,10 @@
 # Changelog
 
-## Next release
+## v2.3.1
 
 * Enhancements
   * Add `:connection_listeners` to `DBConnection.start_link/2`
+  * Allow connection `~> 1.0`
 
 ## v2.3.0
 
