@@ -1,29 +1,29 @@
 # Changelog
 
-## v2.3.1
+## v2.3.1 (2020-11-25)
 
 * Enhancements
   * Add `:connection_listeners` to `DBConnection.start_link/2`
   * Allow connection `~> 1.0`
 
-## v2.3.0
+## v2.3.0 (2020-10-14)
 
 This release requires Elixir v1.7+.
 
 * Bug fixes
   * Fix deprecation warnings related to the use of `System.stacktrace()`
 
-## v2.2.2
+## v2.2.2 (2020-04-22)
 
 * Bug fixes
   * Make sure all idle connections in the pool are pinged on each idle interval
 
-## v2.2.1
+## v2.2.1 (2020-02-04)
 
 * Enhancements
   * Remove warnings
 
-## v2.2.0
+## v2.2.0 (2019-12-11)
 
 * Enhancements
   * Add `:idle_time` to `DBConnection.LogEntry`
