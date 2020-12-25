@@ -1,5 +1,4 @@
 defmodule TestConnection do
-
   defmacro __using__(opts) do
     quote do
       def start_link(opts2) do
@@ -26,13 +25,11 @@ defmodule TestConnection do
       end
 
       def prepare_execute(pool, query, params, opts2 \\ []) do
-        DBConnection.prepare_execute(pool, query, params,
-          opts2 ++ unquote(opts))
+        DBConnection.prepare_execute(pool, query, params, opts2 ++ unquote(opts))
       end
 
       def prepare_execute!(pool, query, params, opts2 \\ []) do
-        DBConnection.prepare_execute!(pool, query, params,
-          opts2 ++ unquote(opts))
+        DBConnection.prepare_execute!(pool, query, params, opts2 ++ unquote(opts))
       end
 
       def execute(pool, query, params, opts2 \\ []) do
@@ -63,7 +60,7 @@ defmodule TestConnection do
         DBConnection.status(pool, opts2 ++ unquote(opts))
       end
 
-      defoverridable [start_link: 1]
+      defoverridable start_link: 1
     end
   end
 
@@ -157,24 +154,25 @@ end
 
 defimpl DBConnection.Query, for: TestQuery do
   def parse(query, opts) do
-    parse = Keyword.get(opts, :parse, &(&1))
+    parse = Keyword.get(opts, :parse, & &1)
     parse.(query)
   end
 
   def describe(query, opts) do
-    describe = Keyword.get(opts, :describe, &(&1))
+    describe = Keyword.get(opts, :describe, & &1)
     describe.(query)
   end
 
   def encode(_, params, opts) do
-    encode = Keyword.get(opts, :encode, &(&1))
+    encode = Keyword.get(opts, :encode, & &1)
     encode.(params)
   end
 
   def decode(query, result, opts) do
-    case Keyword.get(opts, :decode, &(&1)) do
+    case Keyword.get(opts, :decode, & &1) do
       decode when is_function(decode, 1) ->
         decode.(result)
+
       decode when is_function(decode, 2) ->
         decode.(query, result)
     end
@@ -183,7 +181,7 @@ end
 
 defmodule TestAgent do
   def start_link(stack) do
-    {:ok, agent} = ok = Agent.start_link(fn() -> {stack, []} end)
+    {:ok, agent} = ok = Agent.start_link(fn -> {stack, []} end)
     _ = Process.put(:agent, agent)
     ok
   end
@@ -191,9 +189,11 @@ defmodule TestAgent do
   def eval(fun, args) do
     agent = Process.get(:agent) || raise "no agent in process dictionary"
     action = {fun, args}
+
     case Agent.get_and_update(agent, &get_and_update(&1, action)) do
       fun when is_function(fun) ->
         apply(fun, args)
+
       result ->
         result
     end

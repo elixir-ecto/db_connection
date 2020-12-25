@@ -10,16 +10,18 @@ defmodule DBConnection.BackoffTest do
   test "exponential backoffs aways in [min, max]", context do
     backoff = new(context)
     {delays, _} = backoff(backoff, 20)
-    assert Enum.all?(delays, fn(delay) ->
-      delay >= context[:backoff_min] and delay <= context[:backoff_max]
-    end)
+
+    assert Enum.all?(delays, fn delay ->
+             delay >= context[:backoff_min] and delay <= context[:backoff_max]
+           end)
   end
 
   @tag backoff_type: :exp
   test "exponential backoffs double until max", context do
     backoff = new(context)
     {delays, _} = backoff(backoff, 20)
-    Enum.reduce(delays, fn(next, prev) ->
+
+    Enum.reduce(delays, fn next, prev ->
       assert div(next, 2) == prev or next == context[:backoff_max]
       next
     end)
@@ -40,9 +42,10 @@ defmodule DBConnection.BackoffTest do
   test "random backoffs aways in [min, max]", context do
     backoff = new(context)
     {delays, _} = backoff(backoff, 20)
-    assert Enum.all?(delays, fn(delay) ->
-      delay >= context[:backoff_min] and delay <= context[:backoff_max]
-    end)
+
+    assert Enum.all?(delays, fn delay ->
+             delay >= context[:backoff_min] and delay <= context[:backoff_max]
+           end)
   end
 
   @tag backoff_type: :rand
@@ -63,17 +66,19 @@ defmodule DBConnection.BackoffTest do
   test "random exponential backoffs aways in [min, max]", context do
     backoff = new(context)
     {delays, _} = backoff(backoff, 20)
-    assert Enum.all?(delays, fn(delay) ->
-      delay >= context[:backoff_min] and delay <= context[:backoff_max]
-    end)
+
+    assert Enum.all?(delays, fn delay ->
+             delay >= context[:backoff_min] and delay <= context[:backoff_max]
+           end)
   end
 
   @tag backoff_type: :rand_exp
   test "random exponential backoffs increase until a third of max", context do
     backoff = new(context)
     {delays, _} = backoff(backoff, 20)
-    Enum.reduce(delays, fn(next, prev) ->
-      assert next >= prev or (next >= div(context[:backoff_max], 3))
+
+    Enum.reduce(delays, fn next, prev ->
+      assert next >= prev or next >= div(context[:backoff_max], 3)
       next
     end)
   end
@@ -88,11 +93,11 @@ defmodule DBConnection.BackoffTest do
   test "random exponential backoffs reset in [min, min * 3]", context do
     backoff = new(context)
     {[delay | _], backoff} = backoff(backoff, 20)
-    assert delay in context[:backoff_min]..(context[:backoff_min]*3)
+    assert delay in context[:backoff_min]..(context[:backoff_min] * 3)
 
     backoff = Backoff.reset(backoff)
     {[delay], _} = backoff(backoff, 1)
-    assert delay in context[:backoff_min]..(context[:backoff_min]*3)
+    assert delay in context[:backoff_min]..(context[:backoff_min] * 3)
   end
 
   ## Helpers
@@ -102,6 +107,6 @@ defmodule DBConnection.BackoffTest do
   end
 
   defp backoff(backoff, n) do
-    Enum.map_reduce(1..n, backoff, fn(_, acc) -> Backoff.backoff(acc) end)
+    Enum.map_reduce(1..n, backoff, fn _, acc -> Backoff.backoff(acc) end)
   end
 end

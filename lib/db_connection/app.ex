@@ -7,7 +7,7 @@ defmodule DBConnection.App do
       {Task.Supervisor, name: DBConnection.Task},
       dynamic_supervisor(DBConnection.Ownership.Supervisor),
       dynamic_supervisor(DBConnection.ConnectionPool.Supervisor),
-      DBConnection.Watcher,
+      DBConnection.Watcher
     ]
 
     Supervisor.start_link(children, strategy: :one_for_all, name: __MODULE__)

@@ -100,10 +100,20 @@ defmodule DBConnection.Connection do
         raise err
 
       {:error, err} ->
-        Logger.error(fn() ->
-          [inspect(mod), ?\s, ?(, inspect(self()), ") failed to connect: " |
-            Exception.format_banner(:error, err, [])]
-        end, crash_reason: {err, []})
+        Logger.error(
+          fn ->
+            [
+              inspect(mod),
+              ?\s,
+              ?(,
+              inspect(self()),
+              ") failed to connect: "
+              | Exception.format_banner(:error, err, [])
+            ]
+          end,
+          crash_reason: {err, []}
+        )
+
         {timeout, backoff} = Backoff.backoff(backoff)
         {:backoff, timeout, %{s | backoff: backoff}}
     end
@@ -135,9 +145,14 @@ defmodule DBConnection.Connection do
           _ -> :error
         end
 
-      Logger.log(severity, fn() ->
-        [inspect(mod), ?\s, ?(, inspect(self()),
-          ") disconnected: " | Exception.format_banner(:error, err, [])]
+      Logger.log(severity, fn ->
+        [
+          inspect(mod),
+          ?\s,
+          ?(,
+          inspect(self()),
+          ") disconnected: " | Exception.format_banner(:error, err, [])
+        ]
       end)
 
       :ok
@@ -152,7 +167,7 @@ defmodule DBConnection.Connection do
     notify_connection_listeners({:disconnected, self()}, s)
 
     case client do
-      _ when backoff == :nil ->
+      _ when backoff == nil ->
         {:stop, {:shutdown, err}, s}
 
       {_, :after_connect} ->
@@ -189,8 +204,13 @@ defmodule DBConnection.Connection do
   end
 
   def handle_cast({:after_connect, ref}, %{client: {ref, :connect}} = s) do
-    %{mod: mod, state: state, after_connect: after_connect,
-      after_connect_timeout: timeout, opts: opts} = s
+    %{
+      mod: mod,
+      state: state,
+      after_connect: after_connect,
+      after_connect_timeout: timeout,
+      opts: opts
+    } = s
 
     notify_connection_listeners({:connected, self()}, s)
 
@@ -201,6 +221,7 @@ defmodule DBConnection.Connection do
         timer = start_timer(pid, timeout)
         s = %{s | client: {ref, :after_connect}, timer: timer, state: state}
         {:noreply, s}
+
       {:disconnect, err, state} ->
         {:disconnect, {:log, err}, %{s | state: state}}
     end
@@ -218,6 +239,7 @@ defmodule DBConnection.Connection do
     case apply(mod, :checkout, [state]) do
       {:ok, state} ->
         pool_update(state, s)
+
       {:disconnect, err, state} ->
         {:disconnect, {:log, err}, %{s | state: state}}
     end
@@ -229,12 +251,13 @@ defmodule DBConnection.Connection do
 
   @doc false
   def handle_info({:DOWN, ref, _, pid, reason}, %{client: {ref, :after_connect}} = s) do
-    message = "client #{inspect pid} exited: " <> Exception.format_exit(reason)
+    message = "client #{inspect(pid)} exited: " <> Exception.format_exit(reason)
     err = DBConnection.ConnectionError.exception(message)
     {:disconnect, {down_log(reason), err}, %{s | client: {nil, :after_connect}}}
   end
+
   def handle_info({:DOWN, mon, _, pid, reason}, %{client: {ref, mon}} = s) do
-    message = "client #{inspect pid} exited: " <> Exception.format_exit(reason)
+    message = "client #{inspect(pid)} exited: " <> Exception.format_exit(reason)
     err = DBConnection.ConnectionError.exception(message)
     {:disconnect, {down_log(reason), err}, %{s | client: {ref, nil}}}
   end
@@ -242,26 +265,31 @@ defmodule DBConnection.Connection do
   def handle_info({:timeout, timer, {__MODULE__, pid, timeout}}, %{timer: timer} = s)
       when is_reference(timer) do
     message =
-      "client #{inspect pid} timed out because it checked out " <>
+      "client #{inspect(pid)} timed out because it checked out " <>
         "the connection for longer than #{timeout}ms"
 
-    exc = case Process.info(pid, :current_stacktrace) do
-            {:current_stacktrace, stacktrace} ->
-              message <> "\n\n#{inspect pid} was at location:\n\n" <>
-                Exception.format_stacktrace(stacktrace)
-            _ ->
-              message
-          end
-          |> DBConnection.ConnectionError.exception()
+    exc =
+      case Process.info(pid, :current_stacktrace) do
+        {:current_stacktrace, stacktrace} ->
+          message <>
+            "\n\n#{inspect(pid)} was at location:\n\n" <>
+            Exception.format_stacktrace(stacktrace)
+
+        _ ->
+          message
+      end
+      |> DBConnection.ConnectionError.exception()
 
     {:disconnect, {:log, exc}, %{s | timer: nil}}
   end
 
   def handle_info(:timeout, %{client: nil} = s) do
     %{mod: mod, state: state} = s
+
     case apply(mod, :ping, [state]) do
       {:ok, state} ->
         handle_timeout(%{s | state: state})
+
       {:disconnect, err, state} ->
         {:disconnect, {:log, err}, %{s | state: state}}
     end
@@ -283,7 +311,7 @@ defmodule DBConnection.Connection do
   end
 
   def handle_info(msg, %{mod: mod} = s) do
-    Logger.info(fn() ->
+    Logger.info(fn ->
       [inspect(mod), ?\s, ?(, inspect(self()), ") missed message: " | inspect(msg)]
     end)
 
@@ -293,10 +321,11 @@ defmodule DBConnection.Connection do
   @doc false
   def format_status(info, [_, %{client: :closed, mod: mod}]) do
     case info do
-      :normal    -> [{:data, [{'Module', mod}]}]
+      :normal -> [{:data, [{'Module', mod}]}]
       :terminate -> mod
     end
   end
+
   def format_status(info, [pdict, %{mod: mod, state: state}]) do
     case function_exported?(mod, :format_status, 2) do
       true when info == :normal ->
@@ -319,8 +348,10 @@ defmodule DBConnection.Connection do
     case Keyword.get(opts, :configure) do
       {mod, fun, args} ->
         apply(mod, fun, [opts | args])
+
       fun when is_function(fun, 1) ->
         fun.(opts)
+
       nil ->
         opts
     end
@@ -336,22 +367,26 @@ defmodule DBConnection.Connection do
   defp demonitor({_, mon}) when is_reference(mon) do
     Process.demonitor(mon, [:flush])
   end
+
   defp demonitor({mon, :after_connect}) when is_reference(mon) do
     Process.demonitor(mon, [:flush])
   end
+
   defp demonitor({_, _}), do: true
   defp demonitor(nil), do: true
 
   defp start_timer(_, :infinity), do: nil
+
   defp start_timer(pid, timeout) do
     :erlang.start_timer(timeout, self(), {__MODULE__, pid, timeout})
   end
 
   defp cancel_timer(nil), do: :ok
+
   defp cancel_timer(timer) do
     case :erlang.cancel_timer(timer) do
       false -> flush_timer(timer)
-      _     -> :ok
+      _ -> :ok
     end
   end
 

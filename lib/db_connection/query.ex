@@ -16,7 +16,7 @@ defprotocol DBConnection.Query do
 
   See `DBConnection.prepare/3`.
   """
-  @spec parse(any, Keyword.t) :: any
+  @spec parse(any, Keyword.t()) :: any
   def parse(query, opts)
 
   @doc """
@@ -27,7 +27,7 @@ defprotocol DBConnection.Query do
 
   See `DBConnection.prepare/3`.
   """
-  @spec describe(any, Keyword.t) :: any
+  @spec describe(any, Keyword.t()) :: any
   def describe(query, opts)
 
   @doc """
@@ -41,7 +41,7 @@ defprotocol DBConnection.Query do
 
   See `DBConnection.execute/3`.
   """
-  @spec encode(any, any, Keyword.t) :: any
+  @spec encode(any, any, Keyword.t()) :: any
   def encode(query, params, opts)
 
   @doc """
@@ -52,6 +52,6 @@ defprotocol DBConnection.Query do
 
   See `DBConnection.execute/3`.
   """
-  @spec decode(any, any, Keyword.t) :: any
+  @spec decode(any, any, Keyword.t()) :: any
   def decode(query, result, opts)
 end
