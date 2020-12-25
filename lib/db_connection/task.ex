@@ -37,8 +37,9 @@ defmodule DBConnection.Task do
   defp make_fun(fun) when is_function(fun, 1) do
     fun
   end
+
   defp make_fun(mfargs) do
-    fn(conn) ->
+    fn conn ->
       {mod, fun, args} = mfargs
       apply(mod, fun, [conn | args])
     end

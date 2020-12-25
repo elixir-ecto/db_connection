@@ -75,13 +75,14 @@ defmodule DBConnection.Ownership do
   has a connection, `:error` if it could be not checked out or
   raise if there was an error.
   """
-  @spec ownership_checkout(GenServer.server, Keyword.t) ::
-    :ok | {:already, :owner | :allowed}
+  @spec ownership_checkout(GenServer.server(), Keyword.t()) ::
+          :ok | {:already, :owner | :allowed}
   def ownership_checkout(manager, opts) do
     with {:ok, pid} <- Manager.checkout(manager, opts) do
       case Holder.checkout(pid, opts) do
         {:ok, pool_ref, _module, _idle_time, _state} ->
           Holder.checkin(pool_ref)
+
         {:error, err} ->
           raise err
       end
@@ -100,8 +101,8 @@ defmodule DBConnection.Ownership do
   `:already_shared` if another process set the ownership
   mode to `{:shared, _}` and is still alive.
   """
-  @spec ownership_mode(GenServer.server, :auto | :manual | {:shared, pid}, Keyword.t) ::
-    :ok | :already_shared | :not_owner | :not_found
+  @spec ownership_mode(GenServer.server(), :auto | :manual | {:shared, pid}, Keyword.t()) ::
+          :ok | :already_shared | :not_owner | :not_found
   defdelegate ownership_mode(manager, mode, opts), to: Manager, as: :mode
 
   @doc """
@@ -109,8 +110,8 @@ defmodule DBConnection.Ownership do
 
   A connection can only be checked back in by its owner.
   """
-  @spec ownership_checkin(GenServer.server, Keyword.t) ::
-    :ok | :not_owner | :not_found
+  @spec ownership_checkin(GenServer.server(), Keyword.t()) ::
+          :ok | :not_owner | :not_found
   defdelegate ownership_checkin(manager, opts), to: Manager, as: :checkin
 
   @doc """
@@ -123,7 +124,7 @@ defmodule DBConnection.Ownership do
   other allowed process. Returns `:not_found` if the given process
   does not have any connection checked out.
   """
-  @spec ownership_allow(GenServer.server, owner_or_allowed :: pid, allow :: pid, Keyword.t) ::
-    :ok | {:already, :owner | :allowed} | :not_found
+  @spec ownership_allow(GenServer.server(), owner_or_allowed :: pid, allow :: pid, Keyword.t()) ::
+          :ok | {:already, :owner | :allowed} | :not_found
   defdelegate ownership_allow(manager, owner, allow, opts), to: Manager, as: :allow
 end

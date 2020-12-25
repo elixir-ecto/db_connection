@@ -1,10 +1,7 @@
 defmodule DBConnection.Stream do
   defstruct [:conn, :query, :params, :opts]
 
-  @type t :: %__MODULE__{conn: DBConnection.conn,
-                         query: any,
-                         params: any,
-                         opts: Keyword.t}
+  @type t :: %__MODULE__{conn: DBConnection.conn(), query: any, params: any, opts: Keyword.t()}
 end
 
 defimpl Enumerable, for: DBConnection.Stream do
@@ -20,10 +17,7 @@ end
 defmodule DBConnection.PrepareStream do
   defstruct [:conn, :query, :params, :opts]
 
-  @type t :: %__MODULE__{conn: DBConnection.conn,
-                         query: any,
-                         params: any,
-                         opts: Keyword.t}
+  @type t :: %__MODULE__{conn: DBConnection.conn(), query: any, params: any, opts: Keyword.t()}
 end
 
 defimpl Enumerable, for: DBConnection.PrepareStream do
@@ -85,8 +79,10 @@ defmodule DBConnection do
 
     def exception(:idle),
       do: %__MODULE__{status: :idle, message: "transaction is not started"}
+
     def exception(:transaction),
       do: %__MODULE__{status: :transaction, message: "transaction is already started"}
+
     def exception(:error),
       do: %__MODULE__{status: :error, message: "transaction is aborted"}
   end
@@ -95,8 +91,8 @@ defmodule DBConnection do
   Run or transaction connection reference.
   """
   @type t :: %__MODULE__{pool_ref: any, conn_ref: reference}
-  @type conn :: GenServer.server | t
-  @type query :: DBConnection.Query.t
+  @type conn :: GenServer.server() | t
+  @type query :: DBConnection.Query.t()
   @type params :: any
   @type result :: any
   @type cursor :: any
@@ -121,7 +117,7 @@ defmodule DBConnection do
           | {:show_sensitive_data_on_connection_error, boolean}
 
   @type option ::
-          {:log, (DBConnection.LogEntry.t -> any) | {module, atom, [any]} | nil}
+          {:log, (DBConnection.LogEntry.t() -> any) | {module, atom, [any]} | nil}
           | {:queue, boolean}
           | {:timeout, timeout}
           | {:deadline, integer | nil}
@@ -135,8 +131,8 @@ defmodule DBConnection do
 
   This callback is called in the connection process.
   """
-  @callback connect(opts :: Keyword.t) ::
-    {:ok, state :: any} | {:error, Exception.t}
+  @callback connect(opts :: Keyword.t()) ::
+              {:ok, state :: any} | {:error, Exception.t()}
 
   @doc """
   Checkouts the state from the connection process. Return `{:ok, state}`
@@ -149,7 +145,7 @@ defmodule DBConnection do
   This callback is called in the connection process.
   """
   @callback checkout(state :: any) ::
-    {:ok, new_state :: any} | {:disconnect, Exception.t, new_state :: any}
+              {:ok, new_state :: any} | {:disconnect, Exception.t(), new_state :: any}
 
   @doc """
   Checks in the state to the connection process. Return `{:ok, state}`
@@ -162,7 +158,7 @@ defmodule DBConnection do
   This callback is called in the connection process.
   """
   @callback checkin(state :: any) ::
-    {:ok, new_state :: any} | {:disconnect, Exception.t, new_state :: any}
+              {:ok, new_state :: any} | {:disconnect, Exception.t(), new_state :: any}
 
   @doc """
   Called when the connection has been idle for a period of time. Return
@@ -177,7 +173,7 @@ defmodule DBConnection do
   This callback is called in the connection process.
   """
   @callback ping(state :: any) ::
-    {:ok, new_state :: any} | {:disconnect, Exception.t, new_state :: any}
+              {:ok, new_state :: any} | {:disconnect, Exception.t(), new_state :: any}
 
   @doc """
   Handle the beginning of a transaction.
@@ -192,10 +188,10 @@ defmodule DBConnection do
 
   This callback is called in the client process.
   """
-  @callback handle_begin(opts :: Keyword.t, state :: any) ::
-    {:ok, result, new_state :: any} |
-    {status, new_state :: any} |
-    {:disconnect, Exception.t, new_state :: any}
+  @callback handle_begin(opts :: Keyword.t(), state :: any) ::
+              {:ok, result, new_state :: any}
+              | {status, new_state :: any}
+              | {:disconnect, Exception.t(), new_state :: any}
 
   @doc """
   Handle committing a transaction. Return `{:ok, result, state}` on successfully
@@ -209,10 +205,10 @@ defmodule DBConnection do
 
   This callback is called in the client process.
   """
-  @callback handle_commit(opts :: Keyword.t, state :: any) ::
-    {:ok, result, new_state :: any} |
-    {status, new_state :: any} |
-    {:disconnect, Exception.t, new_state :: any}
+  @callback handle_commit(opts :: Keyword.t(), state :: any) ::
+              {:ok, result, new_state :: any}
+              | {status, new_state :: any}
+              | {:disconnect, Exception.t(), new_state :: any}
 
   @doc """
   Handle rolling back a transaction. Return `{:ok, result, state}` on successfully
@@ -227,10 +223,10 @@ defmodule DBConnection do
 
   This callback is called in the client and connection process.
   """
-  @callback handle_rollback(opts :: Keyword.t, state :: any) ::
-    {:ok, result, new_state :: any} |
-    {status, new_state :: any} |
-    {:disconnect, Exception.t, new_state :: any}
+  @callback handle_rollback(opts :: Keyword.t(), state :: any) ::
+              {:ok, result, new_state :: any}
+              | {status, new_state :: any}
+              | {:disconnect, Exception.t(), new_state :: any}
 
   @doc """
   Handle getting the transaction status. Return `{:idle, state}` if outside a
@@ -241,9 +237,9 @@ defmodule DBConnection do
   If the callback returns a `:disconnect` tuples then `status/2` will return
   `:error`.
   """
-  @callback handle_status(opts :: Keyword.t, state :: any) ::
-    {status, new_state :: any} |
-    {:disconnect, Exception.t, new_state :: any}
+  @callback handle_status(opts :: Keyword.t(), state :: any) ::
+              {status, new_state :: any}
+              | {:disconnect, Exception.t(), new_state :: any}
 
   @doc """
   Prepare a query with the database. Return `{:ok, query, state}` where
@@ -257,9 +253,9 @@ defmodule DBConnection do
 
   This callback is called in the client process.
   """
-  @callback handle_prepare(query, opts :: Keyword.t, state :: any) ::
-    {:ok, query, new_state :: any} |
-    {:error | :disconnect, Exception.t, new_state :: any}
+  @callback handle_prepare(query, opts :: Keyword.t(), state :: any) ::
+              {:ok, query, new_state :: any}
+              | {:error | :disconnect, Exception.t(), new_state :: any}
 
   @doc """
   Execute a query prepared by `c:handle_prepare/3`. Return
@@ -270,9 +266,9 @@ defmodule DBConnection do
 
   This callback is called in the client process.
   """
-  @callback handle_execute(query, params, opts :: Keyword.t, state :: any) ::
-    {:ok, query, result, new_state :: any} |
-    {:error | :disconnect, Exception.t, new_state :: any}
+  @callback handle_execute(query, params, opts :: Keyword.t(), state :: any) ::
+              {:ok, query, result, new_state :: any}
+              | {:error | :disconnect, Exception.t(), new_state :: any}
 
   @doc """
   Close a query prepared by `c:handle_prepare/3` with the database. Return
@@ -282,9 +278,9 @@ defmodule DBConnection do
 
   This callback is called in the client process.
   """
-  @callback handle_close(query, opts :: Keyword.t, state :: any) ::
-    {:ok, result, new_state :: any} |
-    {:error | :disconnect, Exception.t, new_state :: any}
+  @callback handle_close(query, opts :: Keyword.t(), state :: any) ::
+              {:ok, result, new_state :: any}
+              | {:error | :disconnect, Exception.t(), new_state :: any}
 
   @doc """
   Declare a cursor using a query prepared by `c:handle_prepare/3`. Return
@@ -295,9 +291,9 @@ defmodule DBConnection do
 
   This callback is called in the client process.
   """
-  @callback handle_declare(query, params, opts :: Keyword.t, state :: any) ::
-    {:ok, query, cursor, new_state :: any} |
-    {:error | :disconnect, Exception.t, new_state :: any}
+  @callback handle_declare(query, params, opts :: Keyword.t(), state :: any) ::
+              {:ok, query, cursor, new_state :: any}
+              | {:error | :disconnect, Exception.t(), new_state :: any}
 
   @doc """
   Fetch the next result from a cursor declared by `c:handle_declare/4`. Return
@@ -308,9 +304,9 @@ defmodule DBConnection do
 
   This callback is called in the client process.
   """
-  @callback handle_fetch(query, cursor, opts :: Keyword.t, state :: any) ::
-    {:cont | :halt, result, new_state :: any} |
-    {:error | :disconnect, Exception.t, new_state :: any}
+  @callback handle_fetch(query, cursor, opts :: Keyword.t(), state :: any) ::
+              {:cont | :halt, result, new_state :: any}
+              | {:error | :disconnect, Exception.t(), new_state :: any}
 
   @doc """
   Deallocate a cursor declared by `c:handle_declare/4` with the database. Return
@@ -320,9 +316,9 @@ defmodule DBConnection do
 
   This callback is called in the client process.
   """
-  @callback handle_deallocate(query, cursor, opts :: Keyword.t, state :: any) ::
-    {:ok, result, new_state :: any} |
-    {:error | :disconnect, Exception.t, new_state :: any}
+  @callback handle_deallocate(query, cursor, opts :: Keyword.t(), state :: any) ::
+              {:ok, result, new_state :: any}
+              | {:error | :disconnect, Exception.t(), new_state :: any}
 
   @doc """
   Disconnect from the database. Return `:ok`.
@@ -336,7 +332,7 @@ defmodule DBConnection do
 
   This callback is called in the connection process.
   """
-  @callback disconnect(err :: Exception.t, state :: any) :: :ok
+  @callback disconnect(err :: Exception.t(), state :: any) :: :ok
 
   @doc """
   Use `DBConnection` to set the behaviour.
@@ -429,7 +425,7 @@ defmodule DBConnection do
     * `{:disconnected, pid}`
 
   """
-  @spec start_link(module, opts :: Keyword.t) :: GenServer.on_start
+  @spec start_link(module, opts :: Keyword.t()) :: GenServer.on_start()
   def start_link(conn_mod, opts) do
     case child_spec(conn_mod, opts) do
       {_, {m, f, args}, _, _, _, _} -> apply(m, f, args)
@@ -442,7 +438,7 @@ defmodule DBConnection do
 
   See `start_link/2` for options.
   """
-  @spec child_spec(module, opts :: Keyword.t) :: :supervisor.child_spec()
+  @spec child_spec(module, opts :: Keyword.t()) :: :supervisor.child_spec()
   def child_spec(conn_mod, opts) do
     pool = Keyword.get(opts, :pool, DBConnection.ConnectionPool)
     pool.child_spec({conn_mod, opts})
@@ -487,14 +483,16 @@ defmodule DBConnection do
       end)
 
   """
-  @spec prepare(conn, query, opts :: Keyword.t) ::
-    {:ok, query} | {:error, Exception.t}
+  @spec prepare(conn, query, opts :: Keyword.t()) ::
+          {:ok, query} | {:error, Exception.t()}
   def prepare(conn, query, opts \\ []) do
     meter = meter(opts)
+
     result =
       with {:ok, query, meter} <- parse(query, meter, opts) do
         run(conn, &run_prepare/4, query, meter, opts)
       end
+
     log(result, :prepare, query, nil)
   end
 
@@ -504,7 +502,7 @@ defmodule DBConnection do
 
   See `prepare/3`.
   """
-  @spec prepare!(conn, query, opts :: Keyword.t) :: query
+  @spec prepare!(conn, query, opts :: Keyword.t()) :: query
   def prepare!(conn, query, opts \\ []) do
     case prepare(conn, query, opts) do
       {:ok, result} -> result
@@ -541,9 +539,9 @@ defmodule DBConnection do
       {:ok, result2}       = DBConnection.execute(conn, query, [2])
       :ok                  = DBConnection.close(conn, query)
   """
-  @spec prepare_execute(conn, query, params, Keyword.t) ::
-    {:ok, query, result} |
-    {:error, Exception.t}
+  @spec prepare_execute(conn, query, params, Keyword.t()) ::
+          {:ok, query, result}
+          | {:error, Exception.t()}
   def prepare_execute(conn, query, params, opts \\ []) do
     result =
       with {:ok, query, meter} <- parse(query, meter(opts), opts) do
@@ -554,7 +552,8 @@ defmodule DBConnection do
   end
 
   defp parsed_prepare_execute(conn, query, params, meter, opts) do
-    with {:ok, query, result, meter} <- run(conn, &run_prepare_execute/5, query, params, meter, opts),
+    with {:ok, query, result, meter} <-
+           run(conn, &run_prepare_execute/5, query, params, meter, opts),
          {:ok, result, meter} <- decode(query, result, meter, opts) do
       {:ok, query, result, meter}
     end
@@ -566,11 +565,11 @@ defmodule DBConnection do
 
   See `prepare_execute/4`.
   """
-  @spec prepare_execute!(conn, query, Keyword.t) :: {query, result}
+  @spec prepare_execute!(conn, query, Keyword.t()) :: {query, result}
   def prepare_execute!(conn, query, params, opts \\ []) do
     case prepare_execute(conn, query, params, opts) do
       {:ok, query, result} -> {query, result}
-      {:error, err}        -> raise err
+      {:error, err} -> raise err
     end
   end
 
@@ -601,8 +600,8 @@ defmodule DBConnection do
 
   See `prepare/3`.
   """
-  @spec execute(conn, query, params, opts :: Keyword.t) ::
-    {:ok, query, result} | {:error, Exception.t}
+  @spec execute(conn, query, params, opts :: Keyword.t()) ::
+          {:ok, query, result} | {:error, Exception.t()}
   def execute(conn, query, params, opts \\ []) do
     result =
       case maybe_encode(query, params, meter(opts), opts) do
@@ -610,7 +609,8 @@ defmodule DBConnection do
           parsed_prepare_execute(conn, query, params, meter, opts)
 
         {:ok, params, meter} ->
-          with {:ok, query, result, meter} <- run(conn, &run_execute/5, query, params, meter, opts),
+          with {:ok, query, result, meter} <-
+                 run(conn, &run_execute/5, query, params, meter, opts),
                {:ok, result, meter} <- decode(query, result, meter, opts) do
             {:ok, query, result, meter}
           end
@@ -628,7 +628,7 @@ defmodule DBConnection do
 
   See `execute/4`
   """
-  @spec execute!(conn, query, params, opts :: Keyword.t) :: result
+  @spec execute!(conn, query, params, opts :: Keyword.t()) :: result
   def execute!(conn, query, params, opts \\ []) do
     case execute(conn, query, params, opts) do
       {:ok, _query, result} -> result
@@ -663,8 +663,8 @@ defmodule DBConnection do
 
   See `prepare/3`.
   """
-  @spec close(conn, query, opts :: Keyword.t) ::
-    {:ok, result} | {:error, Exception.t}
+  @spec close(conn, query, opts :: Keyword.t()) ::
+          {:ok, result} | {:error, Exception.t()}
   def close(conn, query, opts \\ []) do
     conn
     |> run_cleanup(&run_close/4, [query], meter(opts), opts)
@@ -677,7 +677,7 @@ defmodule DBConnection do
 
   See `close/3`.
   """
-  @spec close!(conn, query, opts :: Keyword.t) :: result
+  @spec close!(conn, query, opts :: Keyword.t()) :: result
   def close!(conn, query, opts \\ []) do
     case close(conn, query, opts) do
       {:ok, result} -> result
@@ -720,11 +720,13 @@ defmodule DBConnection do
       end)
 
   """
-  @spec run(conn, (t -> result), opts :: Keyword.t) :: result when result: var
+  @spec run(conn, (t -> result), opts :: Keyword.t()) :: result when result: var
   def run(conn, fun, opts \\ [])
+
   def run(%DBConnection{} = conn, fun, _) do
     fun.(conn)
   end
+
   def run(pool, fun, opts) do
     case checkout(pool, nil, opts) do
       {:ok, conn, _} ->
@@ -747,10 +749,12 @@ defmodule DBConnection do
             result
 
           {_result, {new_status, _meter}} ->
-            err = DBConnection.ConnectionError.exception(
-              "connection was checked out with status #{inspect(old_status)} " <>
-                "but it was checked in with status #{inspect(new_status)}"
-            )
+            err =
+              DBConnection.ConnectionError.exception(
+                "connection was checked out with status #{inspect(old_status)} " <>
+                  "but it was checked in with status #{inspect(new_status)}"
+              )
+
             disconnect(conn, err)
             raise err
 
@@ -810,12 +814,14 @@ defmodule DBConnection do
         DBConnection.execute!(conn, query, [])
       end)
   """
-  @spec transaction(conn, (t -> result), opts :: Keyword.t) ::
-    {:ok, result} | {:error, reason :: any} when result: var
+  @spec transaction(conn, (t -> result), opts :: Keyword.t()) ::
+          {:ok, result} | {:error, reason :: any}
+        when result: var
   def transaction(conn, fun, opts \\ [])
 
   def transaction(%DBConnection{conn_mode: :transaction} = conn, fun, _opts) do
     %DBConnection{conn_ref: conn_ref} = conn
+
     try do
       result = fun.(conn)
       conclude(conn, result)
@@ -823,6 +829,7 @@ defmodule DBConnection do
       :throw, {__MODULE__, ^conn_ref, reason} ->
         fail(conn)
         {:error, reason}
+
       kind, reason ->
         stack = __STACKTRACE__
         fail(conn)
@@ -832,22 +839,28 @@ defmodule DBConnection do
         {:ok, result}
     end
   end
+
   def transaction(%DBConnection{} = conn, fun, opts) do
     case begin(conn, &run/4, opts) do
       {:ok, _} ->
         run_transaction(conn, fun, &run/4, opts)
+
       {:error, %DBConnection.TransactionError{}} ->
         {:error, :rollback}
+
       {:error, err} ->
         raise err
     end
   end
+
   def transaction(pool, fun, opts) do
     case begin(pool, &checkout/4, opts) do
       {:ok, conn, _} ->
         run_transaction(conn, fun, &checkin/4, opts)
+
       {:error, %DBConnection.TransactionError{}} ->
         {:error, :rollback}
+
       {:error, err} ->
         raise err
     end
@@ -872,7 +885,7 @@ defmodule DBConnection do
   def rollback(conn, reason)
 
   def rollback(%DBConnection{conn_mode: :transaction} = conn, reason) do
-    %DBConnection{conn_ref: conn_ref}  = conn
+    %DBConnection{conn_ref: conn_ref} = conn
     throw({__MODULE__, conn_ref, reason})
   end
 
@@ -911,13 +924,15 @@ defmodule DBConnection do
 
       DBConnection.status(conn) #=> :idle
   """
-  @spec status(conn, opts :: Keyword.t) :: status
+  @spec status(conn, opts :: Keyword.t()) :: status
   def status(conn, opts \\ []) do
     case run(conn, &run_status/3, nil, opts) do
       {status, _meter} ->
         status
+
       {:error, _err, _meter} ->
         :error
+
       {kind, reason, stack, _meter} ->
         :erlang.raise(kind, reason, stack)
     end
@@ -954,11 +969,10 @@ defmodule DBConnection do
         Enum.to_list(stream)
       end)
   """
-  @spec prepare_stream(t, query, params, opts :: Keyword.t) ::
-    DBConnection.PrepareStream.t
+  @spec prepare_stream(t, query, params, opts :: Keyword.t()) ::
+          DBConnection.PrepareStream.t()
   def prepare_stream(%DBConnection{} = conn, query, params, opts \\ []) do
-    %DBConnection.PrepareStream{conn: conn, query: query, params: params,
-                                opts: opts}
+    %DBConnection.PrepareStream{conn: conn, query: query, params: params, opts: opts}
   end
 
   @doc """
@@ -997,7 +1011,7 @@ defmodule DBConnection do
         end
       end)
   """
-  @spec stream(t, query, params, opts :: Keyword.t) :: DBConnection.Stream.t
+  @spec stream(t, query, params, opts :: Keyword.t()) :: DBConnection.Stream.t()
   def stream(%DBConnection{} = conn, query, params, opts \\ []) do
     %DBConnection.Stream{conn: conn, query: query, params: params, opts: opts}
   end
@@ -1006,30 +1020,33 @@ defmodule DBConnection do
   Reduces a previously built stream or prepared stream.
   """
   def reduce(%DBConnection.PrepareStream{} = stream, acc, fun) do
-    %DBConnection.PrepareStream{conn: conn, query: query, params: params,
-                                opts: opts} = stream
-    declare =
-      fn(conn, opts) ->
-        {query, cursor} = prepare_declare!(conn, query, params, opts)
-        {:cont, query, cursor}
-      end
+    %DBConnection.PrepareStream{conn: conn, query: query, params: params, opts: opts} = stream
+
+    declare = fn conn, opts ->
+      {query, cursor} = prepare_declare!(conn, query, params, opts)
+      {:cont, query, cursor}
+    end
+
     enum = resource(conn, declare, &stream_fetch/3, &stream_deallocate/3, opts)
     enum.(acc, fun)
   end
+
   def reduce(%DBConnection.Stream{} = stream, acc, fun) do
-    %DBConnection.Stream{conn: conn, query: query, params: params,
-                         opts: opts} = stream
-    declare =
-      fn(conn, opts) ->
-        case declare(conn, query, params, opts) do
-          {:ok, query, cursor} ->
-            {:cont, query, cursor}
-          {:ok, cursor} ->
-            {:cont, query, cursor}
-          {:error, err} ->
-            raise err
-        end
+    %DBConnection.Stream{conn: conn, query: query, params: params, opts: opts} = stream
+
+    declare = fn conn, opts ->
+      case declare(conn, query, params, opts) do
+        {:ok, query, cursor} ->
+          {:cont, query, cursor}
+
+        {:ok, cursor} ->
+          {:cont, query, cursor}
+
+        {:error, err} ->
+          raise err
       end
+    end
+
     enum = resource(conn, declare, &stream_fetch/3, &stream_deallocate/3, opts)
     enum.(acc, fun)
   end
@@ -1053,6 +1070,7 @@ defmodule DBConnection do
         conn = %DBConnection{pool_ref: pool_ref, conn_ref: make_ref()}
         meter = meter |> past_event(:checkin, checkin) |> past_event(:checkout, checkout)
         {:ok, conn, meter}
+
       {:error, err} ->
         {:error, err, past_event(meter, :checkout, checkout)}
     end
@@ -1063,11 +1081,13 @@ defmodule DBConnection do
       {:ok, conn, result, meter}
     end
   end
+
   defp checkout(pool, fun, meter, opts) do
     with {:ok, conn, meter} <- checkout(pool, meter, opts) do
       case fun.(conn, meter, opts) do
         {:ok, result, meter} ->
           {:ok, conn, result, meter}
+
         error ->
           checkin(conn)
           error
@@ -1084,6 +1104,7 @@ defmodule DBConnection do
     checkin(conn)
     return
   end
+
   defp checkin(pool, fun, meter, opts) do
     run(pool, fun, meter, opts)
   end
@@ -1094,7 +1115,7 @@ defmodule DBConnection do
   end
 
   defp stop(%DBConnection{pool_ref: pool_ref}, kind, reason, stack) do
-    msg = "client #{inspect self()} stopped: " <> Exception.format(kind, reason, stack)
+    msg = "client #{inspect(self())} stopped: " <> Exception.format(kind, reason, stack)
     exception = DBConnection.ConnectionError.exception(msg)
     _ = Holder.stop(pool_ref, exception)
     :ok
@@ -1125,7 +1146,7 @@ defmodule DBConnection do
 
   defp bad_return!(other, conn, meter) do
     try do
-      raise DBConnection.ConnectionError, "bad return value: #{inspect other}"
+      raise DBConnection.ConnectionError, "bad return value: #{inspect(other)}"
     catch
       :error, reason ->
         stack = __STACKTRACE__
@@ -1190,6 +1211,7 @@ defmodule DBConnection do
 
   defp decode(query, result, meter, opts) do
     meter = event(meter, :decode)
+
     try do
       DBConnection.Query.decode(query, result, opts)
     catch
@@ -1219,6 +1241,7 @@ defmodule DBConnection do
     case prepare_declare(conn, query, params, opts) do
       {:ok, query, cursor} ->
         {query, cursor}
+
       {:error, err} ->
         raise err
     end
@@ -1295,6 +1318,7 @@ defmodule DBConnection do
   defp run_cleanup(%DBConnection{} = conn, fun, args, meter, opts) do
     fun.(conn, args, meter, opts)
   end
+
   defp run_cleanup(pool, fun, args, meter, opts) do
     with {:ok, conn, meter} <- checkout(pool, meter, opts) do
       try do
@@ -1311,14 +1335,18 @@ defmodule DBConnection do
     case Holder.cleanup(pool_ref, fun, args, opts) do
       {:ok, result, _conn_state} ->
         {:ok, result, meter}
+
       {:error, err, _conn_state} ->
         {:error, err, meter}
+
       {:disconnect, err, _conn_state} ->
         disconnect(conn, err)
         {:error, err, meter}
+
       {:catch, kind, reason, stack} ->
         stop(conn, kind, reason, stack)
         {kind, reason, stack, meter}
+
       other ->
         bad_return!(other, conn, meter)
     end
@@ -1327,6 +1355,7 @@ defmodule DBConnection do
   defp run(%DBConnection{} = conn, fun, meter, opts) do
     fun.(conn, meter, opts)
   end
+
   defp run(pool, fun, meter, opts) do
     with {:ok, conn, meter} <- checkout(pool, meter, opts) do
       try do
@@ -1340,6 +1369,7 @@ defmodule DBConnection do
   defp run(%DBConnection{} = conn, fun, arg, meter, opts) do
     fun.(conn, arg, meter, opts)
   end
+
   defp run(pool, fun, arg, meter, opts) do
     with {:ok, conn, meter} <- checkout(pool, meter, opts) do
       try do
@@ -1353,6 +1383,7 @@ defmodule DBConnection do
   defp run(%DBConnection{} = conn, fun, arg1, arg2, meter, opts) do
     fun.(conn, arg1, arg2, meter, opts)
   end
+
   defp run(pool, fun, arg1, arg2, meter, opts) do
     with {:ok, conn, meter} <- checkout(pool, meter, opts) do
       try do
@@ -1372,31 +1403,40 @@ defmodule DBConnection do
 
   defp event(nil, _),
     do: nil
+
   defp event({log, events}, event),
     do: {log, [{event, System.monotonic_time()} | events]}
 
   defp past_event(nil, _, _),
     do: nil
+
   defp past_event(log_events, _, nil),
     do: log_events
+
   defp past_event({log, events}, event, time),
     do: {log, [{event, time} | events]}
 
   defp log({:ok, res, meter}, call, query, params),
     do: log(meter, call, query, params, {:ok, res})
+
   defp log({:ok, res1, res2, meter}, call, query, params),
     do: log(meter, call, query, params, {:ok, res1, res2})
+
   defp log({ok, res, meter}, call, query, cursor) when ok in [:cont, :halt],
     do: log(meter, call, query, cursor, {ok, res})
+
   defp log({:error, err, meter}, call, query, params),
     do: log(meter, call, query, params, {:error, err})
+
   defp log({kind, reason, stack, meter}, call, query, params),
     do: log(meter, call, query, params, {kind, reason, stack})
 
   defp log(nil, _, _, _, result),
     do: log_result(result)
+
   defp log({log, times}, call, query, params, result) do
     entry = DBConnection.LogEntry.new(call, query, params, times, entry_result(result))
+
     try do
       log(log, entry)
     catch
@@ -1404,16 +1444,19 @@ defmodule DBConnection do
         stack = __STACKTRACE__
         log_raised(entry, kind, reason, stack)
     end
+
     log_result(result)
   end
 
   defp entry_result({kind, reason, stack})
-  when kind in [:error, :exit, :throw] do
+       when kind in [:error, :exit, :throw] do
     msg = "an exception was raised: " <> Exception.format(kind, reason, stack)
     {:error, %DBConnection.ConnectionError{message: msg}}
   end
+
   defp entry_result({ok, res}) when ok in [:cont, :halt],
     do: {:ok, res}
+
   defp entry_result(other), do: other
 
   defp log({mod, fun, args}, entry), do: apply(mod, fun, [entry | args])
@@ -1422,14 +1465,19 @@ defmodule DBConnection do
   defp log_result({kind, reason, stack}) when kind in [:error, :exit, :throw] do
     :erlang.raise(kind, reason, stack)
   end
+
   defp log_result(other), do: other
 
   defp log_raised(entry, kind, reason, stack) do
     reason = Exception.normalize(kind, reason, stack)
 
-    Logger.error(fn() ->
-      "an exception was raised logging #{inspect entry}: " <> Exception.format(kind, reason, stack)
-    end, crash_reason: {crash_reason(kind, reason), stack})
+    Logger.error(
+      fn ->
+        "an exception was raised logging #{inspect(entry)}: " <>
+          Exception.format(kind, reason, stack)
+      end,
+      crash_reason: {crash_reason(kind, reason), stack}
+    )
   catch
     _, _ ->
       :ok
@@ -1440,22 +1488,28 @@ defmodule DBConnection do
 
   defp run_transaction(conn, fun, run, opts) do
     %DBConnection{conn_ref: conn_ref} = conn
+
     try do
       result = fun.(%{conn | conn_mode: :transaction})
       conclude(conn, result)
     catch
       :throw, {__MODULE__, ^conn_ref, reason} ->
         reset(conn)
+
         case rollback(conn, run, opts) do
           {:ok, _} ->
             {:error, reason}
+
           {:error, %DBConnection.TransactionError{}} ->
             {:error, reason}
+
           {:error, %DBConnection.ConnectionError{}} ->
             {:error, reason}
+
           {:error, err} ->
             raise err
         end
+
       kind, reason ->
         stack = __STACKTRACE__
         reset(conn)
@@ -1466,8 +1520,10 @@ defmodule DBConnection do
         case commit(conn, run, opts) do
           {:ok, _} ->
             {:ok, result}
+
           {:error, %DBConnection.TransactionError{}} ->
             {:error, :rollback}
+
           {:error, err} ->
             raise err
         end
@@ -1541,10 +1597,13 @@ defmodule DBConnection do
         log(meter, :commit, :rollback, nil, {:ok, result})
         err = DBConnection.TransactionError.exception(:error)
         {:error, err}
+
       {query, other} ->
         log(other, :commit, query, nil)
+
       {:error, err, meter} ->
         log(meter, :commit, :commit, nil, {:error, err})
+
       {kind, reason, stack, meter} ->
         log(meter, :commit, :commit, nil, {kind, reason, stack})
     end
@@ -1578,12 +1637,15 @@ defmodule DBConnection do
     case Holder.handle(pool_ref, :handle_status, [], opts) do
       {status, _conn_state} when status in [:idle, :transaction, :error] ->
         {status, meter}
+
       {:disconnect, err, _conn_state} ->
         disconnect(conn, err)
         {:error, err, meter}
+
       {:catch, kind, reason, stack} ->
         stop(conn, kind, reason, stack)
         {kind, reason, stack, meter}
+
       other ->
         bad_return!(other, conn, meter)
     end
@@ -1626,7 +1688,8 @@ defmodule DBConnection do
         raise err
     end
   end
-  defp stream_fetch(_, {:halt, _,  _} = state, _) do
+
+  defp stream_fetch(_, {:halt, _, _} = state, _) do
     {:halt, state}
   end
 
@@ -1644,10 +1707,10 @@ defmodule DBConnection do
     meter = event(meter, :fetch)
 
     case Holder.handle(pool_ref, :handle_fetch, args, opts) do
-      {:cont, result, _conn_state}  ->
+      {:cont, result, _conn_state} ->
         {:cont, result, meter}
 
-      {:halt, result, _conn_state}  ->
+      {:halt, result, _conn_state} ->
         {:halt, result, meter}
 
       other ->
