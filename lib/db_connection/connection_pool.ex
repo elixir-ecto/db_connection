@@ -287,7 +287,7 @@ defmodule DBConnection.ConnectionPool do
     This means requests are coming in and your connection pool cannot serve them fast enough. \
     You can address this by:
 
-      1. Your database is available and you have the proper credentials to connect to it
+      1. Ensuring your database is available and that you can connect to it
       2. Tracking down slow queries and making sure they are running fast enough
       3. Increasing the pool_size (albeit it increases resource consumption)
       4. Allowing requests to wait longer by increasing :queue_target and :queue_interval
