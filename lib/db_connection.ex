@@ -423,6 +423,7 @@ defmodule DBConnection do
 
     * `{:connected, pid}`
     * `{:disconnected, pid}`
+    * `{:queue_timeout, %DBConnection.ConnectionError{}}`
 
   """
   @spec start_link(module, opts :: Keyword.t()) :: GenServer.on_start()
