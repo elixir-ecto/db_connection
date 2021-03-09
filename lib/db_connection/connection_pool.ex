@@ -150,14 +150,6 @@ defmodule DBConnection.ConnectionPool do
     drop_idle(past_in_native, status, queue, codel)
   end
 
-  def handle_info(
-        {:checkout_timeout, err},
-        {_, _, %{connection_listeners: connection_listeners}} = state
-      ) do
-    Enum.map(connection_listeners, &send(&1, {:checkout_timeout, self(), err}))
-    {:noreply, state}
-  end
-
   defp drop_idle(past_in_native, status, queue, codel) do
     # If no queue progress since last idle check oldest connection
     case :ets.first(queue) do
