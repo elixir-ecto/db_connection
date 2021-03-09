@@ -88,7 +88,7 @@ defmodule DBConnection.Holder do
       end
 
     case result do
-      {:error, %DBConnection.ConnectionError{} = err} ->
+      {:error, %DBConnection.ConnectionError{reason: :queue_timeout} = err} ->
         Enum.each(opts[:connection_listeners] || [], &send(&1, {:checkout_timeout, err}))
 
       _ ->
