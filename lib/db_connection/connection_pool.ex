@@ -34,8 +34,7 @@ defmodule DBConnection.ConnectionPool do
       next: now_in_ms,
       poll: nil,
       idle_interval: idle_interval,
-      idle: nil,
-      connection_listeners: Keyword.get(opts, :connection_listeners) || []
+      idle: nil
     }
 
     codel = start_idle(now_in_native, start_poll(now_in_ms, now_in_ms, codel))
