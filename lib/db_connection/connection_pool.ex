@@ -34,7 +34,8 @@ defmodule DBConnection.ConnectionPool do
       next: now_in_ms,
       poll: nil,
       idle_interval: idle_interval,
-      idle: nil
+      idle: nil,
+      connection_listeners: Keyword.get(opts, :connection_listeners) || []
     }
 
     codel = start_idle(now_in_native, start_poll(now_in_ms, now_in_ms, codel))
@@ -147,6 +148,14 @@ defmodule DBConnection.ConnectionPool do
   def handle_info({:timeout, idle, past_in_native}, {_, _, %{idle: idle}} = data) do
     {status, queue, codel} = data
     drop_idle(past_in_native, status, queue, codel)
+  end
+
+  def handle_info(
+        {:checkout_timeout, err},
+        {_, _, %{connection_listeners: connection_listeners}} = state
+      ) do
+    Enum.map(connection_listeners, &send(&1, {:checkout_timeout, self(), err}))
+    {:noreply, state}
   end
 
   defp drop_idle(past_in_native, status, queue, codel) do

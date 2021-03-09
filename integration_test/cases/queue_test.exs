@@ -134,7 +134,7 @@ defmodule QueueTest do
     {:ok, agent} = A.start_link(stack)
 
     opts = [agent: agent, parent: self(), backoff_start: 30_000,
-      queue_timeout: 10, queue_target: 10, queue_interval: 10]
+      queue_timeout: 10, queue_target: 10, queue_interval: 10, connection_listeners: [self()]]
     {:ok, pool} = P.start_link(opts)
 
     P.run(pool, fn(_) ->
@@ -147,6 +147,10 @@ defmodule QueueTest do
     end)
 
     assert P.run(pool, fn(_) -> :hi end) == :hi
+    assert_receive {:connected, _pid}
+    if pool == DBConnection.ConnectionPool do
+    assert_receive {:checkout_timeout, _pid, %DBConnection.ConnectionError{reason: :queue_timeout, severity: :error}}
+    end
   end
 
   test "queue handles holder that has been deleted" do

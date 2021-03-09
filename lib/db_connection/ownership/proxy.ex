@@ -151,6 +151,13 @@ defmodule DBConnection.Ownership.Proxy do
     down("client #{inspect(pid)} exited", state)
   end
 
+  def handle_info(
+        {:checkout_timeout, _err},
+        state
+      ) do
+    {:noreply, state}
+  end
+
   def handle_cast({:stop, caller}, %{owner: {owner, _}} = state) do
     message = "#{inspect(caller)} checked in the connection owned by #{inspect(owner)}"
 

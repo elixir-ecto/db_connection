@@ -56,35 +56,46 @@ defmodule DBConnection.Holder do
     now = System.monotonic_time(@time_unit)
     timeout = abs_timeout(now, opts)
 
-    case checkout(pool, callers, queue?, now, timeout) do
-      {:ok, _, _, _, _} = ok ->
-        ok
+    result =
+      case checkout(pool, callers, queue?, now, timeout) do
+        {:ok, _, _, _, _} = ok ->
+          ok
 
-      {:error, _} = error ->
-        error
+        {:error, _} = error ->
+          error
 
-      {:redirect, caller, proxy} ->
-        case checkout(proxy, opts) do
-          {:ok, _, _, _, _} = ok ->
-            ok
+        {:redirect, caller, proxy} ->
+          case checkout(proxy, opts) do
+            {:ok, _, _, _, _} = ok ->
+              ok
 
-          {:error, %DBConnection.ConnectionError{message: message} = exception} ->
-            {:error,
-             %{
-               exception
-               | message:
-                   "could not checkout the connection owned by #{inspect(caller)}. " <>
-                     "When using the sandbox, connections are shared, so this may imply " <>
-                     "another process is using a connection. Reason: #{message}"
-             }}
+            {:error, %DBConnection.ConnectionError{message: message} = exception} ->
+              {:error,
+               %{
+                 exception
+                 | message:
+                     "could not checkout the connection owned by #{inspect(caller)}. " <>
+                       "When using the sandbox, connections are shared, so this may imply " <>
+                       "another process is using a connection. Reason: #{message}"
+               }}
 
-          {:error, _} = error ->
-            error
-        end
+            {:error, _} = error ->
+              error
+          end
 
-      {:exit, reason} ->
-        exit({reason, {__MODULE__, :checkout, [pool, opts]}})
+        {:exit, reason} ->
+          exit({reason, {__MODULE__, :checkout, [pool, opts]}})
+      end
+
+    case result do
+      {:error, %DBConnection.ConnectionError{} = err} ->
+        send(pool, {:checkout_timeout, err})
+
+      _ ->
+        nil
     end
+
+    result
   end
 
   @spec checkin(pool_ref :: any) :: :ok
