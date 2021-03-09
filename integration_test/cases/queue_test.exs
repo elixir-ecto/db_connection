@@ -148,9 +148,7 @@ defmodule QueueTest do
 
     assert P.run(pool, fn(_) -> :hi end) == :hi
     assert_receive {:connected, _pid}
-    if pool == DBConnection.ConnectionPool do
-      assert_receive {:checkout_timeout, _pid, %DBConnection.ConnectionError{reason: :queue_timeout, severity: :error}}
-    end
+    assert_receive {:checkout_timeout, %DBConnection.ConnectionError{reason: :queue_timeout, severity: :error}}
   end
 
   test "queue handles holder that has been deleted" do
