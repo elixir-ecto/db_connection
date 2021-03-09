@@ -149,7 +149,7 @@ defmodule QueueTest do
     assert P.run(pool, fn(_) -> :hi end) == :hi
     assert_receive {:connected, _pid}
     if pool == DBConnection.ConnectionPool do
-    assert_receive {:checkout_timeout, _pid, %DBConnection.ConnectionError{reason: :queue_timeout, severity: :error}}
+      assert_receive {:checkout_timeout, _pid, %DBConnection.ConnectionError{reason: :queue_timeout, severity: :error}}
     end
   end
 
