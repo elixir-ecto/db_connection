@@ -171,10 +171,11 @@ defmodule QueueTest do
       %{count: 1},
       %{
         error: %DBConnection.ConnectionError{reason: :queue_timeout},
-        connection_listeners: [^test_pid],
-        pool: ^pool_type
+        opts: event_opts
       }
     }
+
+    assert opts ++ [pool: pool_type, pool_size: 1] == event_opts
   end
 
   test "queue handles holder that has been deleted" do
