@@ -24,7 +24,7 @@ defmodule DBConnection.Mixfile do
 
   def application do
     [
-      applications: [:logger, :connection, :telemetry],
+      extra_applications: [:logger],
       mod: {DBConnection.App, []}
     ]
   end
