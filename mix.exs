@@ -24,7 +24,7 @@ defmodule DBConnection.Mixfile do
 
   def application do
     [
-      applications: [:logger, :connection],
+      applications: [:logger, :connection, :telemetry],
       mod: {DBConnection.App, []}
     ]
   end
@@ -32,7 +32,8 @@ defmodule DBConnection.Mixfile do
   defp deps do
     [
       {:connection, "~> 1.0"},
-      {:ex_doc, ">= 0.0.0", only: :dev, runtime: false}
+      {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
+      {:telemetry, "~> 0.4"}
     ]
   end
 
