@@ -33,7 +33,7 @@ defmodule DBConnection.Mixfile do
     [
       {:connection, "~> 1.0"},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
-      {:telemetry, "~> 0.4"}
+      {:telemetry, "~> 0.4 or ~> 1.0"}
     ]
   end
 
