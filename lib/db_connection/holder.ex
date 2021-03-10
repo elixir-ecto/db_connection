@@ -66,8 +66,7 @@ defmodule DBConnection.Holder do
           %{count: 1},
           %{
             error: connection_error,
-            pool: opts[:pool],
-            connection_listeners: opts[:connection_listeners]
+            opts: opts
           }
         )
 
