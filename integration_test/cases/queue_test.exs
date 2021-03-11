@@ -133,8 +133,23 @@ defmodule QueueTest do
     stack = [{:ok, :state}, {:idle, :state}, {:idle, :state}, {:idle, :state}, {:idle, :state}]
     {:ok, agent} = A.start_link(stack)
 
-    opts = [agent: agent, parent: self(), backoff_start: 30_000,
-      queue_timeout: 10, queue_target: 10, queue_interval: 10]
+    test_pid = self()
+
+    opts = [agent: agent, parent: test_pid, backoff_start: 30_000,
+      queue_timeout: 10, queue_target: 10, queue_interval: 10, connection_listeners: [test_pid]
+    ]
+
+    event = [:db_connection, :connection_error]
+
+    :telemetry.attach(
+      "queue-timeout-handler",
+      event,
+      fn event, measurements, metadata, _ ->
+        send test_pid, {:event, event, measurements, metadata}
+      end,
+      nil
+    )
+
     {:ok, pool} = P.start_link(opts)
 
     P.run(pool, fn(_) ->
@@ -147,6 +162,20 @@ defmodule QueueTest do
     end)
 
     assert P.run(pool, fn(_) -> :hi end) == :hi
+
+    pool_type = P.pool_type()
+
+    assert_receive {
+      :event,
+      ^event,
+      %{count: 1},
+      %{
+        error: %DBConnection.ConnectionError{reason: :queue_timeout},
+        opts: event_opts
+      }
+    }
+
+    assert opts ++ [pool: pool_type, pool_size: 1] == event_opts
   end
 
   test "queue handles holder that has been deleted" do

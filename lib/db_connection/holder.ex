@@ -60,6 +60,18 @@ defmodule DBConnection.Holder do
       {:ok, _, _, _, _} = ok ->
         ok
 
+      {:error, %DBConnection.ConnectionError{} = connection_error} = error ->
+        :telemetry.execute(
+          [:db_connection, :connection_error],
+          %{count: 1},
+          %{
+            error: connection_error,
+            opts: opts
+          }
+        )
+
+        error
+
       {:error, _} = error ->
         error
 
