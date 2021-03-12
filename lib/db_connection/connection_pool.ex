@@ -4,12 +4,14 @@ defmodule DBConnection.ConnectionPool do
   @moduledoc false
 
   use GenServer
+  require Logger
   alias DBConnection.Holder
 
   @queue_target 50
   @queue_interval 1000
   @idle_interval 1000
   @time_unit 1000
+  @log_stacktrace_interval 15_000
 
   def start_link({mod, opts}) do
     GenServer.start_link(__MODULE__, {mod, opts}, start_opts(opts))
@@ -34,7 +36,8 @@ defmodule DBConnection.ConnectionPool do
       next: now_in_ms,
       poll: nil,
       idle_interval: idle_interval,
-      idle: nil
+      idle: nil,
+      last_stacktrace: now_in_ms
     }
 
     codel = start_idle(now_in_native, start_poll(now_in_ms, now_in_ms, codel))
@@ -72,11 +75,12 @@ defmodule DBConnection.ConnectionPool do
     end
   end
 
-  def handle_info({:"ETS-TRANSFER", holder, pid, queue}, {_, queue, _} = data) do
+  def handle_info({:"ETS-TRANSFER", holder, pid, queue}, {status, queue, codel}) do
     message = "client #{inspect(pid)} exited"
+    {:ok, codel} = maybe_log_stacktrace(pid, codel)
     err = DBConnection.ConnectionError.exception(message: message, severity: :info)
     Holder.handle_disconnect(holder, err)
-    {:noreply, data}
+    {:noreply, {status, queue, codel}}
   end
 
   def handle_info({:"ETS-TRANSFER", holder, _, {msg, queue, extra}}, {_, queue, _} = data) do
@@ -147,6 +151,41 @@ defmodule DBConnection.ConnectionPool do
   def handle_info({:timeout, idle, past_in_native}, {_, _, %{idle: idle}} = data) do
     {status, queue, codel} = data
     drop_idle(past_in_native, status, queue, codel)
+  end
+
+  def maybe_log_stacktrace(pid, %{last_stacktrace: last_stacktrace_ms} = codel) do
+    now_in_ms = System.monotonic_time(:millisecond)
+
+    codel =
+      if now_in_ms - last_stacktrace_ms >= @log_stacktrace_interval do
+        inspected_pid = inspect(pid)
+
+        case Process.info(pid, :current_stacktrace) do
+          {:current_stacktrace, stacktrace} ->
+            message =
+              "client #{inspected_pid} was at location:\n\n" <>
+                Exception.format_stacktrace(stacktrace)
+
+            Logger.info([inspect(__MODULE__), ?\s, ?(, inspect(self()), "): #{message}"])
+
+            %{codel | last_stacktrace: now_in_ms}
+
+          _ ->
+            Logger.info([
+              inspect(__MODULE__),
+              ?\s,
+              ?(,
+              inspect(self()),
+              "): NO STACKTRACE #{inspected_pid}"
+            ])
+
+            codel
+        end
+      else
+        codel
+      end
+
+    {:ok, codel}
   end
 
   defp drop_idle(past_in_native, status, queue, codel) do
