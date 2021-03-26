@@ -283,18 +283,6 @@ defmodule DBConnection.Connection do
     {:disconnect, {:log, exc}, %{s | timer: nil}}
   end
 
-  def handle_info(:timeout, %{client: nil} = s) do
-    %{mod: mod, state: state} = s
-
-    case apply(mod, :ping, [state]) do
-      {:ok, state} ->
-        handle_timeout(%{s | state: state})
-
-      {:disconnect, err, state} ->
-        {:disconnect, {:log, err}, %{s | state: state}}
-    end
-  end
-
   def handle_info(
         {:"ETS-TRANSFER", holder, _pid, {msg, ref, extra}},
         %{client: {ref, :after_connect}, timer: timer} = s
