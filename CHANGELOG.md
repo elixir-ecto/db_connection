@@ -1,5 +1,12 @@
 # Changelog
 
+## v2.4.0 (2021-04-02)
+
+* Enhancements
+  * Add telemetry events for connection errors
+  * Use `:rand` default algorithm
+  * Allow decentralized lookups on DBConnection.Ownership
+
 ## v2.3.1 (2020-11-25)
 
 * Enhancements
