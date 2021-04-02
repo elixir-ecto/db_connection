@@ -1073,12 +1073,13 @@ defmodule DBConnection do
 
   defp checkout(pool, meter, opts) do
     checkout = System.monotonic_time()
+    pool_mod = Keyword.get(opts, :pool, DBConnection.ConnectionPool)
 
-    # The holder is only used internally by DBConnection.Task
-    holder = Keyword.get(opts, :holder, DBConnection.Holder)
+    caller = Keyword.get(opts, :caller, self())
+    callers = [caller | Process.get(:"$callers") || []]
 
     try do
-      holder.checkout(pool, opts)
+      pool_mod.checkout(pool, callers, opts)
     catch
       kind, reason ->
         stack = __STACKTRACE__

@@ -46,12 +46,9 @@ defmodule DBConnection.Holder do
 
   ## Pool API (invoked by caller)
 
-  @callback checkout(pool :: GenServer.server(), opts :: Keyword.t()) ::
+  @callback checkout(pool :: GenServer.server(), [pid], opts :: Keyword.t()) ::
               {:ok, pool_ref :: any, module, state :: any} | {:error, Exception.t()}
-  def checkout(pool, opts) do
-    caller = Keyword.get(opts, :caller, self())
-    callers = [caller | Process.get(:"$callers") || []]
-
+  def checkout(pool, callers, opts) do
     queue? = Keyword.get(opts, :queue, @queue)
     now = System.monotonic_time(@time_unit)
     timeout = abs_timeout(now, opts)
@@ -76,7 +73,7 @@ defmodule DBConnection.Holder do
         error
 
       {:redirect, caller, proxy} ->
-        case checkout(proxy, opts) do
+        case checkout(proxy, [caller], opts) do
           {:ok, _, _, _, _} = ok ->
             ok
 

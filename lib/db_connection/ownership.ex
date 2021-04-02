@@ -67,6 +67,14 @@ defmodule DBConnection.Ownership do
     Manager.child_spec(args)
   end
 
+  @doc false
+  def checkout(pool, callers, opts) do
+    case Manager.proxy_for(callers, opts) do
+      {caller, pool} -> Holder.checkout(pool, [caller], opts)
+      nil -> Holder.checkout(pool, callers, opts)
+    end
+  end
+
   @doc """
   Explicitly checks a connection out from the ownership manager.
 
@@ -79,7 +87,7 @@ defmodule DBConnection.Ownership do
           :ok | {:already, :owner | :allowed}
   def ownership_checkout(manager, opts) do
     with {:ok, pid} <- Manager.checkout(manager, opts) do
-      case Holder.checkout(pid, opts) do
+      case Holder.checkout(pid, [self()], opts) do
         {:ok, pool_ref, _module, _idle_time, _state} ->
           Holder.checkin(pool_ref)
 

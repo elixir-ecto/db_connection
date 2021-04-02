@@ -13,6 +13,17 @@ defmodule DBConnection.Ownership.Manager do
     GenServer.start_link(__MODULE__, {module, owner_opts, pool_opts}, owner_opts)
   end
 
+  @spec proxy_for(callers :: [pid], Keyword.t()) :: {caller :: pid, proxy :: pid} | nil
+  def proxy_for(callers, opts) do
+    case Keyword.fetch(opts, :name) do
+      {:ok, name} ->
+        Enum.find_value(callers, &List.first(:ets.lookup(name, &1)))
+
+      :error ->
+        nil
+    end
+  end
+
   @spec checkout(GenServer.server(), Keyword.t()) ::
           {:ok, pid} | {:already, :owner | :allowed}
   def checkout(manager, opts) do
@@ -48,7 +59,7 @@ defmodule DBConnection.Ownership.Manager do
     ets =
       case Keyword.fetch(owner_opts, :name) do
         {:ok, name} when is_atom(name) ->
-          :ets.new(name, [:named_table, :protected, read_concurrency: true])
+          :ets.new(name, [:set, :named_table, :protected, read_concurrency: true])
 
         _ ->
           nil

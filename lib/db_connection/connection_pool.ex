@@ -15,6 +15,10 @@ defmodule DBConnection.ConnectionPool do
     GenServer.start_link(__MODULE__, {mod, opts}, start_opts(opts))
   end
 
+  def checkout(pool, callers, opts) do
+    Holder.checkout(pool, callers, opts)
+  end
+
   ## GenServer api
 
   def init({mod, opts}) do
