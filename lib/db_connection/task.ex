@@ -25,12 +25,12 @@ defmodule DBConnection.Task do
         Process.unlink(parent)
         pool_ref = DBConnection.Holder.pool_ref(pool: parent, reference: ref, holder: holder)
         checkout = {:via, __MODULE__, pool_ref}
-        _ = DBConnection.run(checkout, make_fun(fun), [holder: __MODULE__] ++ opts)
+        _ = DBConnection.run(checkout, make_fun(fun), [pool: __MODULE__] ++ opts)
         exit(:normal)
     end
   end
 
-  def checkout({:via, __MODULE__, pool_ref}, _opts) do
+  def checkout({:via, __MODULE__, pool_ref}, _callers, _opts) do
     {:ok, pool_ref, _mod = :unused, _idle_time = nil, _state = :unused}
   end
 
