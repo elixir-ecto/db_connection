@@ -21,9 +21,8 @@ defmodule DBConnection.Backoff do
     end
   end
 
-  def backoff(%Backoff{type: :rand, min: min, max: max, state: state} = s) do
-    {backoff, state} = rand(state, min, max)
-    {backoff, %Backoff{s | state: state}}
+  def backoff(%Backoff{type: :rand, min: min, max: max} = s) do
+    {rand(min, max), s}
   end
 
   def backoff(%Backoff{type: :exp, min: min, state: nil} = s) do
@@ -37,19 +36,18 @@ defmodule DBConnection.Backoff do
   end
 
   def backoff(%Backoff{type: :rand_exp, max: max, state: state} = s) do
-    {prev, lower, rand_state} = state
+    {prev, lower} = state
     next_min = min(prev, lower)
     next_max = min(prev * 3, max)
-    {next, rand_state} = rand(rand_state, next_min, next_max)
-    {next, %Backoff{s | state: {next, lower, rand_state}}}
+    next = rand(next_min, next_max)
+    {next, %Backoff{s | state: {next, lower}}}
   end
 
   def reset(%Backoff{type: :rand} = s), do: s
   def reset(%Backoff{type: :exp} = s), do: %Backoff{s | state: nil}
 
-  def reset(%Backoff{type: :rand_exp, min: min, state: state} = s) do
-    {_, lower, rand_state} = state
-    %Backoff{s | state: {min, lower, rand_state}}
+  def reset(%Backoff{type: :rand_exp, min: min, state: {_, lower}} = s) do
+    %Backoff{s | state: {min, lower}}
   end
 
   ## Internal
@@ -76,7 +74,7 @@ defmodule DBConnection.Backoff do
   end
 
   defp new(:rand, min, max) do
-    %Backoff{type: :rand, min: min, max: max, state: seed()}
+    %Backoff{type: :rand, min: min, max: max, state: nil}
   end
 
   defp new(:exp, min, max) do
@@ -85,45 +83,14 @@ defmodule DBConnection.Backoff do
 
   defp new(:rand_exp, min, max) do
     lower = max(min, div(max, 3))
-    %Backoff{type: :rand_exp, min: min, max: max, state: {min, lower, seed()}}
+    %Backoff{type: :rand_exp, min: min, max: max, state: {min, lower}}
   end
 
   defp new(type, _, _) do
     raise ArgumentError, "unknown type #{inspect(type)}"
   end
 
-  defp seed() do
-    case rand_module() do
-      :rand ->
-        {:rand, :rand.seed_s(:exsplus)}
-
-      :random ->
-        {:random, random_seed()}
-    end
-  end
-
-  defp rand_module() do
-    {:ok, mods} = :application.get_key(:stdlib, :modules)
-
-    if :rand in mods do
-      :rand
-    else
-      :random
-    end
-  end
-
-  defp random_seed() do
-    {_, sec, micro} = :os.timestamp()
-    hash = :erlang.phash2({self(), make_ref()})
-
-    case :random.seed(hash, sec, micro) do
-      :undefined -> Process.delete(:random_seed)
-      prev -> Process.put(:random_seed, prev)
-    end
-  end
-
-  defp rand({mod, state}, min, max) do
-    {int, state} = apply(mod, :uniform_s, [max - min + 1, state])
-    {int + min - 1, {mod, state}}
+  defp rand(min, max) do
+    :rand.uniform(max - min + 1) + min - 1
   end
 end

@@ -56,12 +56,6 @@ defmodule DBConnection.BackoffTest do
     refute Enum.all?(delays, &(hd(delays) == &1))
   end
 
-  @tag backoff_type: :rand
-  test "random backoffs repeat", context do
-    backoff = new(context)
-    assert backoff(backoff, 20) == backoff(backoff, 20)
-  end
-
   @tag backoff_type: :rand_exp
   test "random exponential backoffs aways in [min, max]", context do
     backoff = new(context)
@@ -81,12 +75,6 @@ defmodule DBConnection.BackoffTest do
       assert next >= prev or next >= div(context[:backoff_max], 3)
       next
     end)
-  end
-
-  @tag backoff_type: :rand_exp
-  test "random exponential backoffs repeat", context do
-    backoff = new(context)
-    assert backoff(backoff, 20) == backoff(backoff, 20)
   end
 
   @tag backoff_type: :rand_exp
