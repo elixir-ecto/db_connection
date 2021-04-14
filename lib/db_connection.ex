@@ -138,26 +138,16 @@ defmodule DBConnection do
   Checkouts the state from the connection process. Return `{:ok, state}`
   to allow the checkout or `{:disconnect, exception, state}` to disconnect.
 
-  This callback is called when the control of the state is passed to
-  another process. `c:checkin/1` is called with the new state when control
-  is returned to the connection process.
+  This callback is called immediately after the connection is established
+  and the state is never effetively checked in again. That's because
+  DBConnection keeps the connection state in an ETS table that is moved
+  between the different clients checking out connections. There is no
+  `checkin` callback. The state is only handed back to the connection
+  process during pings and (re)connects.
 
   This callback is called in the connection process.
   """
   @callback checkout(state :: any) ::
-              {:ok, new_state :: any} | {:disconnect, Exception.t(), new_state :: any}
-
-  @doc """
-  Checks in the state to the connection process. Return `{:ok, state}`
-  to allow the checkin or `{:disconnect, exception, state}` to disconnect.
-
-  This callback is called when the control of the state is passed back
-  to the connection process. It should reverse any changes to the
-  connection state made in `c:checkout/1`.
-
-  This callback is called in the connection process.
-  """
-  @callback checkin(state :: any) ::
               {:ok, new_state :: any} | {:disconnect, Exception.t(), new_state :: any}
 
   @doc """
