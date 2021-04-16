@@ -367,7 +367,11 @@ defmodule DBConnection do
       connection is idle. Defaults to 1000ms.
     * `:queue_target` and `:queue_interval` - See "Queue config" below
     * `:max_restarts` and `:max_seconds` - Configures the `:max_restarts` and
-      `:max_seconds` for the connection pool supervisor (see the `Supervisor` docs)
+      `:max_seconds` for the connection pool supervisor (see the `Supervisor` docs).
+      Typically speaking the connection process doesn't terminate, except due to
+      faults in DBConnection. However, if backoff has been disabled, then they
+      also terminate whenever a connection is disconnected (for instance, due to
+      client or server errors)
     * `:show_sensitive_data_on_connection_error` - By default, `DBConnection`
       hides all information during connection errors to avoid leaking credentials
       or other sensitive information. You can set this option if you wish to
@@ -459,6 +463,14 @@ defmodule DBConnection do
   as they are checked in or as they are pinged. Checked in connections will be
   randomly checked in within the given time interval. Pinged connections are
   immediately disconnected - as they are idle (according to `:idle_interval`).
+
+  If the connection has a backoff configured (which is the case by default),
+  disconnecting means an attempt at a new connection will be done immediately
+  after, without starting a new process for each connection. However, if backoff
+  has been disabled, the connection process will terminate. In such cases,
+  disconnecting all connections may cause the pool supervisor to restart
+  depending on the max_restarts/max_seconds configuration of the pool,
+  so you will want to set those carefully.
   """
   def disconnect_all(conn, interval, opts \\ []) when interval >= 0 do
     pool = Keyword.get(opts, :pool, DBConnection.ConnectionPool)
