@@ -453,6 +453,20 @@ defmodule DBConnection do
   end
 
   @doc """
+  Forces all connections in the pool to disconnect within the given interval.
+
+  Once this function is called, the pool will disconnect all of its connections
+  as they are checked in or as they are pinged. Checked in connections will be
+  randomly checked in within the given time interval. Pinged connections are
+  immediately disconnected - as they are idle (according to `:idle_interval`).
+  """
+  def disconnect_all(conn, interval, opts \\ []) when interval >= 0 do
+    pool = Keyword.get(opts, :pool, DBConnection.ConnectionPool)
+    interval = System.convert_time_unit(interval, :millisecond, :native)
+    pool.disconnect_all(conn, interval, opts)
+  end
+
+  @doc """
   Prepare a query with a database connection for later execution.
 
   It returns `{:ok, query}` on success or `{:error, exception}` if there was
