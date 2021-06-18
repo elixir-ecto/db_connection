@@ -10,6 +10,7 @@ defmodule DBConnection.Holder do
   Record.defrecord(:pool_ref, [:pool, :reference, :deadline, :holder, :lock])
 
   @type t :: :ets.tid()
+  @type checkin_time :: non_neg_integer() | nil
 
   ## Holder API
 
@@ -47,7 +48,8 @@ defmodule DBConnection.Holder do
   ## Pool API (invoked by caller)
 
   @callback checkout(pool :: GenServer.server(), [pid], opts :: Keyword.t()) ::
-              {:ok, pool_ref :: any, module, state :: any} | {:error, Exception.t()}
+              {:ok, pool_ref :: any, module, checkin_time, state :: any}
+              | {:error, Exception.t()}
   def checkout(pool, callers, opts) do
     queue? = Keyword.get(opts, :queue, @queue)
     now = System.monotonic_time(@time_unit)
@@ -192,7 +194,7 @@ defmodule DBConnection.Holder do
     :ok
   end
 
-  @spec handle_checkout(t, {pid, reference}, reference, non_neg_integer | nil) :: boolean
+  @spec handle_checkout(t, {pid, reference}, reference, checkin_time) :: boolean
   def handle_checkout(holder, {pid, mref}, ref, checkin_time) do
     :ets.give_away(holder, pid, {mref, ref, checkin_time})
   rescue
