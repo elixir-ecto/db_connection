@@ -363,8 +363,10 @@ defmodule DBConnection do
       in `GenServer.start_link/3`)
     * `:pool` - Chooses the pool to be started
     * `:pool_size` - Chooses the size of the pool
-    * `:idle_interval` - Controls the frequency we ping the database when the
-      connection is idle. Defaults to 1000ms.
+    * `:idle_interval` - Controls the frequency we check for idle connections
+      in the pool. We then notify each idle connection to ping the database.
+      In practice, the ping happens within `idle_interval <= ping < 2 * idle_interval`.
+      Defaults to 1000ms.
     * `:queue_target` and `:queue_interval` - See "Queue config" below
     * `:max_restarts` and `:max_seconds` - Configures the `:max_restarts` and
       `:max_seconds` for the connection pool supervisor (see the `Supervisor` docs)
