@@ -461,7 +461,7 @@ defmodule DBConnection do
 
   Once this function is called, the pool will disconnect all of its connections
   as they are checked in or as they are pinged. Checked in connections will be
-  randomly checked in within the given time interval. Pinged connections are
+  randomly disconnected within the given time interval. Pinged connections are
   immediately disconnected - as they are idle (according to `:idle_interval`).
 
   If the connection has a backoff configured (which is the case by default),
