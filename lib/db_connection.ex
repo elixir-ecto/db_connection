@@ -472,6 +472,7 @@ defmodule DBConnection do
   depending on the max_restarts/max_seconds configuration of the pool,
   so you will want to set those carefully.
   """
+  @spec disconnect_all(conn, non_neg_integer, opts :: Keyword.t()) :: :ok
   def disconnect_all(conn, interval, opts \\ []) when interval >= 0 do
     pool = Keyword.get(opts, :pool, DBConnection.ConnectionPool)
     interval = System.convert_time_unit(interval, :millisecond, :native)
