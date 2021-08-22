@@ -228,12 +228,12 @@ defmodule DBConnection.Holder do
       :ets.delete(holder)
   end
 
-  @spec handle_disconnect(t, Exception.t()) :: :ok
+  @spec handle_disconnect(t, Exception.t()) :: boolean
   def handle_disconnect(holder, err) do
     handle_done(holder, &DBConnection.Connection.disconnect/3, err)
   end
 
-  @spec handle_stop(t, term) :: :ok
+  @spec handle_stop(t, term) :: boolean
   def handle_stop(holder, err) do
     handle_done(holder, &DBConnection.Connection.stop/3, err)
   end
