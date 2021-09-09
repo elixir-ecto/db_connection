@@ -8,7 +8,7 @@ defmodule TransactionTest do
     stack = [
       {:ok, :state},
       {:ok, :began, :new_state},
-      {:ok, :comitted, :newer_state},
+      {:ok, :committed, :newer_state},
       {:ok, :began, :newest_state},
       {:ok, :committed, :newest_state}
       ]
@@ -1069,7 +1069,7 @@ defmodule TransactionTest do
     stack = [
       {:ok, :state},
       {:ok, :began, :new_state},
-      {:ok, :comitted, :newer_state},
+      {:ok, :committed, :newer_state},
       {:ok, :began, :newest_state},
       {:ok, :committed, :newest_state}
       ]
