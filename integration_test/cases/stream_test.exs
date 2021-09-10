@@ -16,7 +16,7 @@ defmodule StreamTest do
       {:cont, %R{}, :newest_state},
       {:halt, %R{}, :state2},
       {:ok, :deallocated, :new_state2},
-      {:ok, :commited, :newer_state2}
+      {:ok, :committed, :newer_state2}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -181,7 +181,7 @@ defmodule StreamTest do
       {:ok, :state},
       {:ok, :began, :new_state},
       {:error, err, :newer_state},
-      {:ok, :comitted, :newest_state}
+      {:ok, :committed, :newest_state}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -465,7 +465,7 @@ defmodule StreamTest do
       {:ok, %Q{}, %C{}, :newer_state},
       {:halt, %R{}, :newest_state},
       {:ok, :deallocated, :state2},
-      {:ok, :commited, :new_state2}
+      {:ok, :committed, :new_state2}
       ]
     {:ok, agent} = A.start_link(stack)
 

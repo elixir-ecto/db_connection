@@ -3,7 +3,7 @@ defmodule DBConnection.ConnectionError do
 
   @moduledoc """
   The raised exception might include the reason which would be useful
-  to programatically determine what was causing the error.
+  to programmatically determine what was causing the error.
   """
 
   @doc false

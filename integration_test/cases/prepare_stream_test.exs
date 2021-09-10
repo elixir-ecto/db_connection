@@ -137,7 +137,7 @@ defmodule PrepareStreamTest do
       {:ok, :state},
       {:ok, :began, :new_state},
       {:error, err, :newer_state},
-      {:ok, :comitted, :newest_state}
+      {:ok, :committed, :newest_state}
       ]
     {:ok, agent} = A.start_link(stack)
 
@@ -173,7 +173,7 @@ defmodule PrepareStreamTest do
       {:ok, :began, :new_state},
       {:ok, %Q{}, :newer_state},
       {:error, err, :newest_state},
-      {:ok, :comitted, :state2}
+      {:ok, :committed, :state2}
       ]
     {:ok, agent} = A.start_link(stack)
 
