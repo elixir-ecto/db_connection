@@ -7,7 +7,7 @@ defmodule DBConnection.BackoffTest do
   @moduletag backoff_max: 30_000
 
   @tag backoff_type: :exp
-  test "exponential backoffs aways in [min, max]", context do
+  test "exponential backoffs always in [min, max]", context do
     backoff = new(context)
     {delays, _} = backoff(backoff, 20)
 
@@ -39,7 +39,7 @@ defmodule DBConnection.BackoffTest do
   end
 
   @tag backoff_type: :rand
-  test "random backoffs aways in [min, max]", context do
+  test "random backoffs always in [min, max]", context do
     backoff = new(context)
     {delays, _} = backoff(backoff, 20)
 
@@ -57,7 +57,7 @@ defmodule DBConnection.BackoffTest do
   end
 
   @tag backoff_type: :rand_exp
-  test "random exponential backoffs aways in [min, max]", context do
+  test "random exponential backoffs always in [min, max]", context do
     backoff = new(context)
     {delays, _} = backoff(backoff, 20)
 

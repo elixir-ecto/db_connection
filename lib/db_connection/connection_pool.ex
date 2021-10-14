@@ -309,7 +309,7 @@ defmodule DBConnection.ConnectionPool do
 
       1. Ensuring your database is available and that you can connect to it
       2. Tracking down slow queries and making sure they are running fast enough
-      3. Increasing the pool_size (albeit it increases resource consumption)
+      3. Increasing the pool_size (although this increases resource consumption)
       4. Allowing requests to wait longer by increasing :queue_target and :queue_interval
 
     See DBConnection.start_link/2 for more information
