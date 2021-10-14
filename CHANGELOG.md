@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.4.1 (2021-10-14)
+
+* Enhancements
+  * Add `DBConnection.disconnect_all/2`
+
 ## v2.4.0 (2021-04-02)
 
 * Enhancements
