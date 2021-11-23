@@ -427,16 +427,13 @@ defmodule DBConnection do
 
   Measurements:
 
-    * `:error` A fixed-value measurement which always measures 1.
+    * `:count` - A fixed-value measurement which always measures 1.
 
   Metadata
 
-    * `:connection_listeners` The list of connection listeners (as described above) passed to
-    the connection pool. Can be used to relay this event to the proper connection listeners.
+    * `:error` - The `DBConnection.ConnectionError` struct which triggered the event.
 
-    * `:connection_error` The `DBConnection.ConnectionError` struct which triggered the event.
-
-    * `:pool` The connection pool in which this event was triggered.
+    * `:opts` - All options given to the pool operation
 
   """
   @spec start_link(module, opts :: Keyword.t()) :: GenServer.on_start()
