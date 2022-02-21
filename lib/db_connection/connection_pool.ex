@@ -1,7 +1,9 @@
 defmodule DBConnection.ConnectionPool do
-  # The queueing algorithm is based on CoDel:
-  # https://queue.acm.org/appendices/codel.html
-  @moduledoc false
+  @moduledoc """
+  The default connection pool.
+
+  The queueing algorithm is based on [CoDel](https://queue.acm.org/appendices/codel.html).
+  """
 
   use GenServer
   alias DBConnection.Holder
@@ -11,20 +13,29 @@ defmodule DBConnection.ConnectionPool do
   @idle_interval 1000
   @time_unit 1000
 
+  @doc false
   def start_link({mod, opts}) do
     GenServer.start_link(__MODULE__, {mod, opts}, start_opts(opts))
   end
 
+  @doc false
+  def child_spec(opts) do
+    super(opts)
+  end
+
+  @doc false
   def checkout(pool, callers, opts) do
     Holder.checkout(pool, callers, opts)
   end
 
+  @doc false
   def disconnect_all(pool, interval, _opts) do
     GenServer.call(pool, {:disconnect_all, interval}, :infinity)
   end
 
   ## GenServer api
 
+  @impl true
   def init({mod, opts}) do
     queue = :ets.new(__MODULE__.Queue, [:protected, :ordered_set])
     ts = {System.monotonic_time(), 0}
@@ -50,11 +61,13 @@ defmodule DBConnection.ConnectionPool do
     {:ok, {:busy, queue, codel, ts}}
   end
 
+  @impl true
   def handle_call({:disconnect_all, interval}, _from, {type, queue, codel, _ts}) do
     ts = {System.monotonic_time(), interval}
     {:reply, :ok, {type, queue, codel, ts}}
   end
 
+  @impl true
   def handle_info(
         {:db_connection, from, {:checkout, _caller, now, queue?}},
         {:busy, queue, _, _} = busy
