@@ -361,7 +361,7 @@ defmodule DBConnection do
       See "Connection listeners" below
     * `:name` - A name to register the started process (see the `:name` option
       in `GenServer.start_link/3`)
-    * `:pool` - Chooses the pool to be started
+    * `:pool` - Chooses the pool to be started (default: `DBConnection.ConnectionPool`)
     * `:pool_size` - Chooses the size of the pool
     * `:idle_interval` - Controls the frequency we check for idle connections
       in the pool. We then notify each idle connection to ping the database.
