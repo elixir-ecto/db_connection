@@ -37,6 +37,8 @@ defmodule DBConnection.ConnectionPool do
 
   @impl true
   def init({mod, opts}) do
+    DBConnection.register_as_pool(mod)
+
     queue = :ets.new(__MODULE__.Queue, [:protected, :ordered_set])
     ts = {System.monotonic_time(), 0}
     {:ok, _} = DBConnection.ConnectionPool.Pool.start_supervised(queue, mod, opts)
