@@ -46,7 +46,7 @@ defmodule DBConnectionTest do
     test "returns the connection module when given a locked connection reference" do
       {:ok, agent} = A.start_link([{:ok, :state}, {:idle, :state}, {:idle, :state}])
 
-      opts = [agent: agent, parent: self()]
+      opts = [agent: agent]
       {:ok, pool} = P.start_link(opts)
 
       P.run(pool, fn conn ->
