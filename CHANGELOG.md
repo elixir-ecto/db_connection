@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.4.2 (2022-03-03)
+
+* Enhancements
+  * Add `DBConnection.connection_module/1`
+
 ## v2.4.1 (2021-10-14)
 
 * Enhancements
