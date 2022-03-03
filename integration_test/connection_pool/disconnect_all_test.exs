@@ -28,7 +28,7 @@ defmodule TestPoolDisconnectAll do
     assert P.execute(pool, %Q{}, [:param]) == {:ok, %Q{}, %R{}}
     assert P.execute(pool, %Q{}, [:param]) == {:ok, %Q{}, %R{}}
 
-    err = %DBConnection.ConnectionError{message: "disconnect_all requested", severity: :info}
+    err = %DBConnection.ConnectionError{message: "disconnect_all requested", severity: :debug}
 
     assert [
              connect: [_],
@@ -69,7 +69,7 @@ defmodule TestPoolDisconnectAll do
     assert P.execute(pool, %Q{}, [:param]) == {:ok, %Q{}, %R{}}
     assert P.execute(pool, %Q{}, [:param]) == {:ok, %Q{}, %R{}}
 
-    err = %DBConnection.ConnectionError{message: "disconnect_all requested", severity: :info}
+    err = %DBConnection.ConnectionError{message: "disconnect_all requested", severity: :debug}
 
     assert [
              connect: [_],
