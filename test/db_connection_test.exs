@@ -3,6 +3,7 @@ defmodule DBConnectionTest do
 
   alias TestConnection, as: C
   alias TestAgent, as: A
+  alias TestPool, as: P
 
   test "start_link workflow with unregistered name" do
     stack = [{:ok, :state}]
@@ -29,5 +30,21 @@ defmodule DBConnectionTest do
 
     _ = :sys.get_state(conn)
     assert A.record(agent) == [{:connect, [[pool_index: 1] ++ opts]}]
+  end
+
+  describe "connection_module/1" do
+    test "returns the connection module when given a pool pid" do
+      {:ok, pool} = P.start_link([])
+      assert {:ok, TestConnection} = DBConnection.connection_module(pool)
+    end
+
+    test "returns the connection module when given a pool name", %{test: name} do
+      {:ok, _pool} = P.start_link(name: name)
+      assert {:ok, TestConnection} = DBConnection.connection_module(name)
+    end
+
+    test "returns an error if the given process is not a pool" do
+      assert :error = DBConnection.connection_module(self())
+    end
   end
 end

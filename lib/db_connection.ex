@@ -324,6 +324,8 @@ defmodule DBConnection do
   """
   @callback disconnect(err :: Exception.t(), state :: any) :: :ok
 
+  @connection_module_key :connection_module
+
   @doc """
   Use `DBConnection` to set the behaviour.
   """
@@ -1083,6 +1085,32 @@ defmodule DBConnection do
 
     enum = resource(conn, declare, &stream_fetch/3, &stream_deallocate/3, opts)
     enum.(acc, fun)
+  end
+
+  @doc false
+  def register_as_pool(conn_module) do
+    Process.put(@connection_module_key, conn_module)
+  end
+
+  @doc """
+  Returns connection module used by the given connection pool process.
+
+  If the given process is not a connection pool, `:error` is returned.
+  """
+  @spec connection_module(pid() | atom()) :: {:ok, module()} | :error
+  def connection_module(pool) when is_pid(pool) or is_atom(pool) do
+    with pid when pid != nil <- GenServer.whereis(pool),
+         {:dictionary, dictionary} <- Process.info(pid, :dictionary),
+         {:ok, module} <- fetch_from_dictionary(dictionary, @connection_module_key),
+         do: {:ok, module},
+         else: (_ -> :error)
+  end
+
+  defp fetch_from_dictionary(dictionary, key) do
+    Enum.find_value(dictionary, :error, fn
+      {^key, value} -> {:ok, value}
+      _pair -> nil
+    end)
   end
 
   ## Helpers

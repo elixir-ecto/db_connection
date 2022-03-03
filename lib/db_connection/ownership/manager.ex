@@ -62,6 +62,8 @@ defmodule DBConnection.Ownership.Manager do
   ## Callbacks
 
   def init({module, owner_opts, pool_opts}) do
+    DBConnection.register_as_pool(module)
+
     ets =
       case Keyword.fetch(owner_opts, :name) do
         {:ok, name} when is_atom(name) ->
