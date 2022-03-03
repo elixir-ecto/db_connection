@@ -12,6 +12,7 @@ defmodule DBConnection.ConnectionPool do
   @queue_interval 1000
   @idle_interval 1000
   @time_unit 1000
+  @connection_module_key :connection_module
 
   @doc false
   def start_link({mod, opts}) do
@@ -33,10 +34,38 @@ defmodule DBConnection.ConnectionPool do
     GenServer.call(pool, {:disconnect_all, interval}, :infinity)
   end
 
+  @doc """
+  Returns connection module used by the given connection pool process.
+
+  If the given process is not a connection pool, `:error` is returned.
+  """
+  @spec connection_module(pid() | atom()) :: {:ok, module()} | :error
+  def connection_module(pool) when is_pid(pool) or is_atom(pool) do
+    with {:ok, pid} <- to_pid(pool),
+         {:dictionary, dictionary} <- Process.info(pid, :dictionary),
+         {:ok, module} <- fetch_from_dictionary(dictionary, @connection_module_key),
+         do: {:ok, module},
+         else: (_ -> :error)
+  end
+
+  defp to_pid(nil), do: :error
+  defp to_pid(pid) when is_pid(pid), do: {:ok, pid}
+  defp to_pid(name) when is_atom(name), do: name |> Process.whereis() |> to_pid()
+  defp to_pid(_other), do: :error
+
+  defp fetch_from_dictionary(dictionary, key) do
+    Enum.find_value(dictionary, :error, fn
+      {^key, value} -> {:ok, value}
+      _pair -> nil
+    end)
+  end
+
   ## GenServer api
 
   @impl true
   def init({mod, opts}) do
+    Process.put(@connection_module_key, mod)
+
     queue = :ets.new(__MODULE__.Queue, [:protected, :ordered_set])
     ts = {System.monotonic_time(), 0}
     {:ok, _} = DBConnection.ConnectionPool.Pool.start_supervised(queue, mod, opts)
