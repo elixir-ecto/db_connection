@@ -258,7 +258,7 @@ defmodule DBConnection.Holder do
     _ -> false
   else
     true ->
-      opts = [message: "disconnect_all requested", severity: :info]
+      opts = [message: "disconnect_all requested", severity: :debug]
       handle_disconnect(holder, DBConnection.ConnectionError.exception(opts))
 
     false ->
