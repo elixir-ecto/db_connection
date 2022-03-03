@@ -43,6 +43,17 @@ defmodule DBConnectionTest do
       assert {:ok, TestConnection} = DBConnection.connection_module(name)
     end
 
+    test "returns the connection module when given a locked connection reference" do
+      {:ok, agent} = A.start_link([{:ok, :state}, {:idle, :state}, {:idle, :state}])
+
+      opts = [agent: agent]
+      {:ok, pool} = P.start_link(opts)
+
+      P.run(pool, fn conn ->
+        assert {:ok, TestConnection} = DBConnection.connection_module(conn)
+      end)
+    end
+
     test "returns an error if the given process is not a pool" do
       assert :error = DBConnection.connection_module(self())
     end

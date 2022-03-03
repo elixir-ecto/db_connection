@@ -68,6 +68,9 @@ defmodule DBConnection do
   require Logger
 
   alias DBConnection.Holder
+
+  require Holder
+
   defstruct [:pool_ref, :conn_ref, :conn_mode]
 
   defmodule EncodeError do
@@ -1093,18 +1096,21 @@ defmodule DBConnection do
   end
 
   @doc """
-  Returns connection module used by the given connection pool process.
+  Returns connection module used by the given connection pool.
 
-  If the given process is not a connection pool, `:error` is returned.
+  When given a process that is not a connection pool, returns an `:error`.
   """
-  @spec connection_module(pid() | atom()) :: {:ok, module()} | :error
-  def connection_module(pool) when is_pid(pool) or is_atom(pool) do
-    with pid when pid != nil <- GenServer.whereis(pool),
+  @spec connection_module(conn) :: {:ok, module} | :error
+  def connection_module(conn) do
+    with pid when pid != nil <- pool_pid(conn),
          {:dictionary, dictionary} <- Process.info(pid, :dictionary),
          {:ok, module} <- fetch_from_dictionary(dictionary, @connection_module_key),
          do: {:ok, module},
          else: (_ -> :error)
   end
+
+  defp pool_pid(%DBConnection{pool_ref: Holder.pool_ref(pool: pid)}), do: pid
+  defp pool_pid(conn), do: GenServer.whereis(conn)
 
   defp fetch_from_dictionary(dictionary, key) do
     Enum.find_value(dictionary, :error, fn
