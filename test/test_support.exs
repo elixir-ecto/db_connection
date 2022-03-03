@@ -211,3 +211,10 @@ defmodule TestAgent do
     {next, {stack, [action | record]}}
   end
 end
+
+defmodule TestPool do
+  use TestConnection, pool: DBConnection.ConnectionPool, pool_size: 1
+
+  @doc false
+  def pool_type, do: DBConnection.ConnectionPool
+end
