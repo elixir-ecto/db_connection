@@ -41,17 +41,12 @@ defmodule DBConnection.ConnectionPool do
   """
   @spec connection_module(pid() | atom()) :: {:ok, module()} | :error
   def connection_module(pool) when is_pid(pool) or is_atom(pool) do
-    with {:ok, pid} <- to_pid(pool),
+    with pid when pid != nil <- GenServer.whereis(pool),
          {:dictionary, dictionary} <- Process.info(pid, :dictionary),
          {:ok, module} <- fetch_from_dictionary(dictionary, @connection_module_key),
          do: {:ok, module},
          else: (_ -> :error)
   end
-
-  defp to_pid(nil), do: :error
-  defp to_pid(pid) when is_pid(pid), do: {:ok, pid}
-  defp to_pid(name) when is_atom(name), do: name |> Process.whereis() |> to_pid()
-  defp to_pid(_other), do: :error
 
   defp fetch_from_dictionary(dictionary, key) do
     Enum.find_value(dictionary, :error, fn
