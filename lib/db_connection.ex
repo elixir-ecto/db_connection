@@ -425,10 +425,14 @@ defmodule DBConnection do
     * `{:connected, pid}`
     * `{:disconnected, pid}`
 
+  Note the disconnected messages is not guaranteed to be delivered if the
+  `pid` for connection crashes. So it is recommended to monitor the connected
+  `pid` if you want to track all disconnections.
+
   ## Telemetry
 
-  A `[:db_connection, :connection_error]` event is published whenever a connection checkout
-  receives a `%DBConnection.ConnectionError{}`.
+  A `[:db_connection, :connection_error]` event is published whenever a
+  connection checkout receives a `%DBConnection.ConnectionError{}`.
 
   Measurements:
 
