@@ -549,7 +549,12 @@ defmodule DBConnection do
   def prepare!(conn, query, opts \\ []) do
     case prepare(conn, query, opts) do
       {:ok, result} -> result
-      {:error, err} -> raise err
+      {:error, err} ->
+        if Application.get_env(:db_connection, :avoid_raising_connection_errors, false) do
+          raise err
+        else
+          {:error, err}
+        end
     end
   end
 
@@ -612,7 +617,12 @@ defmodule DBConnection do
   def prepare_execute!(conn, query, params, opts \\ []) do
     case prepare_execute(conn, query, params, opts) do
       {:ok, query, result} -> {query, result}
-      {:error, err} -> raise err
+      {:error, err} ->
+        if Application.get_env(:db_connection, :avoid_raising_connection_errors, false) do
+          raise err
+        else
+          {:error, err}
+        end
     end
   end
 
@@ -675,7 +685,12 @@ defmodule DBConnection do
   def execute!(conn, query, params, opts \\ []) do
     case execute(conn, query, params, opts) do
       {:ok, _query, result} -> result
-      {:error, err} -> raise err
+      {:error, err} ->
+        if Application.get_env(:db_connection, :avoid_raising_connection_errors, false) do
+          raise err
+        else
+          {:error, err}
+        end
     end
   end
 
@@ -724,7 +739,12 @@ defmodule DBConnection do
   def close!(conn, query, opts \\ []) do
     case close(conn, query, opts) do
       {:ok, result} -> result
-      {:error, err} -> raise err
+      {:error, err} ->
+        if Application.get_env(:db_connection, :avoid_raising_connection_errors, false) do
+          raise err
+        else
+          {:error, err}
+        end
     end
   end
 
@@ -799,14 +819,23 @@ defmodule DBConnection do
               )
 
             disconnect(conn, err)
-            raise err
+            # Here, we either raise or return an error tuple.
+            if Application.get_env(:db_connection, :avoid_raising_connection_errors, false) do
+              raise err
+            else
+              {:error, err}
+            end
 
           {_result, {kind, reason, stack, _meter}} ->
             :erlang.raise(kind, reason, stack)
         end
 
       {:error, err, _} ->
-        raise err
+        if Application.get_env(:db_connection, :avoid_raising_connection_errors, false) do
+          raise err
+        else
+          {:error, err}
+        end
 
       {kind, reason, stack, _} ->
         :erlang.raise(kind, reason, stack)
@@ -892,7 +921,11 @@ defmodule DBConnection do
         {:error, :rollback}
 
       {:error, err} ->
-        raise err
+        if Application.get_env(:db_connection, :avoid_raising_connection_errors, false) do
+          raise err
+        else
+          {:error, err}
+        end
     end
   end
 
@@ -905,7 +938,11 @@ defmodule DBConnection do
         {:error, :rollback}
 
       {:error, err} ->
-        raise err
+        if Application.get_env(:db_connection, :raise_errors, false) do
+          raise err
+        else
+          {:error, err}
+        end
     end
   end
 
@@ -1316,7 +1353,11 @@ defmodule DBConnection do
         {query, cursor}
 
       {:error, err} ->
-        raise err
+        if Application.get_env(:db_connection, :avoid_raising_connection_errors, false) do
+          raise err
+        else
+          {:error, err}
+        end
     end
   end
 
@@ -1580,7 +1621,11 @@ defmodule DBConnection do
             {:error, reason}
 
           {:error, err} ->
-            raise err
+            if Application.get_env(:db_connection, :avoid_raising_connection_errors, false) do
+              raise err
+            else
+              {:error, err}
+            end
         end
 
       kind, reason ->
@@ -1598,7 +1643,11 @@ defmodule DBConnection do
             {:error, :rollback}
 
           {:error, err} ->
-            raise err
+            if Application.get_env(:db_connection, :avoid_raising_connection_errors, false) do
+              raise err
+            else
+              {:error, err}
+            end
         end
     after
       reset(conn)
@@ -1758,7 +1807,11 @@ defmodule DBConnection do
         {[result], {ok, query, cursor}}
 
       {:error, err} ->
-        raise err
+        if Application.get_env(:db_connection, :avoid_raising_connection_errors, false) do
+          raise err
+        else
+          {:error, err}
+        end
     end
   end
 
