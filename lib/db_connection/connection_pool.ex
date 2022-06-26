@@ -45,6 +45,7 @@ defmodule DBConnection.ConnectionPool do
     target = Keyword.get(opts, :queue_target, @queue_target)
     interval = Keyword.get(opts, :queue_interval, @queue_interval)
     idle_interval = Keyword.get(opts, :idle_interval, @idle_interval)
+    idle_limit = Keyword.get_lazy(opts, :idle_limit, fn -> Keyword.get(opts, :pool_size, 1) end)
     now_in_native = System.monotonic_time()
     now_in_ms = System.convert_time_unit(now_in_native, :native, @time_unit)
 
@@ -56,6 +57,7 @@ defmodule DBConnection.ConnectionPool do
       next: now_in_ms,
       poll: nil,
       idle_interval: idle_interval,
+      idle_limit: idle_limit,
       idle: nil
     }
 
@@ -180,19 +182,18 @@ defmodule DBConnection.ConnectionPool do
   end
 
   def handle_info({:timeout, idle, past_in_native}, {_, _, %{idle: idle}, _} = data) do
-    {status, queue, codel, ts} = data
-    drop_idle(past_in_native, status, queue, codel, ts)
+    {status, queue, %{idle_limit: limit} = codel, ts} = data
+    drop_idle(past_in_native, limit, status, queue, codel, ts)
   end
 
-  defp drop_idle(past_in_native, status, queue, codel, ts) do
-    # If no queue progress since last idle check oldest connection
-    case :ets.first(queue) do
-      {queued_in_native, holder} = key
-      when queued_in_native <= past_in_native and status == :ready ->
-        :ets.delete(queue, key)
-        Holder.maybe_disconnect(holder, elem(ts, 0), 0) or Holder.handle_ping(holder)
-        drop_idle(past_in_native, status, queue, codel, ts)
-
+  defp drop_idle(past_in_native, limit, status, queue, codel, ts) do
+    with true <- status == :ready and limit > 0,
+         {queued_in_native, holder} = key when queued_in_native <= past_in_native <-
+           :ets.first(queue) do
+      :ets.delete(queue, key)
+      Holder.maybe_disconnect(holder, elem(ts, 0), 0) or Holder.handle_ping(holder)
+      drop_idle(past_in_native, limit - 1, status, queue, codel, ts)
+    else
       _ ->
         {:noreply, {status, queue, start_idle(System.monotonic_time(), codel), ts}}
     end

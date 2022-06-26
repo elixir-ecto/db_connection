@@ -110,6 +110,7 @@ defmodule DBConnection do
           | {:backoff_type, :stop | :exp | :rand | :rand_exp}
           | {:configure, (keyword -> keyword) | {module, atom, [any]} | nil}
           | {:idle_interval, non_neg_integer}
+          | {:idle_limit, non_neg_integer}
           | {:max_restarts, non_neg_integer}
           | {:max_seconds, pos_integer}
           | {:name, GenServer.name()}
@@ -160,8 +161,9 @@ defmodule DBConnection do
 
   This callback is called if no callbacks have been called after the
   idle timeout and a client process is not using the state. The idle
-  timeout can be configured by the `:idle_interval` option. This function
-  can be called whether the connection is checked in or checked out.
+  timeout can be configured by the `:idle_interval` and `:idle_interval`
+  options. This function can be called whether the connection is checked
+  in or checked out.
 
   This callback is called in the connection process.
   """
@@ -367,11 +369,13 @@ defmodule DBConnection do
     * `:name` - A name to register the started process (see the `:name` option
       in `GenServer.start_link/3`)
     * `:pool` - Chooses the pool to be started (default: `DBConnection.ConnectionPool`)
-    * `:pool_size` - Chooses the size of the pool
+    * `:pool_size` - Chooses the size of the pool (default: `1`)
     * `:idle_interval` - Controls the frequency we check for idle connections
       in the pool. We then notify each idle connection to ping the database.
       In practice, the ping happens within `idle_interval <= ping < 2 * idle_interval`.
       Defaults to 1000ms.
+    * `:idle_limit` - The number of connections to ping on each `:idle_interval`.
+      Defaults to the pool size (all connections).
     * `:queue_target` and `:queue_interval` - See "Queue config" below
     * `:max_restarts` and `:max_seconds` - Configures the `:max_restarts` and
       `:max_seconds` for the connection pool supervisor (see the `Supervisor` docs).

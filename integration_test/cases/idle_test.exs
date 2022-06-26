@@ -91,6 +91,14 @@ defmodule TestIdle do
 
   @tag :idle_interval
   test "ping multiple after idle interval" do
+    ping_multiple(2)
+  end
+
+  test "ping multiple after idle interval and limit" do
+    ping_multiple(1)
+  end
+
+  defp ping_multiple(limit) do
     parent = self()
 
     stack = [
@@ -119,19 +127,20 @@ defmodule TestIdle do
     {:ok, agent1} = A.start_link(stack)
     {:ok, agent2} = A.start_link(stack)
 
-    opts = [agent: [agent1, agent2], parent: self(), idle_interval: 100, pool_size: 2]
+    opts = [agent: [agent1, agent2], parent: self(), idle_interval: 100, idle_limit: limit, pool_size: 2]
     {:ok, pool} = P.start_link(opts)
     assert_receive {:hi, conn1}
     assert_receive {:hi, conn2}
-    assert_receive {:pong, ^conn1, _time1}
-    assert_receive {:pong, ^conn2, _time2}
-    assert_receive {:pong, ^conn1, _time3}
-    assert_receive {:pong, ^conn2, _time4}
 
-    # We want to asset that time1/time2 and time3/time4
+    # We want to assert that time1/time2 and time3/time4
     # happen within the same ping *most times* but unfortunately
-    # that will lead to many false positives in test runs.
-    # IO.inspect {_time1, _time2, _time3, _time4}
+    # that will lead to many false positives in test runs
+    # unless idle_limit is 1.
+
+    assert_receive {:pong, ^conn1, time1}
+    assert_receive {:pong, ^conn2, time2} when limit == 2 or time2 > time1
+    assert_receive {:pong, ^conn1, time3} when limit == 2 or time3 > time2
+    assert_receive {:pong, ^conn2, time4} when limit == 2 or time4 > time3
 
     send(conn1, {:continue, self()})
     send(conn2, {:continue, self()})
