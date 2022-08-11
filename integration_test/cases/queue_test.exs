@@ -163,8 +163,6 @@ defmodule QueueTest do
 
     assert P.run(pool, fn(_) -> :hi end) == :hi
 
-    pool_type = P.pool_type()
-
     assert_receive {
       :event,
       ^event,
@@ -175,7 +173,7 @@ defmodule QueueTest do
       }
     }
 
-    assert opts ++ [pool: pool_type, pool_size: 1, ownership_log: :debug] == event_opts
+    assert opts == Enum.take(event_opts, length(opts))
   end
 
   test "queue handles holder that has been deleted" do
