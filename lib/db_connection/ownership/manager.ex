@@ -137,10 +137,10 @@ defmodule DBConnection.Ownership.Manager do
     else
       case Map.get(checkouts, caller, :not_found) do
         {:owner, ref, proxy} ->
-          {:reply, :ok, owner_allow(state, allow, ref, proxy)}
+          {:reply, :ok, owner_allow(state, caller, allow, ref, proxy)}
 
         {:allowed, ref, proxy} ->
-          {:reply, :ok, owner_allow(state, allow, ref, proxy)}
+          {:reply, :ok, owner_allow(state, caller, allow, ref, proxy)}
 
         :not_found ->
           {:reply, :not_found, state}
@@ -200,7 +200,7 @@ defmodule DBConnection.Ownership.Manager do
   end
 
   defp proxy_checkout(state, caller, opts) do
-    %{pool: pool, checkouts: checkouts, owners: owners, ets: ets, log: log} = state
+    %{pool: pool, checkouts: checkouts, owners: owners, ets: ets, log: log, mode: mode} = state
 
     {:ok, proxy} =
       DynamicSupervisor.start_child(
@@ -208,7 +208,18 @@ defmodule DBConnection.Ownership.Manager do
         {DBConnection.Ownership.Proxy, {caller, pool, opts}}
       )
 
-    log && Logger.log(log, fn -> [inspect(caller), " owns proxy " | inspect(proxy)] end)
+    if log do
+      Logger.log(log, fn ->
+        [
+          inspect(caller),
+          " checked out connection in ",
+          inspect(mode),
+          " mode using proxy ",
+          inspect(proxy)
+        ]
+      end)
+    end
+
     ref = Process.monitor(proxy)
     checkouts = Map.put(checkouts, caller, {:owner, ref, proxy})
     owners = Map.put(owners, ref, {proxy, caller, []})
@@ -241,8 +252,13 @@ defmodule DBConnection.Ownership.Manager do
     end)
   end
 
-  defp owner_allow(%{ets: ets, log: log} = state, allow, ref, proxy) do
-    log && Logger.log(log, fn -> [inspect(allow), " allowed on proxy " | inspect(proxy)] end)
+  defp owner_allow(%{ets: ets, log: log} = state, caller, allow, ref, proxy) do
+    if log do
+      Logger.log(log, fn ->
+        [inspect(allow), " was allowed by ", inspect(caller), " on proxy ", inspect(proxy)]
+      end)
+    end
+
     state = put_in(state.checkouts[allow], {:allowed, ref, proxy})
 
     state =
@@ -260,10 +276,15 @@ defmodule DBConnection.Ownership.Manager do
         Process.demonitor(ref, [:flush])
         entries = [caller | allowed]
 
-        log &&
+        if log do
           Logger.log(log, fn ->
-            [Enum.map_join(entries, ", ", &inspect/1), " lose proxy " | inspect(proxy)]
+            [
+              Enum.map_join(entries, ", ", &inspect/1),
+              " lost connection from proxy ",
+              inspect(proxy)
+            ]
           end)
+        end
 
         ets && Enum.each(entries, &:ets.delete(ets, &1))
         update_in(state.checkouts, &Map.drop(&1, entries))

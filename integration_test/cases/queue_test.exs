@@ -175,7 +175,7 @@ defmodule QueueTest do
       }
     }
 
-    assert opts ++ [pool: pool_type, pool_size: 1] == event_opts
+    assert opts ++ [pool: pool_type, pool_size: 1, ownership_log: :debug] == event_opts
   end
 
   test "queue handles holder that has been deleted" do
