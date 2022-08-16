@@ -1,0 +1,10 @@
+version: 0.1
+cli:
+  version: 0.16.1-beta
+lint:
+  enabled:
+    - actionlint@1.6.15
+    - git-diff-check@SYSTEM
+    - gitleaks@8.10.3
+    - markdownlint@0.32.1
+    - prettier@2.7.1
