@@ -433,6 +433,38 @@ defmodule DBConnection do
   `pid` for connection crashes. So it is recommended to monitor the connected
   `pid` if you want to track all disconnections.
 
+  Here is an example of a `connection_listener` implementation:
+
+    defmodule DBConnectionListener do
+      use GenServer
+
+      def start_link() do
+        GenServer.start_link(__MODULE__, [], name: {:global, "db_connection_listener"})
+      end
+
+      @impl true
+      def init(stack) when is_list(stack) do
+        {:ok, stack}
+      end
+
+      @impl true
+      def handle_call(:read_state, _from, state) do
+        {:reply, state, state}
+      end
+
+      @impl true
+      def handle_info(msg, state) do
+        {:noreply, [msg | state]}
+      end
+    end
+
+  You can then start it, pass it into a `DBConnection.start_link/1` and when needed
+  can query the notifications:
+
+    {:ok, connection_listener} = DBConnectionListener.start_link([])
+    {:ok, _conn} = DBConnection.start_link(SomeModule, [connection_listeners: [connection_listener]])
+    notifications = GenServer.call({:global, "db_connection_listener"}, :read_state)
+
   ## Telemetry
 
   A `[:db_connection, :connection_error]` event is published whenever a
