@@ -435,44 +435,44 @@ defmodule DBConnection do
 
   Here is an example of a `connection_listener` implementation:
 
-    defmodule DBConnectionListener do
-      use GenServer
+      defmodule DBConnectionListener do
+        use GenServer
 
-      @impl true
-      def init(stack) when is_list(stack) do
-        {:ok, stack}
-      end
+        def start_link(opts) do
+          GenServer.start_link(__MODULE__, [], opts)
+        end
 
-      @impl true
-      def handle_call(:read_state, _from, state) do
-        {:reply, state, state}
-      end
+        def get_notifications(pid) do
+          GenServer.call(pid, :read_state)
+        end
 
-      @impl true
-      def handle_info({:connected, _pid} = msg, state) do
-        {:noreply, [msg | state]}
-      end
+        @impl true
+        def init(stack) when is_list(stack) do
+          {:ok, stack}
+        end
 
-      @impl true
-      def handle_info({_other_states, _pid} = msg, state) do
-        {:noreply, [msg | state]}
-      end
+        @impl true
+        def handle_call(:read_state, _from, state) do
+          {:reply, state, state}
+        end
 
-      def start_link(opts) do
-        GenServer.start_link(__MODULE__, [], opts)
-      end
+        @impl true
+        def handle_info({:connected, _pid} = msg, state) do
+          {:noreply, [msg | state]}
+        end
 
-      def get_notifications(pid) do
-        GenServer.call(pid, :read_state)
+        @impl true
+        def handle_info({_other_states, _pid} = msg, state) do
+          {:noreply, [msg | state]}
+        end
       end
-    end
 
   You can then start it, pass it into a `DBConnection.start_link/1` and when needed
   can query the notifications:
 
-    {:ok, pid} = DBConnectionListener.start_link([])
-    {:ok, _conn} = DBConnection.start_link(SomeModule, [connection_listeners: [connection_listener]])
-    notifications = DBConnectionListener.get_notifications(pid)
+      {:ok, pid} = DBConnectionListener.start_link([])
+      {:ok, _conn} = DBConnection.start_link(SomeModule, [connection_listeners: [connection_listener]])
+      notifications = DBConnectionListener.get_notifications(pid)
 
   ## Telemetry
 
