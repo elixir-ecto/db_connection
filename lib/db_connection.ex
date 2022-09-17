@@ -438,8 +438,8 @@ defmodule DBConnection do
     defmodule DBConnectionListener do
       use GenServer
 
-      def start_link() do
-        GenServer.start_link(__MODULE__, [], name: {:global, "db_connection_listener"})
+      def start_link(opts) do
+        GenServer.start_link(__MODULE__, [], opts)
       end
 
       @impl true
@@ -453,17 +453,26 @@ defmodule DBConnection do
       end
 
       @impl true
-      def handle_info(msg, state) do
+      def handle_info({:connected, _pid} = msg, state) do
         {:noreply, [msg | state]}
+      end
+
+      @impl true
+      def handle_info({_other_states, _pid} = msg, state) do
+        {:noreply, [msg | state]}
+      end
+
+      def get_notifications(pid) do
+        GenServer.call(pid, :read_state)
       end
     end
 
   You can then start it, pass it into a `DBConnection.start_link/1` and when needed
   can query the notifications:
 
-    {:ok, connection_listener} = DBConnectionListener.start_link([])
+    {:ok, pid} = DBConnectionListener.start_link([])
     {:ok, _conn} = DBConnection.start_link(SomeModule, [connection_listeners: [connection_listener]])
-    notifications = GenServer.call({:global, "db_connection_listener"}, :read_state)
+    notifications = DBConnectionListener.get_notifications(pid)
 
   ## Telemetry
 
