@@ -438,10 +438,6 @@ defmodule DBConnection do
     defmodule DBConnectionListener do
       use GenServer
 
-      def start_link(opts) do
-        GenServer.start_link(__MODULE__, [], opts)
-      end
-
       @impl true
       def init(stack) when is_list(stack) do
         {:ok, stack}
@@ -460,6 +456,10 @@ defmodule DBConnection do
       @impl true
       def handle_info({_other_states, _pid} = msg, state) do
         {:noreply, [msg | state]}
+      end
+
+      def start_link(opts) do
+        GenServer.start_link(__MODULE__, [], opts)
       end
 
       def get_notifications(pid) do
