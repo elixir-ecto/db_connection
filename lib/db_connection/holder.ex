@@ -252,7 +252,7 @@ defmodule DBConnection.Holder do
 
       true ->
         pid = :ets.lookup_element(holder, :conn, conn(:connection) + 1)
-        System.monotonic_time() > :erlang.phash2(pid, interval) + start
+        System.monotonic_time() > hash_pid(pid, interval) + start
     end
   rescue
     _ -> false
@@ -437,5 +437,11 @@ defmodule DBConnection.Holder do
 
   defp cancel_deadline(deadline) do
     :erlang.cancel_timer(deadline, async: true, info: false)
+  end
+
+  defp hash_pid(pid, interval_native) do
+    interval_ms = System.convert_time_unit(interval_native, :native, :millisecond)
+    hash = :erlang.phash2(pid, interval_ms)
+    System.convert_time_unit(hash, :millisecond, :native)
   end
 end
