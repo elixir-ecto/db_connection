@@ -510,7 +510,8 @@ defmodule DBConnection do
   end
 
   @doc """
-  Forces all connections in the pool to disconnect within the given interval.
+  Forces all connections in the pool to disconnect within the given interval
+  in milliseconds.
 
   Once this function is called, the pool will disconnect all of its connections
   as they are checked in or as they are pinged. Checked in connections will be
