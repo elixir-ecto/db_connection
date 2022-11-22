@@ -529,7 +529,6 @@ defmodule DBConnection do
   @spec disconnect_all(conn, non_neg_integer, opts :: Keyword.t()) :: :ok
   def disconnect_all(conn, interval, opts \\ []) when interval >= 0 do
     pool = Keyword.get(opts, :pool, DBConnection.ConnectionPool)
-    interval = System.convert_time_unit(interval, :millisecond, :native)
     pool.disconnect_all(conn, interval, opts)
   end
 

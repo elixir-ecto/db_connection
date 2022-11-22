@@ -240,19 +240,19 @@ defmodule DBConnection.Holder do
   end
 
   @spec maybe_disconnect(t, integer, non_neg_integer) :: boolean()
-  def maybe_disconnect(holder, start, interval) do
+  def maybe_disconnect(holder, start, interval_ms) do
     ts = :ets.lookup_element(holder, :conn, conn(:ts) + 1)
 
     cond do
       ts >= start ->
         false
 
-      interval == 0 ->
+      interval_ms == 0 ->
         true
 
       true ->
         pid = :ets.lookup_element(holder, :conn, conn(:connection) + 1)
-        System.monotonic_time() > :erlang.phash2(pid, interval) + start
+        System.monotonic_time() > hash_pid(pid, interval_ms) + start
     end
   rescue
     _ -> false
@@ -437,5 +437,10 @@ defmodule DBConnection.Holder do
 
   defp cancel_deadline(deadline) do
     :erlang.cancel_timer(deadline, async: true, info: false)
+  end
+
+  defp hash_pid(pid, interval_ms) do
+    hash = :erlang.phash2(pid, interval_ms)
+    System.convert_time_unit(hash, :millisecond, :native)
   end
 end
