@@ -5,7 +5,6 @@ defmodule ConnectTest do
   alias TestAgent, as: A
   alias TestQuery, as: Q
 
-  @tag :focus
   test "backoff after failed initial connection attempt" do
     err = RuntimeError.exception("oops")
     stack = [
