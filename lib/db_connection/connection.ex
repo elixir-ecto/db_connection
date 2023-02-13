@@ -123,7 +123,7 @@ defmodule DBConnection.Connection do
         )
 
         {timeout, backoff} = Backoff.backoff(backoff)
-        {:keep_state, %{s | backoff: backoff}, {{:timeout, backoff}, timeout, nil}}
+        {:keep_state, %{s | backoff: backoff}, {{:timeout, :backoff}, timeout, nil}}
     end
   end
 
@@ -167,6 +167,10 @@ defmodule DBConnection.Connection do
       _ ->
         {:keep_state, s, {:next_event, :internal, {:connect, :disconnect}}}
     end
+  end
+
+  def handle_event({:timeout, :backoff}, _content, :no_state, s) do
+    {:keep_state, s, {:next_event, :internal, {:connect, :backoff}}}
   end
 
   def handle_event(:cast, {:ping, ref, state}, :no_state, %{client: {ref, :pool}, mod: mod} = s) do
