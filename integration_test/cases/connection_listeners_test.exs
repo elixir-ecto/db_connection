@@ -121,7 +121,14 @@ defmodule ConnectionListenersTest do
 
     {:ok, agent} = A.start_link(stack)
 
-    opts = [agent: agent, parent: self(), connection_listeners: [self()], pool_size: 3, backoff_min: 1_000]
+    opts = [
+      agent: agent,
+      parent: self(),
+      connection_listeners: [self()],
+      pool_size: 3,
+      backoff_min: 1_000
+    ]
+
     {:ok, _pool} = P.start_link(opts)
 
     assert_receive {:connected, conn1}
