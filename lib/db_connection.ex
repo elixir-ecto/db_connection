@@ -175,8 +175,7 @@ defmodule DBConnection do
 
   Return `{:ok, result, state}` to continue, `{status, state}` to notify caller
   that the transaction can not begin due to the transaction status `status`,
-  `{:error, exception, state}` (deprecated) to error without beginning the
-  transaction, or `{:disconnect, exception, state}` to error and disconnect.
+  or `{:disconnect, exception, state}` to error and disconnect.
 
   A callback implementation should only return `status` if it
   can determine the database's transaction status without side effect.
@@ -192,8 +191,7 @@ defmodule DBConnection do
   Handle committing a transaction. Return `{:ok, result, state}` on successfully
   committing transaction, `{status, state}` to notify caller that the
   transaction can not commit due to the transaction status `status`,
-  `{:error, exception, state}` (deprecated) to error and no longer be inside
-  transaction, or `{:disconnect, exception, state}` to error and disconnect.
+  or `{:disconnect, exception, state}` to error and disconnect.
 
   A callback implementation should only return `status` if it
   can determine the database's transaction status without side effect.
@@ -208,9 +206,7 @@ defmodule DBConnection do
   @doc """
   Handle rolling back a transaction. Return `{:ok, result, state}` on successfully
   rolling back transaction, `{status, state}` to notify caller that the
-  transaction can not rollback due to the transaction status `status`,
-  `{:error, exception, state}` (deprecated) to
-  error and no longer be inside transaction, or
+  transaction can not rollback due to the transaction status `status` or
   `{:disconnect, exception, state}` to error and disconnect.
 
   A callback implementation should only return `status` if it
