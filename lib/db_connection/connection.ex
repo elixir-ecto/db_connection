@@ -211,10 +211,9 @@ defmodule DBConnection.Connection do
 
       _ ->
         reason =
-          if is_exception(err) do
-            Exception.format_banner(:error, err, stack)
-          else
-            "** #{inspect(err)}"
+          case err do
+            %{__exception__: true} -> Exception.format_banner(:error, err, stack)
+            _other -> "** #{inspect(err)}"
           end
 
         format =
