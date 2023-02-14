@@ -1,4 +1,4 @@
-excludes = if Version.match?(System.version, ">= 1.8.0"), do: [], else: [:requires_callers]
+excludes = if Version.match?(System.version(), ">= 1.8.0"), do: [], else: [:requires_callers]
 
 ExUnit.start(
   capture_log: true,

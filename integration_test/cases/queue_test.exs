@@ -11,13 +11,16 @@ defmodule QueueTest do
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
 
-    P.run(pool, fn(_) ->
-      {queue_time, _} = :timer.tc(fn() ->
-        opts = [queue: false]
-        assert_raise DBConnection.ConnectionError,
-          ~r"connection not available and queuing is disabled",
-          fn() -> P.run(pool, fn(_) -> flunk("got connection") end, opts) end
-      end)
+    P.run(pool, fn _ ->
+      {queue_time, _} =
+        :timer.tc(fn ->
+          opts = [queue: false]
+
+          assert_raise DBConnection.ConnectionError,
+                       ~r"connection not available and queuing is disabled",
+                       fn -> P.run(pool, fn _ -> flunk("got connection") end, opts) end
+        end)
+
       assert queue_time <= 1_000_000, "request was queued"
     end)
   end
@@ -29,12 +32,12 @@ defmodule QueueTest do
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
 
-    run = fn() ->
+    run = fn ->
       Process.put(:agent, agent)
-      P.run(pool, fn(_) -> :timer.sleep(20) end, opts)
+      P.run(pool, fn _ -> :timer.sleep(20) end, opts)
     end
 
-    for task <- Enum.map(1..10, fn(_) -> Task.async(run) end) do
+    for task <- Enum.map(1..10, fn _ -> Task.async(run) end) do
       assert :ok = Task.await(task)
     end
   end
@@ -43,25 +46,29 @@ defmodule QueueTest do
     stack = [{:ok, :state}] ++ List.duplicate({:idle, :state}, 20)
     {:ok, agent} = A.start_link(stack)
 
-    opts = [agent: agent, parent: self(), queue_timeout: 50, queue_target: 50,
-      queue_interval: 50]
+    opts = [agent: agent, parent: self(), queue_timeout: 50, queue_target: 50, queue_interval: 50]
     {:ok, pool} = P.start_link(opts)
 
     parent = self()
-    runner = spawn_link(fn() ->
-      Process.put(:agent, agent)
-      P.run(pool, fn(_) ->
-        send(parent, {:go, self()})
-        receive do
-          {:done, ^parent} -> :ok
-        end
+
+    runner =
+      spawn_link(fn ->
+        Process.put(:agent, agent)
+
+        P.run(pool, fn _ ->
+          send(parent, {:go, self()})
+
+          receive do
+            {:done, ^parent} -> :ok
+          end
+        end)
       end)
-    end)
+
     assert_receive {:go, ^runner}
 
-    run = fn() ->
+    run = fn ->
       try do
-        P.run(pool, fn(_) -> flunk("run ran") end, [timeout: 50])
+        P.run(pool, fn _ -> flunk("run ran") end, timeout: 50)
       rescue
         DBConnection.ConnectionError ->
           :error
@@ -70,12 +77,13 @@ defmodule QueueTest do
           :error
       end
     end
-    for task <- Enum.map(1..10, fn(_) -> Task.async(run) end) do
+
+    for task <- Enum.map(1..10, fn _ -> Task.async(run) end) do
       assert Task.await(task) == :error
     end
 
     send(runner, {:done, self()})
-    assert P.run(pool, fn(_) -> :result end) == :result
+    assert P.run(pool, fn _ -> :result end) == :result
   end
 
   test "queue many async exits" do
@@ -86,29 +94,36 @@ defmodule QueueTest do
     {:ok, pool} = P.start_link(opts)
 
     parent = self()
-    runner = spawn_link(fn() ->
-      Process.put(:agent, agent)
-      P.run(pool, fn(_) ->
-        send(parent, {:go, self()})
-        receive do
-          {:done, ^parent} -> :ok
-        end
+
+    runner =
+      spawn_link(fn ->
+        Process.put(:agent, agent)
+
+        P.run(pool, fn _ ->
+          send(parent, {:go, self()})
+
+          receive do
+            {:done, ^parent} -> :ok
+          end
+        end)
       end)
-    end)
+
     assert_receive {:go, ^runner}
 
-    run = fn() ->
+    run = fn ->
       _ = :timer.apply_after(100, Process, :exit, [self(), :shutdown])
-      P.run(pool, fn(_) -> flunk("run ran") end)
+      P.run(pool, fn _ -> flunk("run ran") end)
     end
+
     Process.flag(:trap_exit, true)
-    for task <- Enum.map(1..10, fn(_) -> Task.async(run) end) do
+
+    for task <- Enum.map(1..10, fn _ -> Task.async(run) end) do
       assert catch_exit(Task.await(task)) ==
-        {:shutdown, {Task, :await, [task, 5_000]}}
+               {:shutdown, {Task, :await, [task, 5_000]}}
     end
 
     send(runner, {:done, self()})
-    assert P.run(pool, fn(_) -> :result end) == :result
+    assert P.run(pool, fn _ -> :result end) == :result
   end
 
   @tag :dequeue_disconnected
@@ -119,12 +134,15 @@ defmodule QueueTest do
     opts = [agent: agent, parent: self(), backoff_start: 30_000]
     {:ok, pool} = P.start_link(opts)
 
-    {queue_time, _} = :timer.tc(fn() ->
-      opts = [queue: false]
-      assert_raise DBConnection.ConnectionError,
-        ~r"connection not available and queuing is disabled",
-        fn() -> P.run(pool, fn(_) -> flunk("got connection") end, opts) end
-    end)
+    {queue_time, _} =
+      :timer.tc(fn ->
+        opts = [queue: false]
+
+        assert_raise DBConnection.ConnectionError,
+                     ~r"connection not available and queuing is disabled",
+                     fn -> P.run(pool, fn _ -> flunk("got connection") end, opts) end
+      end)
+
     assert queue_time <= 1_000_000, "request was queued"
   end
 
@@ -135,8 +153,14 @@ defmodule QueueTest do
 
     test_pid = self()
 
-    opts = [agent: agent, parent: test_pid, backoff_start: 30_000,
-      queue_timeout: 10, queue_target: 10, queue_interval: 10, connection_listeners: [test_pid]
+    opts = [
+      agent: agent,
+      parent: test_pid,
+      backoff_start: 30_000,
+      queue_timeout: 10,
+      queue_target: 10,
+      queue_interval: 10,
+      connection_listeners: [test_pid]
     ]
 
     event = [:db_connection, :connection_error]
@@ -145,23 +169,23 @@ defmodule QueueTest do
       "queue-timeout-handler",
       event,
       fn event, measurements, metadata, _ ->
-        send test_pid, {:event, event, measurements, metadata}
+        send(test_pid, {:event, event, measurements, metadata})
       end,
       nil
     )
 
     {:ok, pool} = P.start_link(opts)
 
-    P.run(pool, fn(_) ->
+    P.run(pool, fn _ ->
       exception =
         assert_raise DBConnection.ConnectionError,
-          ~r"connection not available and request was dropped from queue after \d+ms",
-          fn() -> P.run(pool, fn(_) -> flunk("got connection") end, opts) end
+                     ~r"connection not available and request was dropped from queue after \d+ms",
+                     fn -> P.run(pool, fn _ -> flunk("got connection") end, opts) end
 
       assert exception.reason == :queue_timeout
     end)
 
-    assert P.run(pool, fn(_) -> :hi end) == :hi
+    assert P.run(pool, fn _ -> :hi end) == :hi
 
     assert_receive {
       :event,
@@ -177,18 +201,31 @@ defmodule QueueTest do
   end
 
   test "queue handles holder that has been deleted" do
-    stack = [{:ok, :state}, {:idle, :state}, {:idle, :state}, :ok, {:ok, :new_state}, {:idle, :new_state}, {:idle, :new_state}]
+    stack = [
+      {:ok, :state},
+      {:idle, :state},
+      {:idle, :state},
+      :ok,
+      {:ok, :new_state},
+      {:idle, :new_state},
+      {:idle, :new_state}
+    ]
+
     {:ok, agent} = A.start_link(stack)
 
     opts = [agent: agent, parent: self()]
     {:ok, pool} = P.start_link(opts)
 
-    P.run(pool, fn(_) ->
-      :sys.suspend(pool)
-      :timer.sleep(1000)
-      :sys.resume(pool)
-    end, [timeout: 100])
+    P.run(
+      pool,
+      fn _ ->
+        :sys.suspend(pool)
+        :timer.sleep(1000)
+        :sys.resume(pool)
+      end,
+      timeout: 100
+    )
 
-    P.run(pool, fn(_) -> :ok end)
+    P.run(pool, fn _ -> :ok end)
   end
 end

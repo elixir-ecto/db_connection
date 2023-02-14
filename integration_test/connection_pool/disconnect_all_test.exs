@@ -54,7 +54,7 @@ defmodule TestPoolDisconnectAll do
       end,
       {:ok, :final_state},
       {:ok, %Q{}, %R{}, :final_state1},
-      {:ok, %Q{}, %R{}, :final_state2},
+      {:ok, %Q{}, %R{}, :final_state2}
     ]
 
     {:ok, agent} = A.start_link(stack)

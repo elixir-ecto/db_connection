@@ -1,1 +1,1 @@
-Code.require_file "../tests.exs", __DIR__
+Code.require_file("../tests.exs", __DIR__)

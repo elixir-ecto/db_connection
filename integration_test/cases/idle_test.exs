@@ -24,7 +24,7 @@ defmodule TestIdle do
     assert P.execute(pool, %Q{}, [:param1]) == {:ok, %Q{}, %R{}}
     Process.sleep(10)
 
-    log = fn(entry) ->
+    log = fn entry ->
       assert %DBConnection.LogEntry{} = entry
       assert is_integer(entry.idle_time)
       assert entry.idle_time > 0
@@ -37,7 +37,7 @@ defmodule TestIdle do
     assert [
              connect: [_],
              handle_execute: _,
-             handle_execute: _,
+             handle_execute: _
            ] = A.record(agent)
   end
 
@@ -127,7 +127,14 @@ defmodule TestIdle do
     {:ok, agent1} = A.start_link(stack)
     {:ok, agent2} = A.start_link(stack)
 
-    opts = [agent: [agent1, agent2], parent: self(), idle_interval: 100, idle_limit: limit, pool_size: 2]
+    opts = [
+      agent: [agent1, agent2],
+      parent: self(),
+      idle_interval: 100,
+      idle_limit: limit,
+      pool_size: 2
+    ]
+
     {:ok, pool} = P.start_link(opts)
     assert_receive {:hi, conn1}
     assert_receive {:hi, conn2}
