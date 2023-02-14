@@ -201,6 +201,30 @@ defmodule DBConnection.Connection do
 
   def handle_event(:cast, {:stop, ref, err, state}, :no_state, %{client: {ref, _}} = s) do
     {_, stack} = :erlang.process_info(self(), :current_stacktrace)
+
+    case err do
+      ok when ok in [:normal, :shutdown] ->
+        :ok
+
+      {:shutdown, _term} ->
+        :ok
+
+      _ ->
+        reason =
+          if is_exception(err) do
+            Exception.format_banner(:error, err, stack)
+          else
+            "** #{inspect(err)}"
+          end
+
+        format =
+          ~c"** State machine ~p terminating~n" ++
+            ~c"** Reason for termination ==~n" ++
+            ~c"~s~n"
+
+        :error_logger.format(format, [self(), reason])
+    end
+
     {:stop, {err, stack}, %{s | state: state}}
   end
 
