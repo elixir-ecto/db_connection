@@ -105,6 +105,18 @@ defmodule DBConnection.Connection do
         {:keep_state, %{s | state: state, client: {ref, :connect}, backoff: backoff}}
 
       {:error, err} when is_nil(backoff) ->
+        Logger.error(
+          fn ->
+            [
+              inspect(mod),
+              " (",
+              inspect(self()),
+              ") failed to connect: " | Exception.format_banner(:error, err, [])
+            ]
+          end,
+          crash_reason: {err, []}
+        )
+
         raise err
 
       {:error, err} ->
