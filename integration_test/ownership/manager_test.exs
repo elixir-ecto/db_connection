@@ -575,7 +575,7 @@ defmodule ManagerTest do
       {:disconnect, RuntimeError.exception("oops"), TestConnection, :state}
     end
 
-    assert capture_log(fn ->
+    log = capture_log(fn ->
       assert Ownership.ownership_checkout(pool, pre_checkin: pre_checkin) == :ok
       assert_raise DBConnection.ConnectionError, "bad return value: :oops", fn ->
         assert_checked_out(pool, opts)
@@ -583,7 +583,10 @@ defmodule ManagerTest do
       _ = Ownership.ownership_checkin(pool, [])
       assert_receive :pre_checkin
       assert_receive :reconnected
-    end) =~ ~r"GenServer #PID<\d+\.\d+\.\d+> terminating\n\*\* \(RuntimeError\) oops"
+    end)
+
+    assert log =~ ~r"State machine #PID<\d+\.\d+\.\d+> terminating\n"
+    assert log =~ "** (RuntimeError) oops"
   end
 
   defp start_pool(opts \\ []) do

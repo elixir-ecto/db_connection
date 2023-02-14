@@ -31,7 +31,6 @@ defmodule DBConnection.Mixfile do
 
   defp deps do
     [
-      {:connection, "~> 1.0"},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
       {:telemetry, "~> 0.4 or ~> 1.0"}
     ]
