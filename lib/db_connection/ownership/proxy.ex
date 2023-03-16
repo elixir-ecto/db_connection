@@ -19,6 +19,7 @@ defmodule DBConnection.Ownership.Proxy do
 
   # Callbacks
 
+  @impl true
   def init({caller, pool, pool_opts}) do
     pool_opts =
       pool_opts
@@ -55,6 +56,7 @@ defmodule DBConnection.Ownership.Proxy do
     {:ok, start_poll(now, state)}
   end
 
+  @impl true
   def handle_info({:DOWN, ref, _, pid, _reason}, %{owner: {_, ref}} = state) do
     down("owner #{inspect(pid)} exited", state)
   end
@@ -151,6 +153,7 @@ defmodule DBConnection.Ownership.Proxy do
     down("client #{inspect(pid)} exited", state)
   end
 
+  @impl true
   def handle_cast({:stop, caller}, %{owner: {owner, _}} = state) do
     message = "#{inspect(caller)} checked in the connection owned by #{inspect(owner)}"
 

@@ -2,7 +2,8 @@ defmodule DBConnection.App do
   @moduledoc false
   use Application
 
-  def start(_, _) do
+  @impl true
+  def start(_type, _args) do
     children = [
       {Task.Supervisor, name: DBConnection.Task},
       dynamic_supervisor(DBConnection.Ownership.Supervisor),

@@ -13,6 +13,7 @@ defmodule DBConnection.ConnectionPool.Pool do
     Supervisor.start_link(__MODULE__, arg)
   end
 
+  @impl true
   def init({owner, tag, mod, opts}) do
     size = Keyword.get(opts, :pool_size, 1)
     children = for id <- 1..size, do: conn(owner, tag, id, mod, opts)
