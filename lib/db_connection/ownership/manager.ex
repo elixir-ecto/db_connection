@@ -61,6 +61,7 @@ defmodule DBConnection.Ownership.Manager do
 
   ## Callbacks
 
+  @impl true
   def init({module, owner_opts, pool_opts}) do
     DBConnection.register_as_pool(module)
 
@@ -96,6 +97,7 @@ defmodule DBConnection.Ownership.Manager do
      }}
   end
 
+  @impl true
   def handle_call(:pool, _from, %{pool: pool} = state) do
     {:reply, pool, state}
   end
@@ -157,6 +159,7 @@ defmodule DBConnection.Ownership.Manager do
     end
   end
 
+  @impl true
   def handle_info({:db_connection, from, {:checkout, callers, _now, queue?}}, state) do
     %{checkouts: checkouts, mode: mode, checkout_opts: checkout_opts} = state
     caller = find_caller(callers, checkouts, mode)

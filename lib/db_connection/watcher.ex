@@ -12,11 +12,13 @@ defmodule DBConnection.Watcher do
     GenServer.call(@name, {:watch, supervisor, args}, :infinity)
   end
 
+  @impl true
   def init(:ok) do
     Process.flag(:trap_exit, true)
     {:ok, {%{}, %{}}}
   end
 
+  @impl true
   def handle_call({:watch, supervisor, args}, {caller_pid, _ref}, {caller_refs, started_refs}) do
     case DynamicSupervisor.start_child(supervisor, args) do
       {:ok, started_pid} ->
@@ -32,6 +34,7 @@ defmodule DBConnection.Watcher do
     end
   end
 
+  @impl true
   def handle_info({:DOWN, ref, _, _, _}, {caller_refs, started_refs}) do
     case caller_refs do
       %{^ref => {supervisor, started_pid, started_ref}} ->
@@ -51,6 +54,7 @@ defmodule DBConnection.Watcher do
     {:noreply, state}
   end
 
+  @impl true
   def terminate(_, {_, started_refs}) do
     for {_, {caller_pid, _}} <- started_refs do
       Process.exit(caller_pid, :kill)
