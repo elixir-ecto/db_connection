@@ -8,6 +8,8 @@ defmodule DBConnection.ConnectionPool do
   use GenServer
   alias DBConnection.Holder
 
+  @behaviour DBConnection.Pool
+
   @queue_target 50
   @queue_interval 1000
   @idle_interval 1000
@@ -24,18 +26,20 @@ defmodule DBConnection.ConnectionPool do
   end
 
   @doc false
+  @impl DBConnection.Pool
   def checkout(pool, callers, opts) do
     Holder.checkout(pool, callers, opts)
   end
 
   @doc false
+  @impl DBConnection.Pool
   def disconnect_all(pool, interval, _opts) do
     GenServer.call(pool, {:disconnect_all, interval}, :infinity)
   end
 
   ## GenServer api
 
-  @impl true
+  @impl GenServer
   def init({mod, opts}) do
     DBConnection.register_as_pool(mod)
 
@@ -65,13 +69,13 @@ defmodule DBConnection.ConnectionPool do
     {:ok, {:busy, queue, codel, ts}}
   end
 
-  @impl true
+  @impl GenServer
   def handle_call({:disconnect_all, interval}, _from, {type, queue, codel, _ts}) do
     ts = {System.monotonic_time(), interval}
     {:reply, :ok, {type, queue, codel, ts}}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(
         {:db_connection, from, {:checkout, _caller, now, queue?}},
         {:busy, queue, _, _} = busy

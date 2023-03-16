@@ -64,6 +64,15 @@ defmodule DBConnection do
 
   The `DBConnection.Query` protocol provide utility functions so that
   queries can be encoded and decoded without blocking the connection or pool.
+
+  ## Connection pools
+
+  DBConnection connections support using different pools via the `:pool` option
+  passed to `start_link/1`. The default pool is `DBConnection.ConnectionPool`.
+  Another supported pool that is commonly used for tests is `DBConnection.Ownership`.
+
+  For now, using *custom* pools is not supported since the API for pools is not
+  public.
   """
   require Logger
 
@@ -364,7 +373,8 @@ defmodule DBConnection do
       See "Connection listeners" below
     * `:name` - A name to register the started process (see the `:name` option
       in `GenServer.start_link/3`)
-    * `:pool` - Chooses the pool to be started (default: `DBConnection.ConnectionPool`)
+    * `:pool` - Chooses the pool to be started (default: `DBConnection.ConnectionPool`). See
+      ["Connection pools"](#module-connection-pools).
     * `:pool_size` - Chooses the size of the pool (default: `1`)
     * `:idle_interval` - Controls the frequency we check for idle connections
       in the pool. We then notify each idle connection to ping the database.

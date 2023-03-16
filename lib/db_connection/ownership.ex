@@ -62,13 +62,17 @@ defmodule DBConnection.Ownership do
   alias DBConnection.Ownership.Manager
   alias DBConnection.Holder
 
+  @behaviour DBConnection.Pool
+
   @doc false
   defdelegate child_spec(args), to: Manager
 
   @doc false
+  @impl DBConnection.Pool
   defdelegate disconnect_all(pool, interval, opts), to: Manager
 
   @doc false
+  @impl DBConnection.Pool
   def checkout(pool, callers, opts) do
     case Manager.proxy_for(callers, opts) do
       {caller, pool} -> Holder.checkout(pool, [caller], opts)
