@@ -801,8 +801,10 @@ defmodule DBConnection do
   > #### Checkout failures {: .warning}
   >
   > If we cannot check out a connection from the pool, this function raises a
-  > `DBConnection.ConnectionError` exception. This could also happen in some
-  > other cases, so if you want to handle this case, you should rescue
+  > `DBConnection.ConnectionError` exception. This function also raises a
+  > `DBConnection.ConnectionError` exception if a `DBConnection` callback
+  > invoked because of code in `fun` returns a bad value.
+  > If you want to handle these cases, you should rescue
   > `DBConnection.ConnectionError` exceptions when using `run/3`.
 
   ## Options
