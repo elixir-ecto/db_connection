@@ -73,6 +73,11 @@ defmodule DBConnection do
 
   For now, using *custom* pools is not supported since the API for pools is not
   public.
+
+  ## Errors
+
+  Most functions in this module raise a `DBConnection.ConnectionError` exception
+  when failing to check out a connection from the pool.
   """
   require Logger
 
