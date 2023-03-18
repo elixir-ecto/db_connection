@@ -73,6 +73,11 @@ defmodule DBConnection do
 
   For now, using *custom* pools is not supported since the API for pools is not
   public.
+
+  ## Errors
+
+  Most functions in this module raise a `DBConnection.ConnectionError` exception
+  when failing to check out a connection from the pool.
   """
   require Logger
 
@@ -793,7 +798,14 @@ defmodule DBConnection do
   `transaction/3` call inside another `transaction/3` will be treated
   the same as `run/3`.
 
-  ### Options
+  > #### Checkout failures {: .warning}
+  >
+  > If we cannot check out a connection from the pool, this function raises a
+  > `DBConnection.ConnectionError` exception.
+  > If you want to handle these cases, you should rescue
+  > `DBConnection.ConnectionError` exceptions when using `run/3`.
+
+  ## Options
 
     * `:queue` - Whether to block waiting in an internal queue for the
     connection's state (boolean, default: `true`). See "Queue config" in
@@ -807,7 +819,7 @@ defmodule DBConnection do
 
   The pool may support other options.
 
-  ### Example
+  ## Example
 
       {:ok, res} = DBConnection.run(conn, fn conn ->
         DBConnection.execute!(conn, query, [])
