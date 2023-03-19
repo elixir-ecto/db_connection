@@ -629,7 +629,7 @@ defmodule ManagerTest do
       capture_log(fn ->
         assert Ownership.ownership_checkout(pool, pre_checkin: pre_checkin) == :ok
 
-        assert_raise DBConnection.ConnectionError, "bad return value: :oops", fn ->
+        assert_raise RuntimeError, "bad return value: :oops", fn ->
           assert_checked_out(pool, opts)
         end
 

@@ -346,7 +346,7 @@ defmodule ExecuteTest do
            ] = A.record(agent)
   end
 
-  test "execute bad return raises DBConnection.ConnectionError and stops" do
+  test "execute bad return raises RuntimeError and stops" do
     stack = [
       fn opts ->
         send(opts[:parent], {:hi, self()})
@@ -365,13 +365,13 @@ defmodule ExecuteTest do
 
     Process.flag(:trap_exit, true)
 
-    assert_raise DBConnection.ConnectionError, "bad return value: :oops", fn ->
+    assert_raise RuntimeError, "bad return value: :oops", fn ->
       P.execute(pool, %Q{}, [:param])
     end
 
     prefix =
       "client #{inspect(self())} stopped: " <>
-        "** (DBConnection.ConnectionError) bad return value: :oops"
+        "** (RuntimeError) bad return value: :oops"
 
     len = byte_size(prefix)
 

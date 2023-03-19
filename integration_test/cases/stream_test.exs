@@ -424,7 +424,7 @@ defmodule StreamTest do
     assert P.transaction(pool, fn conn ->
              stream = P.stream(conn, %Q{}, [:param])
 
-             assert_raise DBConnection.ConnectionError, "bad return value: :oops", fn ->
+             assert_raise RuntimeError, "bad return value: :oops", fn ->
                Enum.to_list(stream)
              end
 
@@ -433,7 +433,7 @@ defmodule StreamTest do
 
     prefix =
       "client #{inspect(self())} stopped: " <>
-        "** (DBConnection.ConnectionError) bad return value: :oops"
+        "** (RuntimeError) bad return value: :oops"
 
     len = byte_size(prefix)
 
@@ -555,7 +555,7 @@ defmodule StreamTest do
     assert P.transaction(pool, fn conn ->
              stream = P.stream(conn, %Q{}, [:param])
 
-             assert_raise DBConnection.ConnectionError, "bad return value: :oops", fn ->
+             assert_raise RuntimeError, "bad return value: :oops", fn ->
                Enum.to_list(stream)
              end
 
@@ -564,7 +564,7 @@ defmodule StreamTest do
 
     prefix =
       "client #{inspect(self())} stopped: " <>
-        "** (DBConnection.ConnectionError) bad return value: :oops"
+        "** (RuntimeError) bad return value: :oops"
 
     len = byte_size(prefix)
 

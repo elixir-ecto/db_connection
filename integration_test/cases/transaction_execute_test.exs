@@ -180,7 +180,7 @@ defmodule TransactionExecuteTest do
            ] = A.record(agent)
   end
 
-  test "execute bad return raises DBConnection.ConnectionError and stops" do
+  test "execute bad return raises RuntimeError and stops" do
     stack = [
       fn opts ->
         send(opts[:parent], {:hi, self()})
@@ -201,7 +201,7 @@ defmodule TransactionExecuteTest do
     Process.flag(:trap_exit, true)
 
     assert P.transaction(pool, fn conn ->
-             assert_raise DBConnection.ConnectionError,
+             assert_raise RuntimeError,
                           "bad return value: :oops",
                           fn -> P.execute(conn, %Q{}, [:param]) end
 
@@ -214,7 +214,7 @@ defmodule TransactionExecuteTest do
 
     prefix =
       "client #{inspect(self())} stopped: " <>
-        "** (DBConnection.ConnectionError) bad return value: :oops"
+        "** (RuntimeError) bad return value: :oops"
 
     len = byte_size(prefix)
 
@@ -337,8 +337,9 @@ defmodule TransactionExecuteTest do
       fn conn ->
         assert_received %DBConnection.LogEntry{call: :begin, query: :begin}
 
-        assert_raise DBConnection.ConnectionError,
-                     fn -> P.execute(conn, %Q{}, [:param]) end
+        assert_raise RuntimeError, "bad return value: :oops", fn ->
+          P.execute(conn, %Q{}, [:param])
+        end
       end,
       log: log
     )

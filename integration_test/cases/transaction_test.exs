@@ -451,13 +451,13 @@ defmodule TransactionTest do
 
     Process.flag(:trap_exit, true)
 
-    assert_raise DBConnection.ConnectionError, "bad return value: :oops", fn ->
+    assert_raise RuntimeError, "bad return value: :oops", fn ->
       P.transaction(pool, fn _ -> flunk("transaction ran") end)
     end
 
     prefix =
       "client #{inspect(self())} stopped: " <>
-        "** (DBConnection.ConnectionError) bad return value: :oops"
+        "** (RuntimeError) bad return value: :oops"
 
     len = byte_size(prefix)
 
@@ -633,13 +633,13 @@ defmodule TransactionTest do
 
     Process.flag(:trap_exit, true)
 
-    assert_raise DBConnection.ConnectionError, "bad return value: :oops", fn ->
+    assert_raise RuntimeError, "bad return value: :oops", fn ->
       P.transaction(pool, fn _ -> :result end)
     end
 
     prefix =
       "client #{inspect(self())} stopped: " <>
-        "** (DBConnection.ConnectionError) bad return value: :oops"
+        "** (RuntimeError) bad return value: :oops"
 
     len = byte_size(prefix)
 

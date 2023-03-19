@@ -1282,7 +1282,7 @@ defmodule DBConnection do
 
   defp bad_return!(other, conn, meter) do
     try do
-      raise DBConnection.ConnectionError, "bad return value: #{inspect(other)}"
+      raise "bad return value: #{inspect(other)}"
     catch
       :error, reason ->
         stack = __STACKTRACE__

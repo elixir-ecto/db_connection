@@ -174,7 +174,7 @@ defmodule AfterConnectTest do
            ] = A.record(agent)
   end
 
-  test "after_connect execute bad return raises DBConnection.ConnectionError" do
+  test "after_connect execute bad return raises RuntimeError" do
     stack = [
       fn opts ->
         send(opts[:parent], {:hi, self()})
@@ -196,7 +196,7 @@ defmodule AfterConnectTest do
       send(parent, {:after_connect, self()})
       _ = Process.put(:agent, agent)
 
-      assert_raise DBConnection.ConnectionError, "bad return value: :oops", fn ->
+      assert_raise RuntimeError, "bad return value: :oops", fn ->
         P.execute(conn, %Q{}, [:after_connect])
       end
 
@@ -213,7 +213,7 @@ defmodule AfterConnectTest do
 
     prefix =
       "client #{inspect(after_pid)} stopped: " <>
-        "** (DBConnection.ConnectionError) bad return value: :oops"
+        "** (RuntimeError) bad return value: :oops"
 
     len = byte_size(prefix)
 
