@@ -367,7 +367,8 @@ defmodule DBConnection do
     * `:configure` - A function to run before every connect attempt to
     dynamically configure the options, either a 1-arity fun,
     `{module, function, args}` with options prepended to `args` or `nil` where
-    only returned options are passed to connect callback (default: `nil`)
+    only returned options are passed to connect callback (default: `nil`). This
+    function is called *in the connection process*.
     * `:after_connect` - A function to run on connect using `run/3`, either
     a 1-arity fun, `{module, function, args}` with `t:DBConnection.t/0` prepended
     to `args` or `nil` (default: `nil`)
