@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.5.0 (2022-04-10)
+
+* Internal changes
+  * No longer depend on `connection`
+
 ## v2.4.3 (2022-11-22)
 
 * Bug fixes
