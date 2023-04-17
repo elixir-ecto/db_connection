@@ -1,6 +1,6 @@
 # Changelog
 
-## v2.5.0 (2022-04-10)
+## v2.5.0 (2023-04-10)
 
 * Internal changes
   * No longer depend on `connection`
