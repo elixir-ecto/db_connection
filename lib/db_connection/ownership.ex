@@ -1,4 +1,8 @@
 defmodule DBConnection.OwnershipError do
+  @moduledoc """
+  An exception for when errors with ownership occur.
+  """
+
   defexception [:message]
 
   def exception(message), do: %DBConnection.OwnershipError{message: message}

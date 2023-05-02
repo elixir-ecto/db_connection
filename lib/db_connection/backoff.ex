@@ -1,4 +1,6 @@
 defmodule DBConnection.Backoff do
+  # This module provides a functional abstraction over backoffs with different types. It exposes
+  # a struct and a couple of functions to work with it.
   @moduledoc false
   @compile :nowarn_deprecated_function
 
@@ -8,9 +10,17 @@ defmodule DBConnection.Backoff do
   @min 1_000
   @max 30_000
 
+  @type t :: %__MODULE__{
+          type: :stop | :rand | :exp | :rand_exp,
+          min: non_neg_integer(),
+          max: non_neg_integer(),
+          state: term()
+        }
+
   defstruct [:type, :min, :max, :state]
 
-  def new(opts) do
+  @spec new(keyword) :: t | nil
+  def new(opts) when is_list(opts) do
     case Keyword.get(opts, :backoff_type, @default_type) do
       :stop ->
         nil
@@ -20,6 +30,9 @@ defmodule DBConnection.Backoff do
         new(type, min, max)
     end
   end
+
+  @spec backoff(t) :: {non_neg_integer, t}
+  def backoff(backoff)
 
   def backoff(%Backoff{type: :rand, min: min, max: max} = s) do
     {rand(min, max), s}
@@ -42,6 +55,9 @@ defmodule DBConnection.Backoff do
     next = rand(next_min, next_max)
     {next, %Backoff{s | state: {next, lower}}}
   end
+
+  @spec reset(t) :: t
+  def reset(backoff)
 
   def reset(%Backoff{type: :rand} = s), do: s
   def reset(%Backoff{type: :exp} = s), do: %Backoff{s | state: nil}
