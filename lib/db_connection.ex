@@ -479,11 +479,11 @@ defmodule DBConnection do
         end
       end
 
-  You can then start it, pass it into a `DBConnection.start_link/1` and when needed
-  can query the notifications:
+  You can then start it, pass the pid in the `connection_listeners`
+  option on `DBConnection.start_link/1` and, when needed, can query the notifications:
 
       {:ok, pid} = DBConnectionListener.start_link([])
-      {:ok, _conn} = DBConnection.start_link(SomeModule, [connection_listeners: [connection_listener]])
+      {:ok, _conn} = DBConnection.start_link(SomeModule, [connection_listeners: [pid]])
       notifications = DBConnectionListener.get_notifications(pid)
 
   ## Telemetry
