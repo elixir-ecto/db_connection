@@ -479,7 +479,7 @@ defmodule DBConnection do
         end
       end
 
-  You can then start it, pass the pid in the `connection_listeners`
+  You can then start it, pass the PID in the `connection_listeners`
   option on `DBConnection.start_link/1` and, when needed, can query the notifications:
 
       {:ok, pid} = DBConnectionListener.start_link([])
