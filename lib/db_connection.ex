@@ -175,7 +175,7 @@ defmodule DBConnection do
 
   This callback is called if no callbacks have been called after the
   idle timeout and a client process is not using the state. The idle
-  timeout can be configured by the `:idle_interval` and `:idle_interval`
+  timeout can be configured by the `:idle_interval` and `:idle_limit`
   options. This function can be called whether the connection is checked
   in or checked out.
 
