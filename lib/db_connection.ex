@@ -555,6 +555,22 @@ defmodule DBConnection do
   end
 
   @doc """
+  Returns the names of all possible options that you can pass to most functions
+  in this module.
+
+  This is mostly useful for library authors that base their library on top of
+  `DBConnection`, since they can use the return value of this function to perform
+  validation on options only passing down these options to DBConnection.
+
+  See also `t:option/0`.
+  """
+  @doc since: "2.6.0"
+  @spec available_options() :: [atom, ...]
+  def available_options do
+    [:log, :queue, :timeout, :deadline]
+  end
+
+  @doc """
   Forces all connections in the pool to disconnect within the given interval
   in milliseconds.
 
