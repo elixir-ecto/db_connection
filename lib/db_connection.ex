@@ -142,11 +142,7 @@ defmodule DBConnection do
   > This option is deprecated since v2.6.0. Use `t:connection_option/0` instead.
 
   """
-  @type option ::
-          {:log, (DBConnection.LogEntry.t() -> any) | {module, atom, [any]} | nil}
-          | {:queue, boolean}
-          | {:timeout, timeout}
-          | {:deadline, integer | nil}
+  @type option :: connection_option
 
   @typedoc """
   An option you can pass to DBConnection functions.
