@@ -32,6 +32,30 @@ defmodule DBConnectionTest do
     assert A.record(agent) == [{:connect, [[pool_index: 1] ++ opts]}]
   end
 
+  describe "available_start_options/0" do
+    test "returns all available start_link/2 options" do
+      assert DBConnection.available_start_options() == [
+               :after_connect,
+               :after_connect_timeout,
+               :connection_listeners,
+               :backoff_max,
+               :backoff_min,
+               :backoff_type,
+               :configure,
+               :idle_interval,
+               :idle_limit,
+               :max_restarts,
+               :max_seconds,
+               :name,
+               :pool,
+               :pool_size,
+               :queue_interval,
+               :queue_target,
+               :show_sensitive_data_on_connection_error
+             ]
+    end
+  end
+
   describe "connection_module/1" do
     test "returns the connection module when given a pool pid" do
       {:ok, pool} = P.start_link([])
