@@ -134,7 +134,25 @@ defmodule DBConnection do
           | {:queue_target, non_neg_integer}
           | {:show_sensitive_data_on_connection_error, boolean}
 
+  @typedoc """
+  An option you can pass to DBConnection functions (*deprecated*).
+
+  > #### Deprecated {: .warning}
+  >
+  > This option is deprecated since v2.6.0. Use `t:connection_option/0` instead.
+
+  """
   @type option ::
+          {:log, (DBConnection.LogEntry.t() -> any) | {module, atom, [any]} | nil}
+          | {:queue, boolean}
+          | {:timeout, timeout}
+          | {:deadline, integer | nil}
+
+  @typedoc """
+  An option you can pass to DBConnection functions.
+  """
+  @typedoc since: "2.6.0"
+  @type connection_option ::
           {:log, (DBConnection.LogEntry.t() -> any) | {module, atom, [any]} | nil}
           | {:queue, boolean}
           | {:timeout, timeout}
@@ -502,7 +520,7 @@ defmodule DBConnection do
     * `:opts` - All options given to the pool operation
 
   """
-  @spec start_link(module, opts :: Keyword.t()) :: GenServer.on_start()
+  @spec start_link(module, [start_option()] | Keyword.t()) :: GenServer.on_start()
   def start_link(conn_mod, opts) do
     case child_spec(conn_mod, opts) do
       {_, {m, f, args}, _, _, _, _} -> apply(m, f, args)
@@ -515,7 +533,7 @@ defmodule DBConnection do
 
   See `start_link/2` for options.
   """
-  @spec child_spec(module, opts :: Keyword.t()) :: :supervisor.child_spec()
+  @spec child_spec(module, [start_option()] | Keyword.t()) :: :supervisor.child_spec()
   def child_spec(conn_mod, opts) do
     pool = Keyword.get(opts, :pool, DBConnection.ConnectionPool)
     pool.child_spec({conn_mod, opts})
@@ -587,7 +605,7 @@ defmodule DBConnection do
   depending on the max_restarts/max_seconds configuration of the pool,
   so you will want to set those carefully.
   """
-  @spec disconnect_all(conn, non_neg_integer, opts :: Keyword.t()) :: :ok
+  @spec disconnect_all(conn, non_neg_integer, [connection_option()] | Keyword.t()) :: :ok
   def disconnect_all(conn, interval, opts \\ []) when interval >= 0 do
     pool = Keyword.get(opts, :pool, DBConnection.ConnectionPool)
     pool.disconnect_all(conn, interval, opts)
@@ -632,7 +650,7 @@ defmodule DBConnection do
       end)
 
   """
-  @spec prepare(conn, query, opts :: Keyword.t()) ::
+  @spec prepare(conn, query, [connection_option()] | Keyword.t()) ::
           {:ok, query} | {:error, Exception.t()}
   def prepare(conn, query, opts \\ []) do
     meter = meter(opts)
@@ -651,7 +669,7 @@ defmodule DBConnection do
 
   See `prepare/3`.
   """
-  @spec prepare!(conn, query, opts :: Keyword.t()) :: query
+  @spec prepare!(conn, query, [connection_option()] | Keyword.t()) :: query
   def prepare!(conn, query, opts \\ []) do
     case prepare(conn, query, opts) do
       {:ok, result} -> result
@@ -688,7 +706,7 @@ defmodule DBConnection do
       {:ok, result2}       = DBConnection.execute(conn, query, [2])
       :ok                  = DBConnection.close(conn, query)
   """
-  @spec prepare_execute(conn, query, params, Keyword.t()) ::
+  @spec prepare_execute(conn, query, params, [connection_option()] | Keyword.t()) ::
           {:ok, query, result}
           | {:error, Exception.t()}
   def prepare_execute(conn, query, params, opts \\ []) do
@@ -714,7 +732,7 @@ defmodule DBConnection do
 
   See `prepare_execute/4`.
   """
-  @spec prepare_execute!(conn, query, Keyword.t()) :: {query, result}
+  @spec prepare_execute!(conn, query, [connection_option()] | Keyword.t()) :: {query, result}
   def prepare_execute!(conn, query, params, opts \\ []) do
     case prepare_execute(conn, query, params, opts) do
       {:ok, query, result} -> {query, result}
@@ -749,7 +767,7 @@ defmodule DBConnection do
 
   See `prepare/3`.
   """
-  @spec execute(conn, query, params, opts :: Keyword.t()) ::
+  @spec execute(conn, query, params, [connection_option()] | Keyword.t()) ::
           {:ok, query, result} | {:error, Exception.t()}
   def execute(conn, query, params, opts \\ []) do
     result =
@@ -777,7 +795,7 @@ defmodule DBConnection do
 
   See `execute/4`
   """
-  @spec execute!(conn, query, params, opts :: Keyword.t()) :: result
+  @spec execute!(conn, query, params, [connection_option()] | Keyword.t()) :: result
   def execute!(conn, query, params, opts \\ []) do
     case execute(conn, query, params, opts) do
       {:ok, _query, result} -> result
@@ -812,7 +830,7 @@ defmodule DBConnection do
 
   See `prepare/3`.
   """
-  @spec close(conn, query, opts :: Keyword.t()) ::
+  @spec close(conn, query, [connection_option()] | Keyword.t()) ::
           {:ok, result} | {:error, Exception.t()}
   def close(conn, query, opts \\ []) do
     conn
@@ -826,7 +844,7 @@ defmodule DBConnection do
 
   See `close/3`.
   """
-  @spec close!(conn, query, opts :: Keyword.t()) :: result
+  @spec close!(conn, query, [connection_option()] | Keyword.t()) :: result
   def close!(conn, query, opts \\ []) do
     case close(conn, query, opts) do
       {:ok, result} -> result
@@ -876,7 +894,7 @@ defmodule DBConnection do
       end)
 
   """
-  @spec run(conn, (t -> result), opts :: Keyword.t()) :: result when result: var
+  @spec run(conn, (t -> result), [connection_option()] | Keyword.t()) :: result when result: var
   def run(conn, fun, opts \\ [])
 
   def run(%DBConnection{} = conn, fun, _) do
@@ -970,7 +988,7 @@ defmodule DBConnection do
         DBConnection.execute!(conn, query, [])
       end)
   """
-  @spec transaction(conn, (t -> result), opts :: Keyword.t()) ::
+  @spec transaction(conn, (t -> result), [connection_option()] | Keyword.t()) ::
           {:ok, result} | {:error, reason :: any}
         when result: var
   def transaction(conn, fun, opts \\ [])
@@ -1125,7 +1143,7 @@ defmodule DBConnection do
         Enum.to_list(stream)
       end)
   """
-  @spec prepare_stream(t, query, params, opts :: Keyword.t()) ::
+  @spec prepare_stream(t, query, params, [connection_option()] | Keyword.t()) ::
           DBConnection.PrepareStream.t()
   def prepare_stream(%DBConnection{} = conn, query, params, opts \\ []) do
     %DBConnection.PrepareStream{conn: conn, query: query, params: params, opts: opts}
@@ -1167,7 +1185,7 @@ defmodule DBConnection do
         end
       end)
   """
-  @spec stream(t, query, params, opts :: Keyword.t()) :: DBConnection.Stream.t()
+  @spec stream(t, query, params, [connection_option()] | Keyword.t()) :: DBConnection.Stream.t()
   def stream(%DBConnection{} = conn, query, params, opts \\ []) do
     %DBConnection.Stream{conn: conn, query: query, params: params, opts: opts}
   end
