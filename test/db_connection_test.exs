@@ -56,6 +56,12 @@ defmodule DBConnectionTest do
     end
   end
 
+  describe "available_connection_options/0" do
+    test "returns all available function options" do
+      assert DBConnection.available_connection_options() == [:log, :queue, :timeout, :deadline]
+    end
+  end
+
   describe "connection_module/1" do
     test "returns the connection module when given a pool pid" do
       {:ok, pool} = P.start_link([])
