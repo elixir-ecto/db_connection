@@ -522,6 +522,39 @@ defmodule DBConnection do
   end
 
   @doc """
+  Returns the names of all possible options that you can pass to `start_link/2`.
+
+  This is mostly useful for library authors that base their library on top of
+  `DBConnection`, since they can use the return value of this function to perform
+  validation on options only passing down these options to DBConnection.
+
+  See also `t:start_option/0`.
+  """
+  @doc since: "2.6.0"
+  @spec available_start_options() :: [atom, ...]
+  def available_start_options do
+    [
+      :after_connect,
+      :after_connect_timeout,
+      :connection_listeners,
+      :backoff_max,
+      :backoff_min,
+      :backoff_type,
+      :configure,
+      :idle_interval,
+      :idle_limit,
+      :max_restarts,
+      :max_seconds,
+      :name,
+      :pool,
+      :pool_size,
+      :queue_interval,
+      :queue_target,
+      :show_sensitive_data_on_connection_error
+    ]
+  end
+
+  @doc """
   Forces all connections in the pool to disconnect within the given interval
   in milliseconds.
 
