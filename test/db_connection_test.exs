@@ -56,9 +56,9 @@ defmodule DBConnectionTest do
     end
   end
 
-  describe "available_options/0" do
+  describe "available_connection_options/0" do
     test "returns all available function options" do
-      assert DBConnection.available_options() == [:log, :queue, :timeout, :deadline]
+      assert DBConnection.available_connection_options() == [:log, :queue, :timeout, :deadline]
     end
   end
 

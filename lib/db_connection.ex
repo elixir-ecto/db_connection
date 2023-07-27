@@ -580,11 +580,11 @@ defmodule DBConnection do
   `DBConnection`, since they can use the return value of this function to perform
   validation on options only passing down these options to DBConnection.
 
-  See also `t:option/0`.
+  See also `t:connection_option/0`.
   """
   @doc since: "2.6.0"
-  @spec available_options() :: [atom, ...]
-  def available_options do
+  @spec available_connection_options() :: [atom, ...]
+  def available_connection_options do
     [:log, :queue, :timeout, :deadline]
   end
 
