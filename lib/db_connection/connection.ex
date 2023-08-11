@@ -75,6 +75,7 @@ defmodule DBConnection.Connection do
       timer: nil,
       backoff: Backoff.new(opts),
       connection_listeners: Keyword.get(opts, :connection_listeners, []),
+      connection_listeners_tag: Keyword.fetch(opts, :connection_listeners_tag),
       after_connect: Keyword.get(opts, :after_connect),
       after_connect_timeout: Keyword.get(opts, :after_connect_timeout, @timeout)
     }
@@ -168,7 +169,7 @@ defmodule DBConnection.Connection do
     :ok = apply(mod, :disconnect, [err, state])
     s = %{s | state: nil, client: :closed, timer: nil}
 
-    notify_connection_listeners({:disconnected, self()}, s)
+    notify_connection_listeners(:disconnected, s)
 
     case client do
       _ when backoff == nil ->
@@ -242,7 +243,7 @@ defmodule DBConnection.Connection do
       opts: opts
     } = s
 
-    notify_connection_listeners({:connected, self()}, s)
+    notify_connection_listeners(:connected, s)
 
     case apply(mod, :checkout, [state]) do
       {:ok, state} ->
@@ -264,7 +265,7 @@ defmodule DBConnection.Connection do
   def handle_event(:cast, {:connected, ref}, :no_state, %{client: {ref, :connect}} = s) do
     %{mod: mod, state: state} = s
 
-    notify_connection_listeners({:connected, self()}, s)
+    notify_connection_listeners(:connected, s)
 
     case apply(mod, :checkout, [state]) do
       {:ok, state} ->
@@ -355,7 +356,7 @@ defmodule DBConnection.Connection do
   @impl :gen_statem
   def format_status(info, [_, :no_state, %{client: :closed, mod: mod}]) do
     case info do
-      :normal -> [{:data, [{'Module', mod}]}]
+      :normal -> [{:data, [{~c"Module", mod}]}]
       :terminate -> mod
     end
   end
@@ -481,7 +482,7 @@ defmodule DBConnection.Connection do
   end
 
   defp normal_status_default(mod, state) do
-    [{:data, [{'Module', mod}, {'State', state}]}]
+    [{:data, [{~c"Module", mod}, {~c"State", state}]}]
   end
 
   defp terminate_status(mod, pdict, state) do
@@ -506,8 +507,14 @@ defmodule DBConnection.Connection do
     end
   end
 
-  defp notify_connection_listeners(message, %{} = state) do
-    %{connection_listeners: connection_listeners} = state
+  defp notify_connection_listeners(action, %{} = state) do
+    %{connection_listeners: connection_listeners, connection_listeners_tag: tag} = state
+
+    message =
+      case tag do
+        {:ok, tag} when action in [:connected, :disconnected] -> {action, self(), tag}
+        :error when action in [:connected, :disconnected] -> {action, self()}
+      end
 
     Enum.each(connection_listeners, &send(&1, message))
   end
