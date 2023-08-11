@@ -511,10 +511,10 @@ defmodule DBConnection.Connection do
 
     {listeners, message} =
       case connection_listeners do
-        listeners when is_list(listeners) and action in [:connected, :disconnected] ->
+        listeners when is_list(listeners) ->
           {listeners, {action, self()}}
 
-        {listeners, tag} when is_list(listeners) and action in [:connected, :disconnected] ->
+        {listeners, tag} when is_list(listeners) ->
           {listeners, {action, self(), tag}}
       end
 
