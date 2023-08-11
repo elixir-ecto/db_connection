@@ -75,7 +75,6 @@ defmodule DBConnection.Connection do
       timer: nil,
       backoff: Backoff.new(opts),
       connection_listeners: Keyword.get(opts, :connection_listeners, []),
-      connection_listeners_tag: Keyword.fetch(opts, :connection_listeners_tag),
       after_connect: Keyword.get(opts, :after_connect),
       after_connect_timeout: Keyword.get(opts, :after_connect_timeout, @timeout)
     }
@@ -508,14 +507,17 @@ defmodule DBConnection.Connection do
   end
 
   defp notify_connection_listeners(action, %{} = state) do
-    %{connection_listeners: connection_listeners, connection_listeners_tag: tag} = state
+    %{connection_listeners: connection_listeners} = state
 
-    message =
-      case tag do
-        {:ok, tag} when action in [:connected, :disconnected] -> {action, self(), tag}
-        :error when action in [:connected, :disconnected] -> {action, self()}
+    {listeners, message} =
+      case connection_listeners do
+        listeners when is_list(listeners) and action in [:connected, :disconnected] ->
+          {listeners, {action, self()}}
+
+        {listeners, tag} when is_list(listeners) and action in [:connected, :disconnected] ->
+          {listeners, {action, self(), tag}}
       end
 
-    Enum.each(connection_listeners, &send(&1, message))
+    Enum.each(listeners, &send(&1, message))
   end
 end

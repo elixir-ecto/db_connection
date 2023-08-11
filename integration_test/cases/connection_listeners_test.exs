@@ -34,8 +34,7 @@ defmodule ConnectionListenersTest do
     opts = [
       agent: agent,
       parent: self(),
-      connection_listeners: [self()],
-      connection_listeners_tag: tag_ref,
+      connection_listeners: {[self()], tag_ref},
       backoff_min: 1_000
     ]
 
@@ -129,8 +128,7 @@ defmodule ConnectionListenersTest do
     opts = [
       agent: agent,
       parent: self(),
-      connection_listeners: [self()],
-      connection_listeners_tag: tag_ref,
+      connection_listeners: {[self()], tag_ref},
       backoff_min: 1_000
     ]
 

@@ -38,7 +38,6 @@ defmodule DBConnectionTest do
                :after_connect,
                :after_connect_timeout,
                :connection_listeners,
-               :connection_listeners_tag,
                :backoff_max,
                :backoff_min,
                :backoff_type,

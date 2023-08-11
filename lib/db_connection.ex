@@ -118,8 +118,7 @@ defmodule DBConnection do
   @type start_option ::
           {:after_connect, (t -> any) | {module, atom, [any]} | nil}
           | {:after_connect_timeout, timeout}
-          | {:connection_listeners, list(Process.dest()) | nil}
-          | {:connection_listeners_tag, any}
+          | {:connection_listeners, [Process.dest()] | nil | {[Process.dest()], any}}
           | {:backoff_max, non_neg_integer}
           | {:backoff_min, non_neg_integer}
           | {:backoff_type, :stop | :exp | :rand | :rand_exp}
@@ -392,9 +391,6 @@ defmodule DBConnection do
     * `:connection_listeners` - A list of process destinations to send
       notification messages whenever a connection is connected or disconnected.
       See "Connection listeners" below
-    * `:connection_listeners_tag` - A term that is sent alongside
-      `:connected`/`:disconnected` messages to connection listeners.
-      See "Connection listeners" below. Available since v2.6.0
     * `:name` - A name to register the started process (see the `:name` option
       in `GenServer.start_link/3`)
     * `:pool` - Chooses the pool to be started (default: `DBConnection.ConnectionPool`). See
@@ -458,8 +454,12 @@ defmodule DBConnection do
 
     * `{:connected, pid}`
     * `{:disconnected, pid}`
-    * `{:connected, pid, term}` if `:connection_listeners_tag` is set to `term`
-    * `{:disconnected, pid, term}` if `:connection_listeners_tag` is set to `term`
+
+  If the value of `:connection_listeners` is a tuple like `{listeners, term}`, then
+  the messages are these instead:
+
+    * `{:connected, pid, term}`
+    * `{:disconnected, pid, term}`
 
   Note the disconnected messages are not guaranteed to be delivered if the
   `pid` for connection crashes. So it is recommended to monitor the connected
@@ -508,11 +508,12 @@ defmodule DBConnection do
 
   ### Tagging messages
 
-  If you pass `:connection_listeners_tag` as an option, you can specify a term that will
+  If you pass `{listeners, tag}` as an option, you can specify an arbitrary `tag` term that will
   be sent alongside all `:connected`/`:disconnected` messages. This is useful if you
   want to track information about the pool a connection belongs to or any other information.
 
-  `:connection_listeners_tag` is available since v2.6.0.
+  This feature is available since v2.6.0. Before this version `:connection_listeners` only
+  accepted a list of listener processes.
 
   ## Telemetry
 
@@ -565,7 +566,6 @@ defmodule DBConnection do
       :after_connect,
       :after_connect_timeout,
       :connection_listeners,
-      :connection_listeners_tag,
       :backoff_max,
       :backoff_min,
       :backoff_type,
