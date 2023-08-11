@@ -22,6 +22,33 @@ defmodule ConnectionListenersTest do
     refute_receive {:disconnected, _conn}
   end
 
+  test "send `:connected` message with tag after connected" do
+    stack = [
+      {:ok, :state}
+    ]
+
+    {:ok, agent} = A.start_link(stack)
+
+    tag_ref = make_ref()
+
+    opts = [
+      agent: agent,
+      parent: self(),
+      connection_listeners: {[self()], tag_ref},
+      backoff_min: 1_000
+    ]
+
+    {:ok, _pool} = P.start_link(opts)
+
+    assert_receive {:connected, conn, ^tag_ref}
+    assert is_pid(conn)
+
+    refute_receive {:connected, _conn}
+    refute_receive {:connected, _conn, _tag}
+    refute_receive {:disconnected, _conn}
+    refute_receive {:disconnected, _conn, _tag}
+  end
+
   test "send `:connected` message after connected with `after_connect` function" do
     stack = [
       {:ok, :state},
@@ -79,6 +106,42 @@ defmodule ConnectionListenersTest do
     assert_receive {:disconnected, ^conn}
     refute_receive {:connected, _conn}
     refute_receive {:disconnected, _conn}
+  end
+
+  test "send `:disconnected` message with tag after disconnect" do
+    err = RuntimeError.exception("oops")
+
+    stack = [
+      fn opts ->
+        send(opts[:parent], {:hi1, self()})
+        {:ok, :state}
+      end,
+      {:disconnect, err, :discon},
+      :ok,
+      {:error, err}
+    ]
+
+    {:ok, agent} = A.start_link(stack)
+
+    tag_ref = make_ref()
+
+    opts = [
+      agent: agent,
+      parent: self(),
+      connection_listeners: {[self()], tag_ref},
+      backoff_min: 1_000
+    ]
+
+    {:ok, pool} = P.start_link(opts)
+
+    assert P.close(pool, %Q{})
+    assert_receive {:hi1, conn}
+    assert_receive {:connected, ^conn, ^tag_ref}
+    assert_receive {:disconnected, ^conn, ^tag_ref}
+    refute_receive {:connected, _conn}
+    refute_receive {:connected, _conn, _tag}
+    refute_receive {:disconnected, _conn}
+    refute_receive {:disconnected, _conn, _tag}
   end
 
   test "send `:connected` message after disconnect then reconnected" do
