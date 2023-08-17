@@ -220,7 +220,7 @@ defmodule DBConnection.ConnectionPool do
          {queued_in_native, holder} = key when queued_in_native <= past_in_native <-
            :ets.first(queue) do
       :ets.delete(queue, key)
-      :counters.sub(metrics, @waiting_counter_idx, 1)
+      :counters.add(metrics, @active_counter_idx, 1)
       Holder.maybe_disconnect(holder, elem(ts, 0), 0) or Holder.handle_ping(holder)
       drop_idle(past_in_native, limit - 1, status, queue, codel, ts, metrics)
     else
@@ -234,8 +234,7 @@ defmodule DBConnection.ConnectionPool do
       %{delay: min_delay, next: next, target: target, interval: interval}
       when time >= next and min_delay > target ->
         codel = %{codel | slow: true, delay: delay, next: time + interval}
-        drop_slow(time, target * 2, queue)
-        :counters.sub(metrics, @waiting_counter_idx, 1)
+        drop_slow(time, target * 2, queue, metrics)
         {:noreply, {:busy, queue, codel, ts, metrics}}
 
       %{next: next, interval: interval} when time >= next ->
@@ -247,7 +246,7 @@ defmodule DBConnection.ConnectionPool do
     end
   end
 
-  defp drop_slow(time, timeout, queue) do
+  defp drop_slow(time, timeout, queue, metrics) do
     min_sent = time - timeout
     match = {{:"$1", :_, :"$2"}}
     guards = [{:<, :"$1", min_sent}]
@@ -255,6 +254,7 @@ defmodule DBConnection.ConnectionPool do
 
     for {sent, from} <- :ets.select(queue, select_slow) do
       drop(time - sent, from)
+      :counters.sub(metrics, @waiting_counter_idx, 1)
     end
 
     :ets.select_delete(queue, [{match, guards, [true]}])
