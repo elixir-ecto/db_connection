@@ -103,4 +103,24 @@ defmodule MetricsTest do
     assert active == 5
     assert waiting == 0
   end
+
+  test "pool should work without setting" do
+    opts = []
+    {:ok, pool} = DBConnection.ConnectionPool.start_link({DelayedDummyDB, opts})
+    :timer.sleep(2000) # definitely enough for everything to startup
+    %{active: 0, waiting: 0} = DBConnection.ConnectionPool.get_connection_metrics(pool)
+
+    for _ <- 1..15 do
+      spawn(fn ->
+        DBConnection.ConnectionPool.checkout(pool, [self()], [])
+      end)
+    end
+
+    # waiting queue works
+    :timer.sleep(200) # still less than the timeout
+    %{active: active, waiting: waiting} = DBConnection.ConnectionPool.get_connection_metrics(pool)
+
+    assert active == 1
+    assert waiting == 14
+  end
 end
