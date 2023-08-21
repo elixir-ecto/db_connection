@@ -1,4 +1,4 @@
-defmodule MetricsTest do
+defmodule DBConnection.MetricsTest do
   use ExUnit.Case, async: false
 
   defmodule DummyDB do
