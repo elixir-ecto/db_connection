@@ -79,7 +79,7 @@ defmodule DBConnection.ConnectionPool do
     }
 
     metrics = :counters.new(2, [])
-    # when the pool starts up, it checks out and should decrement this to 0
+    # as the pool starts, connections are checked in and should decrement this to 0
     :counters.put(metrics, @active_counter_idx, pool_size)
 
     codel = start_idle(now_in_native, start_poll(now_in_ms, now_in_ms, codel))
