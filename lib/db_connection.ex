@@ -1250,20 +1250,13 @@ defmodule DBConnection do
   def connection_module(conn) do
     with pid when pid != nil <- pool_pid(conn),
          {:dictionary, dictionary} <- Process.info(pid, :dictionary),
-         {:ok, module} <- fetch_from_dictionary(dictionary, @connection_module_key),
+         {@connection_module_key, module} <- List.keyfind(dictionary, @connection_module_key, 0),
          do: {:ok, module},
          else: (_ -> :error)
   end
 
   defp pool_pid(%DBConnection{pool_ref: Holder.pool_ref(pool: pid)}), do: pid
   defp pool_pid(conn), do: GenServer.whereis(conn)
-
-  defp fetch_from_dictionary(dictionary, key) do
-    Enum.find_value(dictionary, :error, fn
-      {^key, value} -> {:ok, value}
-      _pair -> nil
-    end)
-  end
 
   ## Helpers
 
