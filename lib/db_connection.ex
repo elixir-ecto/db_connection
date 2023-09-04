@@ -215,7 +215,7 @@ defmodule DBConnection do
   """
   @callback handle_begin(opts :: Keyword.t(), state :: any) ::
               {:ok, result, new_state :: any}
-              | {:ok, query, result, new_State :: any},
+              | {:ok, query, result, new_state :: any}
               | {status, new_state :: any}
               | {:disconnect, Exception.t(), new_state :: any}
 
