@@ -145,7 +145,13 @@ defmodule TestConnection do
 end
 
 defmodule TestQuery do
-  defstruct [:state]
+  defstruct [:state, :statement]
+
+  defimpl String.Chars do
+    def to_string(%{statement: statement}) do
+      IO.iodata_to_binary(statement)
+    end
+  end
 end
 
 defmodule TestCursor do

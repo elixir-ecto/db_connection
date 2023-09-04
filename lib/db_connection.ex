@@ -201,9 +201,12 @@ defmodule DBConnection do
   @doc """
   Handle the beginning of a transaction.
 
-  Return `{:ok, result, state}` to continue, `{status, state}` to notify caller
-  that the transaction can not begin due to the transaction status `status`,
-  or `{:disconnect, exception, state}` to error and disconnect.
+  Return `{:ok, result, state}`/`{:ok, query, result, state}` to continue,
+  `{status, state}` to notify caller that the transaction can not begin due
+  to the transaction status `status`, or `{:disconnect, exception, state}`
+  to error and disconnect. If `{:ok, query, result, state}` is returned,
+  the query will be used to log the begin command. Otherwise, it will be
+  logged as `begin`.
 
   A callback implementation should only return `status` if it
   can determine the database's transaction status without side effect.
@@ -212,6 +215,7 @@ defmodule DBConnection do
   """
   @callback handle_begin(opts :: Keyword.t(), state :: any) ::
               {:ok, result, new_state :: any}
+              | {:ok, query, result, new_state :: any}
               | {status, new_state :: any}
               | {:disconnect, Exception.t(), new_state :: any}
 
@@ -1762,9 +1766,18 @@ defmodule DBConnection do
   end
 
   defp begin(conn, run, opts) do
-    conn
-    |> run.(&run_begin/3, meter(opts), opts)
-    |> log(:begin, :begin, nil)
+    case run.(conn, &run_begin/3, meter(opts), opts) do
+      {:ok, conn, {query, result}, meter} ->
+        query = String.Chars.to_string(query)
+        log({:ok, conn, result, meter}, :begin, query, nil)
+
+      {:ok, {query, result}, meter} ->
+        query = String.Chars.to_string(query)
+        log({:ok, result, meter}, :begin, query, nil)
+
+      other ->
+        log(other, :begin, :begin, nil)
+    end
   end
 
   defp run_begin(conn, meter, opts) do
@@ -1774,6 +1787,9 @@ defmodule DBConnection do
     case Holder.handle(pool_ref, :handle_begin, [], opts) do
       {status, _conn_state} when status in [:idle, :transaction, :error] ->
         status_disconnect(conn, status, meter)
+
+      {:ok, query, result, _conn_status} ->
+        {:ok, {query, result}, meter}
 
       other ->
         handle_common_result(other, conn, meter)
