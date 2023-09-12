@@ -21,10 +21,11 @@ defmodule DBConnection.Ownership do
       implicitly. `{:shared, owner}` mode is also supported so
       processes are allowed on demand. On all cases, checkins are
       explicit via `ownership_checkin/2`. Defaults to `:auto`.
-    * `:ownership_timeout` - The maximum time that a process is allowed to own
-      a connection, default `120_000`. This timeout exists mostly for sanity
-      checking purposes and can be increased at will, since DBConnection
-      automatically checks in connections whenever there is a mode change.
+    * `:ownership_timeout` - The maximum time (in milliseconds) that a process
+      is allowed to own a connection or `:infinity`, default `120_000`.
+      This timeout exists mostly for sanity checking purposes and can be increased
+      at will, since DBConnection automatically checks in connections whenever
+      there is a mode change.
     * `:ownership_log` - The `Logger.level` to log ownership changes, or `nil`
       not to log, default `nil`.
 
