@@ -65,6 +65,8 @@ defmodule DBConnection.Connection do
   @doc false
   @impl :gen_statem
   def init({mod, opts, pool, tag}) do
+    Process.flag(:trap_exit, true)
+
     s = %{
       mod: mod,
       opts: opts,
@@ -349,6 +351,13 @@ defmodule DBConnection.Connection do
     end)
 
     handle_timeout(s)
+  end
+
+  @doc false
+  @impl :gen_statem
+  def terminate(reason, _, s) do
+    %{mod: mod, state: state} = s
+    mod.disconnect(reason, state)
   end
 
   @doc false
