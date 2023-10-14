@@ -423,9 +423,6 @@ defmodule DBConnection do
       hides all information during connection errors to avoid leaking credentials
       or other sensitive information. You can set this option if you wish to
       see complete errors and stacktraces during connection errors
-    * `:disconnect_on_terminate` - A boolean indicating whether the connection process
-      should disconnect the database connection inside the `terminate/3` callback.
-      If `true`, the connection process will also trap exits. Defaults to `false`
 
   ### Example
 
