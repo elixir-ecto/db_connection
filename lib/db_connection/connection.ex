@@ -356,8 +356,14 @@ defmodule DBConnection.Connection do
   @doc false
   @impl :gen_statem
   def terminate(reason, _, s) do
-    %{mod: mod, state: state} = s
-    mod.disconnect(reason, state)
+    %{mod: mod, state: state, client: client} = s
+
+    # If client is :closed then the connection was previouly disconnected
+    if client == :closed do
+      :ok
+    else
+      mod.disconnect(reason, state)
+    end
   end
 
   @doc false

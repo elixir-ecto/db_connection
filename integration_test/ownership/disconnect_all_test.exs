@@ -13,7 +13,7 @@ defmodule TestOwnershipDisconnectAll do
       {:ok, %Q{}, %R{}, :new_state1},
       {:ok, %Q{}, %R{}, :new_state2},
       {:ok, %Q{}, %R{}, :new_state3},
-      {:ok, :dead_state},
+      :ok,
       {:ok, :final_state},
       {:ok, %Q{}, %R{}, :final_state1},
       {:ok, %Q{}, %R{}, :final_state2}

@@ -183,6 +183,7 @@ defmodule AfterConnectTest do
       end,
       {:idle, :state},
       :oops,
+      :ok,
       fn _ ->
         :timer.sleep(:infinity)
       end
@@ -225,7 +226,8 @@ defmodule AfterConnectTest do
     assert [
              {:connect, _},
              {:handle_status, _},
-             {:handle_execute, [%Q{}, [:after_connect], _, :state]} | _
+             {:handle_execute, [%Q{}, [:after_connect], _, :state]},
+             {:disconnect, _} | _
            ] = A.record(agent)
   end
 
@@ -240,6 +242,7 @@ defmodule AfterConnectTest do
       fn _, _, _, _ ->
         raise "oops"
       end,
+      :ok,
       fn _ ->
         :timer.sleep(:infinity)
       end
@@ -274,7 +277,8 @@ defmodule AfterConnectTest do
     assert [
              {:connect, _},
              {:handle_status, _},
-             {:handle_execute, [%Q{}, [:after_connect], _, :state]} | _
+             {:handle_execute, [%Q{}, [:after_connect], _, :state]},
+             {:disconnect, _} | _
            ] = A.record(agent)
   end
 

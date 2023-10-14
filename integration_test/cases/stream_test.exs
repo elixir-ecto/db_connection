@@ -409,6 +409,7 @@ defmodule StreamTest do
       end,
       {:ok, :began, :new_state},
       :oops,
+      :ok,
       {:ok, :state2}
     ]
 
@@ -445,7 +446,8 @@ defmodule StreamTest do
     assert [
              {:connect, _},
              {:handle_begin, [_, :state]},
-             {:handle_declare, [%Q{}, [:param], _, :new_state]} | _
+             {:handle_declare, [%Q{}, [:param], _, :new_state]},
+             {:disconnect, _} | _
            ] = A.record(agent)
   end
 
@@ -594,6 +596,7 @@ defmodule StreamTest do
       fn _, _, _, _ ->
         raise "oops"
       end,
+      :ok,
       {:ok, :state2}
     ]
 
@@ -625,7 +628,8 @@ defmodule StreamTest do
              {:handle_begin, [_, :state]},
              {:handle_declare, [%Q{}, [:param], _, :new_state]},
              {:handle_fetch, [%Q{}, %C{}, _, :newer_state]},
-             {:handle_deallocate, [%Q{}, %C{}, _, :newest_state]} | _
+             {:handle_deallocate, [%Q{}, %C{}, _, :newest_state]},
+             {:disconnect, _} | _
            ] = A.record(agent)
   end
 end
