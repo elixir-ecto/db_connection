@@ -6,7 +6,6 @@ defmodule TestPoolDisconnectAll do
   alias TestQuery, as: Q
   alias TestResult, as: R
 
-  @tag :wtf
   test "disconnect on checkin" do
     stack = [
       {:ok, :state},
