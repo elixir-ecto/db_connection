@@ -400,6 +400,7 @@ defmodule ExecuteTest do
       fn _, _, _, _ ->
         raise "oops"
       end,
+      :ok,
       {:ok, :state}
     ]
 
@@ -422,7 +423,8 @@ defmodule ExecuteTest do
 
     assert [
              {:connect, _},
-             {:handle_execute, [%Q{}, [:param], _, :state]} | _
+             {:handle_execute, [%Q{}, [:param], _, :state]},
+             {:disconnect, _} | _
            ] = A.record(agent)
   end
 end
