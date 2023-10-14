@@ -358,7 +358,7 @@ defmodule DBConnection do
   known state will be sent and the exception will be a `DBConnection.ConnectionError`
   containing the reason for the exit. This callback will be called from `terminate/3`
   and it will only happen if the connection was not previously disconnected.
-  For example, using `disconnect_all/3.
+  For example, using `disconnect_all/3`.
 
   """
   @callback disconnect(err :: Exception.t(), state :: any) :: :ok
