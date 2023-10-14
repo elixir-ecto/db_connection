@@ -353,6 +353,21 @@ defmodule DBConnection.Connection do
 
   @doc false
   @impl :gen_statem
+  # If client is :closed then the connection was previouly disconnected
+  # and cleanup is not required.
+  def terminate(_, _, %{client: :closed}), do: :ok
+
+  def terminate(reason, _, s) do
+    %{mod: mod, state: state} = s
+    msg = "connection exited: " <> Exception.format_exit(reason)
+
+    msg
+    |> DBConnection.ConnectionError.exception()
+    |> mod.disconnect(state)
+  end
+
+  @doc false
+  @impl :gen_statem
   def format_status(info, [_, :no_state, %{client: :closed, mod: mod}]) do
     case info do
       :normal -> [{:data, [{~c"Module", mod}]}]

@@ -263,6 +263,7 @@ defmodule PrepareStreamTest do
       end,
       {:ok, :began, :new_state},
       :oops,
+      :ok,
       {:ok, :state2}
     ]
 
@@ -299,7 +300,8 @@ defmodule PrepareStreamTest do
     assert [
              {:connect, _},
              {:handle_begin, [_, :state]},
-             {:handle_prepare, [%Q{}, _, :new_state]} | _
+             {:handle_prepare, [%Q{}, _, :new_state]},
+             {:disconnect, _} | _
            ] = A.record(agent)
   end
 
@@ -315,6 +317,7 @@ defmodule PrepareStreamTest do
       fn _, _, _, _ ->
         raise "oops"
       end,
+      :ok,
       {:ok, :state2}
     ]
 
@@ -345,7 +348,8 @@ defmodule PrepareStreamTest do
              {:connect, _},
              {:handle_begin, [_, :state]},
              {:handle_prepare, [%Q{}, _, :new_state]},
-             {:handle_declare, [%Q{}, [:param], _, :newer_state]} | _
+             {:handle_declare, [%Q{}, [:param], _, :newer_state]},
+             {:disconnect, _} | _
            ] = A.record(agent)
   end
 

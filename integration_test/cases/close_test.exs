@@ -131,6 +131,7 @@ defmodule CloseTest do
       fn _, _, _ ->
         raise "oops"
       end,
+      :ok,
       {:ok, :state2}
     ]
 
@@ -163,7 +164,8 @@ defmodule CloseTest do
 
     assert [
              {:connect, [_]},
-             {:handle_close, [%Q{}, _, :state]} | _
+             {:handle_close, [%Q{}, _, :state]},
+             {:disconnect, _} | _
            ] = A.record(agent)
   end
 

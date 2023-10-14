@@ -189,6 +189,7 @@ defmodule TransactionExecuteTest do
       end,
       {:ok, :began, :new_state},
       :oops,
+      :ok,
       {:ok, :state}
     ]
 
@@ -226,7 +227,8 @@ defmodule TransactionExecuteTest do
     assert [
              {:connect, _},
              {:handle_begin, [_, :state]},
-             {:handle_execute, [%Q{}, [:param], _, :new_state]} | _
+             {:handle_execute, [%Q{}, [:param], _, :new_state]},
+             {:disconnect, _} | _
            ] = A.record(agent)
   end
 
@@ -241,6 +243,7 @@ defmodule TransactionExecuteTest do
       fn _, _, _, _ ->
         raise "oops"
       end,
+      :ok,
       {:ok, :state}
     ]
 
@@ -275,7 +278,8 @@ defmodule TransactionExecuteTest do
     assert [
              {:connect, _},
              {:handle_begin, [_, :state]},
-             {:handle_execute, [%Q{}, [:param], _, :new_state]} | _
+             {:handle_execute, [%Q{}, [:param], _, :new_state]},
+             {:disconnect, _} | _
            ] = A.record(agent)
   end
 

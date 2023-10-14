@@ -365,6 +365,7 @@ defmodule TransactionTest do
       fn _, _ ->
         raise "oops"
       end,
+      :ok,
       {:ok, :state2}
     ]
 
@@ -397,7 +398,8 @@ defmodule TransactionTest do
 
     assert [
              {:connect, [_]},
-             {:handle_begin, [_, :state]} | _
+             {:handle_begin, [_, :state]},
+             {:disconnect, _} | _
            ] = A.record(agent)
   end
 
@@ -441,6 +443,7 @@ defmodule TransactionTest do
         {:ok, :state}
       end,
       :oops,
+      :ok,
       {:ok, :state}
     ]
 
@@ -469,7 +472,8 @@ defmodule TransactionTest do
 
     assert [
              {:connect, _},
-             {:handle_begin, [_, :state]} | _
+             {:handle_begin, [_, :state]},
+             {:disconnect, _} | _
            ] = A.record(agent)
   end
 
@@ -483,6 +487,7 @@ defmodule TransactionTest do
       fn _, _ ->
         raise "oops"
       end,
+      :ok,
       {:ok, :state}
     ]
 
@@ -508,7 +513,8 @@ defmodule TransactionTest do
 
     assert [
              {:connect, _},
-             {:handle_begin, [_, :state]} | _
+             {:handle_begin, [_, :state]},
+             {:disconnect, _} | _
            ] = A.record(agent)
   end
 
@@ -623,6 +629,7 @@ defmodule TransactionTest do
       end,
       {:ok, :began, :new_state},
       :oops,
+      :ok,
       {:ok, :state}
     ]
 
@@ -652,7 +659,8 @@ defmodule TransactionTest do
     assert [
              {:connect, _},
              {:handle_begin, [_, :state]},
-             {:handle_commit, [_, :new_state]} | _
+             {:handle_commit, [_, :new_state]},
+             {:disconnect, _} | _
            ] = A.record(agent)
   end
 
@@ -667,6 +675,7 @@ defmodule TransactionTest do
       fn _, _ ->
         raise "oops"
       end,
+      :ok,
       {:ok, :state}
     ]
 
@@ -690,7 +699,8 @@ defmodule TransactionTest do
     assert [
              {:connect, _},
              {:handle_begin, [_, :state]},
-             {:handle_commit, [_, :new_state]} | _
+             {:handle_commit, [_, :new_state]},
+             {:disconnect, _} | _
            ] = A.record(agent)
   end
 
@@ -704,6 +714,7 @@ defmodule TransactionTest do
       fn _, _ ->
         raise "oops"
       end,
+      :ok,
       {:ok, :state2}
     ]
 
@@ -739,7 +750,8 @@ defmodule TransactionTest do
     assert [
              {:connect, [_]},
              {:handle_begin, [_, :state]},
-             {:handle_commit, [_, :new_state]} | _
+             {:handle_commit, [_, :new_state]},
+             {:disconnect, _} | _
            ] = A.record(agent)
   end
 
@@ -803,6 +815,7 @@ defmodule TransactionTest do
       fn _, _ ->
         raise "oops"
       end,
+      :ok,
       {:ok, :state2}
     ]
 
@@ -838,7 +851,8 @@ defmodule TransactionTest do
     assert [
              {:connect, [_]},
              {:handle_begin, [_, :state]},
-             {:handle_rollback, [_, :new_state]} | _
+             {:handle_rollback, [_, :new_state]},
+             {:disconnect, _} | _
            ] = A.record(agent)
   end
 

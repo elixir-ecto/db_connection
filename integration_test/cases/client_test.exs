@@ -220,6 +220,7 @@ defmodule ClientTest do
       fn _, _, _, _ ->
         throw(:oops)
       end,
+      :ok,
       fn opts ->
         send(opts[:parent], :reconnected)
         {:ok, :new_state}
@@ -262,6 +263,7 @@ defmodule ClientTest do
              {:connect, _},
              {:handle_status, _},
              {:handle_execute, [%Q{}, [:first], _, :state]},
+             {:disconnect, _},
              {:connect, _},
              {:handle_status, _},
              {:handle_status, _},

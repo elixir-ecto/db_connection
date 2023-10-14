@@ -211,6 +211,7 @@ defmodule PrepareExecuteTest do
       fn _, _, _ ->
         raise "oops"
       end,
+      :ok,
       {:ok, :state2}
     ]
 
@@ -247,7 +248,8 @@ defmodule PrepareExecuteTest do
 
     assert [
              {:connect, [_]},
-             {:handle_prepare, [%Q{}, _, :state]} | _
+             {:handle_prepare, [%Q{}, _, :state]},
+             {:disconnect, _} | _
            ] = A.record(agent)
   end
 
@@ -399,6 +401,7 @@ defmodule PrepareExecuteTest do
       fn _, _, _, _ ->
         raise "oops"
       end,
+      :ok,
       {:ok, :state2}
     ]
 
@@ -436,7 +439,8 @@ defmodule PrepareExecuteTest do
     assert [
              {:connect, [_]},
              {:handle_prepare, [%Q{}, _, :state]},
-             {:handle_execute, [%Q{}, [:param], _, :new_state]} | _
+             {:handle_execute, [%Q{}, [:param], _, :new_state]},
+             {:disconnect, _} | _
            ] = A.record(agent)
   end
 

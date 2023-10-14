@@ -608,6 +608,7 @@ defmodule ManagerTest do
       {:ok, :state},
       {:idle, :state},
       :oops,
+      :ok,
       fn opts ->
         send(opts[:parent], :reconnected)
         {:ok, :state}

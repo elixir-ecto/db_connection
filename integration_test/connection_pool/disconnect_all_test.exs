@@ -11,7 +11,7 @@ defmodule TestPoolDisconnectAll do
       {:ok, :state},
       {:ok, %Q{}, %R{}, :new_state1},
       {:ok, %Q{}, %R{}, :new_state2},
-      {:ok, :dead_state},
+      :ok,
       {:ok, :final_state},
       {:ok, %Q{}, %R{}, :final_state1},
       {:ok, %Q{}, %R{}, :final_state2}
@@ -50,7 +50,7 @@ defmodule TestPoolDisconnectAll do
       {:ok, %Q{}, %R{}, :new_state},
       fn _, _ ->
         send(parent, :disconnecting)
-        {:ok, :dead_state}
+        :ok
       end,
       {:ok, :final_state},
       {:ok, %Q{}, %R{}, :final_state1},
