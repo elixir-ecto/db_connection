@@ -65,10 +65,6 @@ defmodule DBConnection.Connection do
   @doc false
   @impl :gen_statem
   def init({mod, opts, pool, tag}) do
-    if opts[:disconnect_on_terminate] do
-      Process.flag(:trap_exit, true)
-    end
-
     s = %{
       mod: mod,
       opts: opts,

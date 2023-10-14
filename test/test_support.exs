@@ -71,6 +71,10 @@ defmodule TestConnection do
   def start_link(opts), do: DBConnection.start_link(__MODULE__, opts)
 
   def connect(opts) do
+    if opts[:disconnect_on_terminate] do
+      Process.flag(:trap_exit, true)
+    end
+
     put_agent_from_opts(opts)
     TestAgent.eval(:connect, [opts])
   end
