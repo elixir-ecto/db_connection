@@ -2,7 +2,7 @@ defmodule TestConnection do
   defmacro __using__(opts) do
     quote do
       def start_link(opts2) do
-        defaults = [backoff_type: :exp, backoff_min: 200, disconnect_on_terminate: true]
+        defaults = [backoff_type: :exp, backoff_min: 200]
         TestConnection.start_link(opts2 ++ unquote(opts) ++ defaults)
       end
 
@@ -71,10 +71,7 @@ defmodule TestConnection do
   def start_link(opts), do: DBConnection.start_link(__MODULE__, opts)
 
   def connect(opts) do
-    if opts[:disconnect_on_terminate] do
-      Process.flag(:trap_exit, true)
-    end
-
+    Process.flag(:trap_exit, true)
     put_agent_from_opts(opts)
     TestAgent.eval(:connect, [opts])
   end

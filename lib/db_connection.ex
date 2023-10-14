@@ -354,11 +354,10 @@ defmodule DBConnection do
   processing a request, the last known state will be sent and the exception
   will be a `DBConnection.ConnectionError`.
 
-  If option `disconnect_on_terminate: true` is given to the `connect` callback,
-  the last known state will be sent and the exception will be a `DBConnection.ConnectionError`
-  containing the reason for the exit. This callback will be called from `terminate/3`
-  and it will only happen if the connection was not previously disconnected.
-  For example, using `disconnect_all/3`.
+  When the connection is stopped, this callback will be invoked from `terminate`.
+  The last known state will be sent and the exception will be a `DBConnection.ConnectionError`
+  containing the reason for the exit. To have the same happen on unexpected
+  shutdowns, you may trap exits from the `connect` callback.
 
   """
   @callback disconnect(err :: Exception.t(), state :: any) :: :ok
