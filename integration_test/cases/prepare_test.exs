@@ -167,6 +167,7 @@ defmodule PrepareTest do
       fn _, _, _ ->
         raise "oops"
       end,
+      :ok,
       {:ok, :state2}
     ]
 
@@ -203,7 +204,8 @@ defmodule PrepareTest do
 
     assert [
              {:connect, [_]},
-             {:handle_prepare, [%Q{}, _, :state]} | _
+             {:handle_prepare, [%Q{}, _, :state]},
+             {:disconnect, _} | _
            ] = A.record(agent)
   end
 

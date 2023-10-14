@@ -813,6 +813,7 @@ defmodule TransactionTest do
       fn _, _ ->
         raise "oops"
       end,
+      :ok,
       {:ok, :state2}
     ]
 
@@ -848,7 +849,8 @@ defmodule TransactionTest do
     assert [
              {:connect, [_]},
              {:handle_begin, [_, :state]},
-             {:handle_rollback, [_, :new_state]} | _
+             {:handle_rollback, [_, :new_state]},
+             {:disconnect, _} | _
            ] = A.record(agent)
   end
 
