@@ -65,7 +65,9 @@ defmodule DBConnection.Connection do
   @doc false
   @impl :gen_statem
   def init({mod, opts, pool, tag}) do
-    Process.flag(:trap_exit, true)
+    if opts[:disconnect_on_terminate] do
+      Process.flag(:trap_exit, true)
+    end
 
     s = %{
       mod: mod,
@@ -78,7 +80,8 @@ defmodule DBConnection.Connection do
       backoff: Backoff.new(opts),
       connection_listeners: Keyword.get(opts, :connection_listeners, []),
       after_connect: Keyword.get(opts, :after_connect),
-      after_connect_timeout: Keyword.get(opts, :after_connect_timeout, @timeout)
+      after_connect_timeout: Keyword.get(opts, :after_connect_timeout, @timeout),
+      disconnect_on_terminate: opts[:disconnect_on_terminate]
     }
 
     {:ok, :no_state, s, {:next_event, :internal, {:connect, :init}}}
@@ -359,10 +362,16 @@ defmodule DBConnection.Connection do
   # and cleanup is not required.
   def terminate(_, _, %{client: :closed}), do: :ok
 
-  def terminate(reason, _, s) do
+  def terminate(reason, _, %{disconnect_on_terminate: true} = s) do
     %{mod: mod, state: state} = s
-    mod.disconnect(reason, state)
+    msg = "connection exited: " <> Exception.format_exit(reason)
+
+    msg
+    |> DBConnection.ConnectionError.exception()
+    |> mod.disconnect(state)
   end
+
+  def terminate(_, _, _), do: :ok
 
   @doc false
   @impl :gen_statem
