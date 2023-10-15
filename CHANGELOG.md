@@ -1,5 +1,14 @@
 # Changelog
 
+## v2.6.0 (2023-10-15)
+
+* Enhancements
+  * Call `disconnect` on terminate
+  * Allow `handle_begin` callbacks to return query for logging purposes
+  * Add `:connection_listeners_tag`
+  * Add `DBConnection.available_connection_options/0`
+  * Add `DBConnection.available_start_options/0`
+
 ## v2.5.0 (2023-04-10)
 
 * Internal changes
