@@ -68,7 +68,7 @@ defmodule DBConnection do
   ## Connection pools
 
   DBConnection connections support using different pools via the `:pool` option
-  passed to `start_link/1`. The default pool is `DBConnection.ConnectionPool`.
+  passed to `start_link/2`. The default pool is `DBConnection.ConnectionPool`.
   Another supported pool that is commonly used for tests is `DBConnection.Ownership`.
 
   For now, using *custom* pools is not supported since the API for pools is not
@@ -509,7 +509,7 @@ defmodule DBConnection do
       end
 
   You can then start it, pass the PID in the `connection_listeners`
-  option on `DBConnection.start_link/1` and, when needed, can query the notifications:
+  option on `DBConnection.start_link/2` and, when needed, can query the notifications:
 
       {:ok, pid} = DBConnectionListener.start_link([])
       {:ok, _conn} = DBConnection.start_link(SomeModule, [connection_listeners: [pid]])
