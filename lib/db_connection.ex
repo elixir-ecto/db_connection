@@ -404,7 +404,7 @@ defmodule DBConnection do
       in `GenServer.start_link/3`)
     * `:pool` - Chooses the pool to be started (default: `DBConnection.ConnectionPool`). See
       ["Connection pools"](#module-connection-pools).
-    * `:pool_size` - Chooses the size of the pool (default: `1`)
+    * `:pool_size` - Chooses the size of the pool. Must be greater or equal to 1. (default: `1`)
     * `:idle_interval` - Controls the frequency we check for idle connections
       in the pool. We then notify each idle connection to ping the database.
       In practice, the ping happens within `idle_interval <= ping < 2 * idle_interval`.
