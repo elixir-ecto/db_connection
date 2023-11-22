@@ -17,7 +17,7 @@ defmodule DBConnection.ConnectionPool.Pool do
   def init({owner, tag, mod, opts}) do
     size = Keyword.get(opts, :pool_size, 1)
 
-    if size < 1, do: raise(ArgumentError, "Pool size must be greater or equal to 1. Got #{size}.")
+    if size < 1, do: raise(ArgumentError, "pool size must be greater or equal to 1, got #{size}")
 
     children = for id <- 1..size, do: conn(owner, tag, id, mod, opts)
     sup_opts = [strategy: :one_for_one] ++ Keyword.take(opts, [:max_restarts, :max_seconds])
