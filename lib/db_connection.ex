@@ -526,7 +526,7 @@ defmodule DBConnection do
 
   ## Connection Configuration Callback
 
-  The `:configure` callback will be called before each individual connection to the
+  The `:configure` function will be called before each individual connection to the
   database is made. It receives all of the options provided to `start_link/2` as well
   as an additional generated value named `:pool_index`. The returned value will be
   passed as the options into the appropriate `:connect` callback. This provides a way
