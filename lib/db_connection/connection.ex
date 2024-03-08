@@ -325,6 +325,11 @@ defmodule DBConnection.Connection do
     end
   end
 
+  # We discard EXIT messages which may arrive if the process is trapping exits
+  def handle_event(:info, {:EXIT, _, _}, :no_state, s) do
+    handle_timeout(s)
+  end
+
   def handle_event(:info, msg, :no_state, %{mod: mod} = s) do
     Logger.info(fn ->
       [inspect(mod), ?\s, ?(, inspect(self()), ") missed message: " | inspect(msg)]
