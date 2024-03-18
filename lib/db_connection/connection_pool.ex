@@ -10,6 +10,7 @@ defmodule DBConnection.ConnectionPool do
 
   use GenServer
   alias DBConnection.Holder
+  alias DBConnection.ConnectionPool.Metrics
 
   @behaviour DBConnection.Pool
 
@@ -17,8 +18,6 @@ defmodule DBConnection.ConnectionPool do
   @queue_interval 1000
   @idle_interval 1000
   @time_unit 1000
-  @active_counter_idx 1
-  @waiting_counter_idx 2
 
   @doc false
   def start_link({mod, opts}) do
@@ -60,9 +59,9 @@ defmodule DBConnection.ConnectionPool do
     {:ok, _} = DBConnection.ConnectionPool.Pool.start_supervised(queue, mod, opts)
     target = Keyword.get(opts, :queue_target, @queue_target)
     interval = Keyword.get(opts, :queue_interval, @queue_interval)
-    idle_interval = Keyword.get(opts, :idle_interval, @idle_interval)
-    idle_limit = Keyword.get_lazy(opts, :idle_limit, fn -> Keyword.get(opts, :pool_size, 1) end)
     pool_size = Keyword.get(opts, :pool_size, 1)
+    idle_interval = Keyword.get(opts, :idle_interval, @idle_interval)
+    idle_limit = Keyword.get(opts, :idle_limit, pool_size)
     now_in_native = System.monotonic_time()
     now_in_ms = System.convert_time_unit(now_in_native, :native, @time_unit)
 
@@ -78,9 +77,7 @@ defmodule DBConnection.ConnectionPool do
       idle: nil
     }
 
-    metrics = :counters.new(2, [])
-    # as the pool starts, connections are checked in and should decrement this to 0
-    :counters.put(metrics, @active_counter_idx, pool_size)
+    metrics = Metrics.new(pool_size)
 
     codel = start_idle(now_in_native, start_poll(now_in_ms, now_in_ms, codel))
     {:ok, {:busy, queue, codel, ts, metrics}}
@@ -93,9 +90,7 @@ defmodule DBConnection.ConnectionPool do
   end
 
   def handle_call(:get_metrics, _from, {_, _, _, _, metrics} = state) do
-    active = :counters.get(metrics, @active_counter_idx)
-    waiting = :counters.get(metrics, @waiting_counter_idx)
-    {:reply, %{active: active, waiting: waiting}, state}
+    {:reply, Metrics.get(metrics), state}
   end
 
   @impl GenServer
@@ -106,7 +101,7 @@ defmodule DBConnection.ConnectionPool do
     case queue? do
       true ->
         :ets.insert(queue, {{now, System.unique_integer(), from}})
-        :counters.add(metrics, @waiting_counter_idx, 1)
+        Metrics.queue(metrics)
         {:noreply, {:busy, queue, codel, ts, metrics}}
 
       false ->
@@ -124,7 +119,7 @@ defmodule DBConnection.ConnectionPool do
     case :ets.first(queue) do
       {queued_in_native, holder} = key ->
         Holder.handle_checkout(holder, from, queue, queued_in_native) and :ets.delete(queue, key)
-        :counters.add(metrics, @active_counter_idx, 1)
+        Metrics.checkout(metrics, false)
         {:noreply, {:ready, queue, codel, ts, metrics}}
 
       :"$end_of_table" ->
@@ -220,7 +215,7 @@ defmodule DBConnection.ConnectionPool do
          {queued_in_native, holder} = key when queued_in_native <= past_in_native <-
            :ets.first(queue) do
       :ets.delete(queue, key)
-      :counters.add(metrics, @active_counter_idx, 1)
+      Metrics.checkout(metrics, false)
       Holder.maybe_disconnect(holder, elem(ts, 0), 0) or Holder.handle_ping(holder)
       drop_idle(past_in_native, limit - 1, status, queue, codel, ts, metrics)
     else
@@ -254,7 +249,7 @@ defmodule DBConnection.ConnectionPool do
 
     for {sent, from} <- :ets.select(queue, select_slow) do
       drop(time - sent, from)
-      :counters.sub(metrics, @waiting_counter_idx, 1)
+      Metrics.dequeue(metrics)
     end
 
     :ets.select_delete(queue, [{match, guards, [true]}])
@@ -262,13 +257,14 @@ defmodule DBConnection.ConnectionPool do
 
   defp handle_checkin(holder, now_in_native, {:ready, queue, codel, ts, metrics} = _data) do
     :ets.insert(queue, {{now_in_native, holder}})
-    :counters.sub(metrics, @active_counter_idx, 1)
+    Metrics.checkin(metrics)
     {:noreply, {:ready, queue, codel, ts, metrics}}
   end
 
   defp handle_checkin(holder, now_in_native, {:busy, queue, codel, ts, metrics}) do
     now_in_ms = System.convert_time_unit(now_in_native, :native, @time_unit)
-    :counters.sub(metrics, @active_counter_idx, 1)
+    Metrics.checkin(metrics)
+
     case dequeue(now_in_ms, holder, queue, codel, ts, metrics) do
       {:busy, _, _, _, _} = busy ->
         {:noreply, busy}
@@ -325,7 +321,7 @@ defmodule DBConnection.ConnectionPool do
       {sent, _, from} = key when time - sent > timeout ->
         :ets.delete(queue, key)
         drop(time - sent, from)
-        :counters.sub(metrics, @waiting_counter_idx, 1)
+        Metrics.dequeue(metrics)
         dequeue_slow(time, timeout, holder, queue, codel, ts, metrics)
 
       {sent, _, from} = key ->
@@ -340,14 +336,11 @@ defmodule DBConnection.ConnectionPool do
   defp go(delay, from, time, holder, queue, %{delay: min} = codel, ts, metrics) do
     case Holder.handle_checkout(holder, from, queue, 0) do
       true when delay < min ->
-        :counters.sub(metrics, @waiting_counter_idx, 1)
-        :counters.add(metrics, @active_counter_idx, 1)
+        Metrics.checkout(metrics, true)
         {:busy, queue, %{codel | delay: delay}, ts, metrics}
 
       true ->
-
-        :counters.sub(metrics, @waiting_counter_idx, 1)
-        :counters.add(metrics, @active_counter_idx, 1)
+        Metrics.checkout(metrics, true)
         {:busy, queue, codel, ts, metrics}
 
       false ->
