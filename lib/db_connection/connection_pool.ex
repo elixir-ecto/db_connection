@@ -127,8 +127,9 @@ defmodule DBConnection.ConnectionPool do
     end
   end
 
-  def handle_info({:"ETS-TRANSFER", holder, pid, queue}, {_, queue, _, _, _} = data) do
+  def handle_info({:"ETS-TRANSFER", holder, pid, queue}, {_, queue, _, _, metrics} = data) do
     message = "client #{inspect(pid)} exited"
+    Metrics.checkin(metrics)
     err = DBConnection.ConnectionError.exception(message: message, severity: :info)
     Holder.handle_disconnect(holder, err)
     {:noreply, data}
@@ -257,13 +258,11 @@ defmodule DBConnection.ConnectionPool do
 
   defp handle_checkin(holder, now_in_native, {:ready, queue, codel, ts, metrics} = _data) do
     :ets.insert(queue, {{now_in_native, holder}})
-    Metrics.checkin(metrics)
     {:noreply, {:ready, queue, codel, ts, metrics}}
   end
 
   defp handle_checkin(holder, now_in_native, {:busy, queue, codel, ts, metrics}) do
     now_in_ms = System.convert_time_unit(now_in_native, :native, @time_unit)
-    Metrics.checkin(metrics)
 
     case dequeue(now_in_ms, holder, queue, codel, ts, metrics) do
       {:busy, _, _, _, _} = busy ->

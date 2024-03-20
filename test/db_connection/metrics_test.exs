@@ -1,5 +1,6 @@
 defmodule DBConnection.MetricsTest do
   use ExUnit.Case, async: false
+  import DBConnection.ConnectionPool, only: [get_connection_metrics: 1]
 
   defmodule DummyDB do
     use DBConnection
@@ -52,10 +53,140 @@ defmodule DBConnection.MetricsTest do
       receive do
         :checkout -> :ok
       after
-        1_000 -> throw("Checkout timeout")
+        100 -> throw("Checkout timeout")
       end
 
       DummyDB.checkout(state)
+    end
+  end
+
+  defmodule DelayedPoolManager do
+    defmodule State do
+      defstruct [
+        :queued,
+        :free_connections,
+        :checkouted,
+        :checkined,
+        :test_pid,
+        :pool,
+        :pool_size,
+        :confirmed_checkouts
+      ]
+    end
+
+    def new(test_pid, pool, pool_size) do
+      await_checkout_requests(
+        %State{
+          queued: 0,
+          checkouted: 0,
+          checkined: 0,
+          free_connections: [],
+          test_pid: test_pid,
+          pool: pool,
+          pool_size: pool_size,
+          confirmed_checkouts: []
+        },
+        pool_size
+      )
+    end
+
+    def queue(%State{queued: queued} = state, n) do
+      for _ <- 1..n, do: spawn_with_delay(state)
+
+      # We wait for tasks to queue
+      Process.sleep(5)
+      %State{state | queued: queued + n}
+    end
+
+    def checkout(
+          %State{free_connections: free_connections, checkouted: checkouted, queued: queued} =
+            state,
+          n
+        ) do
+      free_connections_len = length(free_connections)
+
+      if n > free_connections_len || n > queued - checkouted do
+        throw("To many checkout requests #{n}")
+      end
+
+      {processes_to_checkout, new_free_connections} = Enum.split(free_connections, n)
+      Enum.each(processes_to_checkout, &send(&1, :checkout))
+      new_state = await_checkout_confirmation(state, n)
+      %State{new_state | free_connections: new_free_connections, checkouted: checkouted + n}
+    end
+
+    def checkin(%State{confirmed_checkouts: confirmed_checkouts, checkined: checkined} = state, n) do
+      confirmed_checkouts_len = length(confirmed_checkouts)
+
+      if n > confirmed_checkouts_len do
+        throw("To many confirmed checkouts")
+      end
+
+      {processes_to_checkin, new_confirmed_checkouts} = Enum.split(confirmed_checkouts, n)
+      Enum.each(processes_to_checkin, &await_checkin_with_confirmation/1)
+      # Unfortunately we haven't a way to fully confirm a checkin so we have to wait
+      Process.sleep(5)
+
+      new_state = %State{
+        state
+        | confirmed_checkouts: new_confirmed_checkouts,
+          checkined: checkined + n
+      }
+
+      await_checkout_requests(new_state, n)
+    end
+
+    defp await_checkin_with_confirmation(process_pid) do
+      send(process_pid, :checkin)
+
+      receive do
+        {:DOWN, _, :process, ^process_pid, :normal} ->
+          :ok
+      after
+        5 -> throw("Process hasn't finished yet")
+      end
+    end
+
+    defp await_checkout_confirmation(%State{confirmed_checkouts: confirmed_checkouts} = state, n) do
+      new_confirmed_checkouts =
+        Enum.map(1..n, fn _ ->
+          receive do
+            {:checked_out, process_pid} ->
+              process_pid
+          after
+            100 -> throw("Not checked in")
+          end
+        end)
+
+      %State{state | confirmed_checkouts: confirmed_checkouts ++ new_confirmed_checkouts}
+    end
+
+    defp await_checkout_requests(%State{free_connections: free_connections} = state, n) do
+      new_free_connections =
+        Enum.map(1..n, fn i ->
+          receive do
+            {:checkout_request, process_pid} ->
+              process_pid
+          after
+            100 -> throw("Not requested #{i} #{n}")
+          end
+        end)
+
+      %State{state | free_connections: free_connections ++ new_free_connections}
+    end
+
+    defp spawn_with_delay(%State{pool: pool, test_pid: test_pid}) do
+      spawn_monitor(fn ->
+        process_pid = self()
+        _conn = DBConnection.ConnectionPool.checkout(pool, [process_pid], [])
+        send(test_pid, {:checked_out, process_pid})
+
+        receive do
+          :checkin -> :ok
+        after
+          1_000 -> throw("Checkin timeout")
+        end
+      end)
     end
   end
 
@@ -63,7 +194,7 @@ defmodule DBConnection.MetricsTest do
     opts = [pool_size: 300]
     {:ok, pool} = DBConnection.ConnectionPool.start_link({DummyDB, opts})
 
-    %{active: active, waiting: waiting} = DBConnection.ConnectionPool.get_connection_metrics(pool)
+    %{active: active, waiting: waiting} = get_connection_metrics(pool)
     assert active == 0
     assert waiting == 0
   end
@@ -73,145 +204,125 @@ defmodule DBConnection.MetricsTest do
     {:ok, pool} = DBConnection.ConnectionPool.start_link({DummyDB, opts})
 
     DBConnection.ConnectionPool.checkout(pool, [self()], [])
-    %{active: active, waiting: waiting} = DBConnection.ConnectionPool.get_connection_metrics(pool)
+    %{active: active, waiting: waiting} = get_connection_metrics(pool)
 
     assert active == 1
     assert waiting == 0
 
     for _ <- 1..150, do: DBConnection.ConnectionPool.checkout(pool, [self()], [])
 
-    %{active: active, waiting: waiting} = DBConnection.ConnectionPool.get_connection_metrics(pool)
+    %{active: active, waiting: waiting} = get_connection_metrics(pool)
     assert active == 151
     assert waiting == 0
   end
 
-  test "pool increments and decrements when all connections are in use" do
-    opts = [pool_size: 10]
-    {:ok, pool} = DBConnection.ConnectionPool.start_link({DummyDB, opts})
-
-    %{active: 0, waiting: 0} = DBConnection.ConnectionPool.get_connection_metrics(pool)
-
+  test "pool increments and decrements when the checkout function is slow one connection" do
     test_pid = self()
-
-    for _i <- 1..15 do
-      spawn_with_delay(pool, test_pid)
-    end
-
-    # We should wait becouse &DBConnection.Holder.checkout/3 send message to pool server in unpredictable time
-    # In most cases sleep time less than 1 ms, but it depends on hardware
-    await_while(build_active_predicate(pool, 10), 1, 100)
-    %{active: 10, waiting: 5} = DBConnection.ConnectionPool.get_connection_metrics(pool)
-    checkin(7)
-
-    await_while(build_active_predicate(pool, 8), 1, 100)
-    %{active: 8, waiting: 0} = DBConnection.ConnectionPool.get_connection_metrics(pool)
-    checkin(8)
-
-    await_while(build_active_predicate(pool, 0), 1, 100)
-    %{active: 0, waiting: 0} = DBConnection.ConnectionPool.get_connection_metrics(pool)
-  end
-
-  test "pool increments and decrements when the checkout function is slow" do
-    test_pid = self()
-    opts = [pool_size: 10, test_pid: test_pid]
+    pool_size = 10
+    opts = [pool_size: pool_size, test_pid: test_pid]
     {:ok, pool} = DBConnection.ConnectionPool.start_link({DelayedDummyDB, opts})
 
-    %{active: 0, waiting: 0} = DBConnection.ConnectionPool.get_connection_metrics(pool)
+    manager = DelayedPoolManager.new(test_pid, pool, pool_size)
 
-    for _i <- 1..15 do
-      spawn_with_delay(pool, test_pid)
-    end
+    %{active: 0, waiting: 0} = get_connection_metrics(pool)
 
-    await_while(build_waiting_predicate(pool, 15), 1, 100)
-
-    # We should checkout (pool_size = 10 = 6 + 4) connections when pool is starting
-    checkout(4)
-    await_while(build_waiting_predicate(pool, 11), 1, 100)
-    %{active: 4, waiting: 11} = DBConnection.ConnectionPool.get_connection_metrics(pool)
-    checkout(6)
-    await_while(build_waiting_predicate(pool, 5), 1, 100)
-    %{active: 10, waiting: 5} = DBConnection.ConnectionPool.get_connection_metrics(pool)
-
-    # We should checkout and checkin as many connection as many task we have (in our case 15)
-    # checkins 7 + 6 + 2 = 15
-    # checkouts 3 + 3 + 2 + 7 = 15
-    checkin(7)
-    checkout(3)
-    await_while(build_waiting_predicate(pool, 2), 1, 100)
-    %{active: 10, waiting: 2} = DBConnection.ConnectionPool.get_connection_metrics(pool)
-    checkin(6)
-    checkout(3)
-    checkout(2)
-    await_while(build_waiting_predicate(pool, 0), 1, 100)
-    %{active: 7, waiting: 0} = DBConnection.ConnectionPool.get_connection_metrics(pool)
-    checkin(2)
-    checkout(7)
-    await_while(build_active_predicate(pool, 0), 1, 100)
-    %{active: 0, waiting: 0} = DBConnection.ConnectionPool.get_connection_metrics(pool)
+    manager = DelayedPoolManager.queue(manager, 1)
+    %{active: 0, waiting: 1} = get_connection_metrics(pool)
+    manager = DelayedPoolManager.checkout(manager, 1)
+    %{active: 1, waiting: 0} = get_connection_metrics(pool)
+    _manager = DelayedPoolManager.checkin(manager, 1)
+    %{active: 0, waiting: 0} = get_connection_metrics(pool)
   end
 
-  defp build_active_predicate(pool, expected_active) do
-    fn ->
-      %{active: active} = DBConnection.ConnectionPool.get_connection_metrics(pool)
-      active == expected_active
-    end
+  test "pool increments and decrements when the checkout function is slow few connection" do
+    test_pid = self()
+    pool_size = 10
+    opts = [pool_size: pool_size, test_pid: test_pid]
+    {:ok, pool} = DBConnection.ConnectionPool.start_link({DelayedDummyDB, opts})
+
+    manager = DelayedPoolManager.new(test_pid, pool, pool_size)
+
+    %{active: 0, waiting: 0} = get_connection_metrics(pool)
+
+    manager = DelayedPoolManager.queue(manager, 3)
+    %{active: 0, waiting: 3} = get_connection_metrics(pool)
+    manager = DelayedPoolManager.checkout(manager, 2)
+    %{active: 2, waiting: 1} = get_connection_metrics(pool)
+    manager = DelayedPoolManager.checkin(manager, 1)
+    %{active: 1, waiting: 1} = get_connection_metrics(pool)
+    manager = DelayedPoolManager.checkout(manager, 1)
+    %{active: 2, waiting: 0} = get_connection_metrics(pool)
+    _manager = DelayedPoolManager.checkin(manager, 2)
+    %{active: 0, waiting: 0} = get_connection_metrics(pool)
   end
 
-  defp build_waiting_predicate(pool, expected_waiting) do
-    fn ->
-      %{waiting: waiting} = DBConnection.ConnectionPool.get_connection_metrics(pool)
-      waiting == expected_waiting
-    end
+  test "pool increments and decrements when the checkout function is slow many connections" do
+    test_pid = self()
+    pool_size = 10
+    opts = [pool_size: pool_size, test_pid: test_pid]
+    {:ok, pool} = DBConnection.ConnectionPool.start_link({DelayedDummyDB, opts})
+
+    manager = DelayedPoolManager.new(test_pid, pool, pool_size)
+
+    %{active: 0, waiting: 0} = get_connection_metrics(pool)
+
+    manager = DelayedPoolManager.queue(manager, 15)
+    %{active: 0, waiting: 15} = get_connection_metrics(pool)
+
+    # 15 = (checkouts) 4 + 6 + 3 + 2 = (checkins) 1 + 7 + 5 + 2
+    manager = DelayedPoolManager.checkout(manager, 4)
+    %{active: 4, waiting: 11} = get_connection_metrics(pool)
+    manager = DelayedPoolManager.checkin(manager, 1)
+    %{active: 3, waiting: 11} = get_connection_metrics(pool)
+    manager = DelayedPoolManager.checkout(manager, 6)
+    %{active: 9, waiting: 5} = get_connection_metrics(pool)
+    manager = DelayedPoolManager.checkin(manager, 7)
+    %{active: 2, waiting: 5} = get_connection_metrics(pool)
+    manager = DelayedPoolManager.checkout(manager, 3)
+    %{active: 5, waiting: 2} = get_connection_metrics(pool)
+    manager = DelayedPoolManager.checkin(manager, 5)
+    %{active: 0, waiting: 2} = get_connection_metrics(pool)
+    manager = DelayedPoolManager.checkout(manager, 2)
+    %{active: 2, waiting: 0} = get_connection_metrics(pool)
+    _manager = DelayedPoolManager.checkin(manager, 2)
+    %{active: 0, waiting: 0} = get_connection_metrics(pool)
   end
 
-  defp await_while(predicate, frequency, retrys) do
-    if retrys == 0, do: throw("await timeout")
-    Process.sleep(frequency)
-    if predicate.(), do: :ok, else: await_while(predicate, frequency, retrys - 1)
-  end
+  test "pool increments and decrements when the checkout function is slow dynamic connections" do
+    test_pid = self()
+    pool_size = 10
+    opts = [pool_size: pool_size, test_pid: test_pid]
+    {:ok, pool} = DBConnection.ConnectionPool.start_link({DelayedDummyDB, opts})
 
-  defp checkout(n), do: Enum.each(1..n, fn _ -> checkout() end)
+    manager = DelayedPoolManager.new(test_pid, pool, pool_size)
 
-  defp checkout() do
-    receive do
-      {:checkout_request, process_pid} ->
-        send(process_pid, :checkout)
-    after
-      1_000 -> throw("Not checked in")
-    end
-  end
+    %{active: 0, waiting: 0} = get_connection_metrics(pool)
 
-  defp checkin(n), do: Enum.each(1..n, fn _ -> checkin() end)
+    manager = DelayedPoolManager.queue(manager, 15)
+    %{active: 0, waiting: 15} = get_connection_metrics(pool)
 
-  defp checkin() do
-    process_pid =
-      receive do
-        {:checked_out, process_pid} ->
-          send(process_pid, :checkin)
-          process_pid
-      after
-        1_000 -> throw("Not checked in")
-      end
+    manager = DelayedPoolManager.checkout(manager, 4)
+    %{active: 4, waiting: 11} = get_connection_metrics(pool)
+    manager = DelayedPoolManager.checkin(manager, 1)
+    %{active: 3, waiting: 11} = get_connection_metrics(pool)
+    manager = DelayedPoolManager.checkout(manager, 6)
+    %{active: 9, waiting: 5} = get_connection_metrics(pool)
+    manager = DelayedPoolManager.checkin(manager, 7)
+    %{active: 2, waiting: 5} = get_connection_metrics(pool)
+    manager = DelayedPoolManager.checkout(manager, 3)
+    %{active: 5, waiting: 2} = get_connection_metrics(pool)
 
-    receive do
-      {:DOWN, _, :process, ^process_pid, :normal} ->
-        :ok
-    after
-      1_000 -> throw("Process hasn't finished yet")
-    end
-  end
-
-  defp spawn_with_delay(pool, test_pid) do
-    spawn_monitor(fn ->
-      process_pid = self()
-      DBConnection.ConnectionPool.checkout(pool, [self()], [])
-      send(test_pid, {:checked_out, process_pid})
-
-      receive do
-        :checkin -> :ok
-      after
-        1_000 -> throw("Checkin timeout")
-      end
-    end)
+    manager = DelayedPoolManager.queue(manager, 15)
+    %{active: 5, waiting: 17} = get_connection_metrics(pool)
+    manager = DelayedPoolManager.checkin(manager, 5)
+    %{active: 0, waiting: 17} = get_connection_metrics(pool)
+    manager = DelayedPoolManager.checkout(manager, 8)
+    %{active: 8, waiting: 9} = get_connection_metrics(pool)
+    manager = DelayedPoolManager.checkin(manager, 8)
+    %{active: 0, waiting: 9} = get_connection_metrics(pool)
+    manager = DelayedPoolManager.checkout(manager, 9)
+    %{active: 9, waiting: 0} = get_connection_metrics(pool)
+    _manager = DelayedPoolManager.checkin(manager, 9)
+    %{active: 0, waiting: 0} = get_connection_metrics(pool)
   end
 end
