@@ -41,10 +41,13 @@ defmodule DBConnection.ConnectionPool do
   end
 
   @doc """
-  Returns connection metrics in the shape of %{
-      ready_conn_count: N,
-      checkout_queue_length: N
-    }
+  Returns connection metrics as a map in the shape of:
+
+      %{
+        ready_conn_count: integer(),
+        checkout_queue_length: integer()
+      }
+
   """
   def get_connection_metrics(pool) do
     GenServer.call(pool, :get_connection_metrics)
