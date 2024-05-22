@@ -19,6 +19,7 @@ defmodule TestConnection do
       end
 
       defdelegate rollback(conn, reason), to: DBConnection
+      defdelegate get_connection_metrics(pool), to: DBConnection.ConnectionPool
 
       def prepare(pool, query, opts2 \\ []) do
         DBConnection.prepare(pool, query, opts2 ++ unquote(opts))

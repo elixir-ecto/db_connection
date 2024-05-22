@@ -40,6 +40,16 @@ defmodule DBConnection.ConnectionPool do
     GenServer.call(pool, {:disconnect_all, interval}, :infinity)
   end
 
+  @doc """
+  Returns connection metrics in the shape of %{
+      ready_conn_count: N,
+      checkout_queue_length: N
+    }
+  """
+  def get_connection_metrics(pool) do
+    GenServer.call(pool, :get_connection_metrics)
+  end
+
   ## GenServer api
 
   @impl GenServer
@@ -73,9 +83,27 @@ defmodule DBConnection.ConnectionPool do
   end
 
   @impl GenServer
-  def handle_call({:disconnect_all, interval}, _from, {status, queue, codel, _ts}) do
+  def handle_call(:get_connection_metrics, _from, {status, queue, _, _} = state) do
+    {ready_conn_count, checkout_queue_length} =
+      case status do
+        :busy ->
+          {0, :ets.select_count(queue, [{{{:_, :_, :_}}, [], [true]}])}
+
+        :ready ->
+          {:ets.select_count(queue, [{{{:_, :_}}, [], [true]}]), 0}
+      end
+
+    metrics = %{
+      ready_conn_count: ready_conn_count,
+      checkout_queue_length: checkout_queue_length
+    }
+
+    {:reply, metrics, state}
+  end
+
+  def handle_call({:disconnect_all, interval}, _from, {type, queue, codel, _ts}) do
     ts = {System.monotonic_time(), interval}
-    {:reply, :ok, {status, queue, codel, ts}}
+    {:reply, :ok, {type, queue, codel, ts}}
   end
 
   @impl GenServer
@@ -86,7 +114,6 @@ defmodule DBConnection.ConnectionPool do
     case queue? do
       true ->
         :ets.insert(queue, {{now, System.unique_integer(), from}})
-        execute_queue_telemetry(:busy, queue, :enqueue)
         {:noreply, busy}
 
       false ->
@@ -103,11 +130,7 @@ defmodule DBConnection.ConnectionPool do
       ) do
     case :ets.first(queue) do
       {queued_in_native, holder} = key ->
-        if Holder.handle_checkout(holder, from, queue, queued_in_native) and
-             :ets.delete(queue, key) do
-          execute_queue_telemetry(:ready, queue, :checkout)
-        end
-
+        Holder.handle_checkout(holder, from, queue, queued_in_native) and :ets.delete(queue, key)
         {:noreply, ready}
 
       :"$end_of_table" ->
@@ -204,9 +227,6 @@ defmodule DBConnection.ConnectionPool do
            :ets.first(queue) do
       :ets.delete(queue, key)
       Holder.maybe_disconnect(holder, elem(ts, 0), 0) or Holder.handle_ping(holder)
-
-      execute_queue_telemetry(status, queue, :drop_idle)
-
       drop_idle(past_in_native, limit - 1, status, queue, codel, ts)
     else
       _ ->
@@ -237,20 +257,15 @@ defmodule DBConnection.ConnectionPool do
     guards = [{:<, :"$1", min_sent}]
     select_slow = [{match, guards, [{{:"$1", :"$2"}}]}]
 
-    slow = :ets.select(queue, select_slow)
-
-    for {sent, from} <- slow do
+    for {sent, from} <- :ets.select(queue, select_slow) do
       drop(time - sent, from)
     end
 
     :ets.select_delete(queue, [{match, guards, [true]}])
-
-    execute_queue_telemetry(:busy, queue, :dequeue, length(slow))
   end
 
   defp handle_checkin(holder, now_in_native, {:ready, queue, _, _} = data) do
     :ets.insert(queue, {{now_in_native, holder}})
-    execute_queue_telemetry(:ready, queue, :checkin)
     {:noreply, data}
   end
 
@@ -263,7 +278,6 @@ defmodule DBConnection.ConnectionPool do
 
       {:ready, _, _, _} = ready ->
         :ets.insert(queue, {{now_in_native, holder}})
-        execute_queue_telemetry(:ready, queue, :checkin)
         {:noreply, ready}
     end
   end
@@ -288,7 +302,6 @@ defmodule DBConnection.ConnectionPool do
     case :ets.first(queue) do
       {sent, _, from} = key ->
         :ets.delete(queue, key)
-        execute_queue_telemetry(:busy, queue, :dequeue)
         delay = time - sent
         codel = %{codel | next: next, delay: delay, slow: slow?}
         go(delay, from, time, holder, queue, codel, ts)
@@ -303,7 +316,6 @@ defmodule DBConnection.ConnectionPool do
     case :ets.first(queue) do
       {sent, _, from} = key ->
         :ets.delete(queue, key)
-        execute_queue_telemetry(:busy, queue, :dequeue)
         go(time - sent, from, time, holder, queue, codel, ts)
 
       :"$end_of_table" ->
@@ -315,13 +327,11 @@ defmodule DBConnection.ConnectionPool do
     case :ets.first(queue) do
       {sent, _, from} = key when time - sent > timeout ->
         :ets.delete(queue, key)
-        execute_queue_telemetry(:busy, queue, :dequeue)
         drop(time - sent, from)
         dequeue_slow(time, timeout, holder, queue, codel, ts)
 
       {sent, _, from} = key ->
         :ets.delete(queue, key)
-        execute_queue_telemetry(:busy, queue, :dequeue)
         go(time - sent, from, time, holder, queue, codel, ts)
 
       :"$end_of_table" ->
@@ -332,11 +342,9 @@ defmodule DBConnection.ConnectionPool do
   defp go(delay, from, time, holder, queue, %{delay: min} = codel, ts) do
     case Holder.handle_checkout(holder, from, queue, 0) do
       true when delay < min ->
-        execute_queue_telemetry(:busy, queue, :checkout)
         {:busy, queue, %{codel | delay: delay}, ts}
 
       true ->
-        execute_queue_telemetry(:busy, queue, :checkout)
         {:busy, queue, codel, ts}
 
       false ->
@@ -377,24 +385,5 @@ defmodule DBConnection.ConnectionPool do
     timeout = System.convert_time_unit(now_in_native, :native, :millisecond) + interval
     idle = :erlang.start_timer(timeout, self(), now_in_native, abs: true)
     %{codel | idle: idle}
-  end
-
-  defp execute_queue_telemetry(status, queue, event, count \\ 1)
-       when status in [:busy, :ready] and
-              event in [:checkin, :checkout, :enqueue, :dequeue, :drop_idle] do
-    {ready_conn_count, checkout_queue_length} =
-      case status do
-        :busy ->
-          {0, :ets.select_count(queue, [{{{:_, :_, :_}}, [], [true]}])}
-
-        :ready ->
-          {:ets.select_count(queue, [{{{:_, :_}}, [], [true]}]), 0}
-      end
-
-    :telemetry.execute(
-      [:db_connection, event],
-      %{count: count},
-      %{ready_conn_count: ready_conn_count, checkout_queue_length: checkout_queue_length}
-    )
   end
 end
