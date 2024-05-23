@@ -1286,11 +1286,14 @@ defmodule DBConnection do
   end
 
   @doc """
-  Returns connection metrics in the shape of `%{
-      source: {:pool | :proxy, pid()},
-      ready_conn_count: non_neg_integer(),
-      checkout_queue_length: non_neg_integer()
-    }`
+    Returns connection metrics as a map in the shape of:
+
+      %{
+        source: {:pool | :proxy, pid()},
+        ready_conn_count: non_neg_integer(),
+        checkout_queue_length: non_neg_integer()
+      }
+
   """
   @spec get_connection_metrics(conn, Keyword.t()) ::
           {:ok, [DBConnection.Pool.connection_metrics()]} | :error
