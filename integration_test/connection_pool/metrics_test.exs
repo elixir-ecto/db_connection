@@ -1,4 +1,6 @@
 defmodule TestPoolMetrics do
+  import TestHelpers
+
   use ExUnit.Case, async: true
 
   alias TestPool, as: P
@@ -20,23 +22,26 @@ defmodule TestPoolMetrics do
     {:ok, pool} = P.start_link(agent: agent, parent: self())
 
     poll(fn ->
-      assert %{checkout_queue_length: 0, ready_conn_count: 1} = P.get_connection_metrics(pool)
+      assert {:ok, [%{source: {:pool, ^pool}, checkout_queue_length: 0, ready_conn_count: 1}]} =
+               DBConnection.get_connection_metrics(pool)
     end)
 
     query =
       spawn_link(fn ->
         Process.put(:agent, agent)
-        P.execute(pool, %Q{}, [:client])
+        assert P.execute(pool, %Q{}, [:client])
       end)
 
     poll(fn ->
-      assert %{checkout_queue_length: 0, ready_conn_count: 0} = P.get_connection_metrics(pool)
+      assert {:ok, [%{source: {:pool, ^pool}, checkout_queue_length: 0, ready_conn_count: 0}]} =
+               DBConnection.get_connection_metrics(pool)
     end)
 
     send(query, :continue)
 
     poll(fn ->
-      assert %{checkout_queue_length: 0, ready_conn_count: 1} = P.get_connection_metrics(pool)
+      assert {:ok, [%{source: {:pool, ^pool}, checkout_queue_length: 0, ready_conn_count: 1}]} =
+               DBConnection.get_connection_metrics(pool)
     end)
 
     assert [
@@ -57,13 +62,15 @@ defmodule TestPoolMetrics do
     {:ok, pool} = P.start_link(agent: agent, parent: self(), idle_interval: idle_interval)
 
     poll(fn ->
-      assert %{checkout_queue_length: 0, ready_conn_count: 1} = P.get_connection_metrics(pool)
+      assert {:ok, [%{source: {:pool, ^pool}, checkout_queue_length: 0, ready_conn_count: 1}]} =
+               DBConnection.get_connection_metrics(pool)
     end)
 
     :timer.sleep(idle_interval)
 
     poll(fn ->
-      assert %{checkout_queue_length: 0, ready_conn_count: 1} = P.get_connection_metrics(pool)
+      assert {:ok, [%{source: {:pool, ^pool}, checkout_queue_length: 0, ready_conn_count: 1}]} =
+               DBConnection.get_connection_metrics(pool)
     end)
 
     assert [
@@ -97,7 +104,8 @@ defmodule TestPoolMetrics do
     {:ok, pool} = P.start_link(agent: agent, parent: self(), pool_size: 2)
 
     poll(fn ->
-      assert %{checkout_queue_length: 0, ready_conn_count: 2} = P.get_connection_metrics(pool)
+      assert {:ok, [%{source: {:pool, ^pool}, checkout_queue_length: 0, ready_conn_count: 2}]} =
+               DBConnection.get_connection_metrics(pool)
     end)
 
     run_query = fn ->
@@ -110,38 +118,44 @@ defmodule TestPoolMetrics do
     queries = [run_query.()]
 
     poll(fn ->
-      assert %{checkout_queue_length: 0, ready_conn_count: 1} = P.get_connection_metrics(pool)
+      assert {:ok, [%{source: {:pool, ^pool}, checkout_queue_length: 0, ready_conn_count: 1}]} =
+               DBConnection.get_connection_metrics(pool)
     end)
 
     queries = [run_query.() | queries]
 
     poll(fn ->
-      assert %{checkout_queue_length: 0, ready_conn_count: 0} = P.get_connection_metrics(pool)
+      assert {:ok, [%{source: {:pool, ^pool}, checkout_queue_length: 0, ready_conn_count: 0}]} =
+               DBConnection.get_connection_metrics(pool)
     end)
 
     queries = [run_query.() | queries]
 
     poll(fn ->
-      assert %{checkout_queue_length: 1, ready_conn_count: 0} = P.get_connection_metrics(pool)
+      assert {:ok, [%{source: {:pool, ^pool}, checkout_queue_length: 1, ready_conn_count: 0}]} =
+               DBConnection.get_connection_metrics(pool)
     end)
 
     [query3, query2, query1] = queries
     send(query1, :continue)
 
     poll(fn ->
-      assert %{checkout_queue_length: 0, ready_conn_count: 0} = P.get_connection_metrics(pool)
+      assert {:ok, [%{source: {:pool, ^pool}, checkout_queue_length: 0, ready_conn_count: 0}]} =
+               DBConnection.get_connection_metrics(pool)
     end)
 
     send(query2, :continue)
 
     poll(fn ->
-      assert %{checkout_queue_length: 0, ready_conn_count: 1} = P.get_connection_metrics(pool)
+      assert {:ok, [%{source: {:pool, ^pool}, checkout_queue_length: 0, ready_conn_count: 1}]} =
+               DBConnection.get_connection_metrics(pool)
     end)
 
     send(query3, :continue)
 
     poll(fn ->
-      assert %{checkout_queue_length: 0, ready_conn_count: 2} = P.get_connection_metrics(pool)
+      assert {:ok, [%{source: {:pool, ^pool}, checkout_queue_length: 0, ready_conn_count: 2}]} =
+               DBConnection.get_connection_metrics(pool)
     end)
 
     assert [
@@ -151,19 +165,5 @@ defmodule TestPoolMetrics do
              handle_execute: [%Q{}, [:client], _, :state],
              handle_execute: [%Q{}, [:client], _, :state]
            ] = A.record(agent)
-  end
-
-  def poll(fun, attempts \\ 5) do
-    try do
-      fun.()
-    rescue
-      e ->
-        if attempts > 0 do
-          :timer.sleep(50)
-          poll(fun, attempts - 1)
-        else
-          reraise e, __STACKTRACE__
-        end
-    end
   end
 end

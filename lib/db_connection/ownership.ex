@@ -85,6 +85,10 @@ defmodule DBConnection.Ownership do
     end
   end
 
+  @doc false
+  @impl DBConnection.Pool
+  defdelegate get_connection_metrics(pool), to: Manager
+
   @doc """
   Explicitly checks a connection out from the ownership manager.
 

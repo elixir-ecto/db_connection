@@ -59,6 +59,12 @@ defmodule DBConnection.Ownership.Manager do
     GenServer.call(manager, {:allow, parent, allow}, timeout)
   end
 
+  @spec get_connection_metrics(GenServer.server()) ::
+          {:ok, [DBConnection.Pool.connection_metrics()]} | :error
+  def get_connection_metrics(manager) do
+    GenServer.call(manager, :get_connection_metrics)
+  end
+
   ## Callbacks
 
   @impl true
@@ -98,6 +104,38 @@ defmodule DBConnection.Ownership.Manager do
   end
 
   @impl true
+  def handle_call(:get_connection_metrics, _from, %{pool: pool, owners: owners, log: log} = state) do
+    {:ok, pool_metrics} = DBConnection.ConnectionPool.get_connection_metrics(pool)
+
+    proxy_metrics =
+      owners
+      |> Enum.map(fn {_, {proxy, _, _}} ->
+        if Process.alive?(proxy) do
+          GenServer.call(proxy, :get_connection_metrics)
+        end
+      end)
+      |> Enum.reject(&is_nil/1)
+
+    {:reply, {:ok, pool_metrics ++ proxy_metrics}, state}
+  rescue
+    error in MatchError ->
+      if log do
+        Logger.log(log, "Caught while calling :get_connection_metrics: #{inspect(error)}")
+      end
+
+      {:reply, :error, state}
+  catch
+    :exit, reason ->
+      if log do
+        Logger.log(
+          log,
+          "Caught :exit while calling :get_connection_metrics due to #{inspect(reason)}"
+        )
+      end
+
+      {:reply, :error, state}
+  end
+
   def handle_call(:pool, _from, %{pool: pool} = state) do
     {:reply, pool, state}
   end

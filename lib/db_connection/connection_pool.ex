@@ -40,15 +40,8 @@ defmodule DBConnection.ConnectionPool do
     GenServer.call(pool, {:disconnect_all, interval}, :infinity)
   end
 
-  @doc """
-  Returns connection metrics as a map in the shape of:
-
-      %{
-        ready_conn_count: integer(),
-        checkout_queue_length: integer()
-      }
-
-  """
+  @doc false
+  @impl DBConnection.Pool
   def get_connection_metrics(pool) do
     GenServer.call(pool, :get_connection_metrics)
   end
@@ -97,11 +90,12 @@ defmodule DBConnection.ConnectionPool do
       end
 
     metrics = %{
+      source: {:pool, self()},
       ready_conn_count: ready_conn_count,
       checkout_queue_length: checkout_queue_length
     }
 
-    {:reply, metrics, state}
+    {:reply, {:ok, [metrics]}, state}
   end
 
   def handle_call({:disconnect_all, interval}, _from, {type, queue, codel, _ts}) do

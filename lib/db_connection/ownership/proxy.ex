@@ -171,6 +171,26 @@ defmodule DBConnection.Ownership.Proxy do
     down(message, state)
   end
 
+  @impl true
+  def handle_call(
+        :get_connection_metrics,
+        _,
+        %{queue: queue, holder: holder, client: client} = state
+      ) do
+    connection_metrics = %{
+      source: {:proxy, self()},
+      ready_conn_count:
+        if is_nil(holder) or not is_nil(client) do
+          0
+        else
+          1
+        end,
+      checkout_queue_length: :queue.len(queue)
+    }
+
+    {:reply, connection_metrics, state}
+  end
+
   defp checkout({pid, ref} = from, %{holder: holder} = state) do
     if Holder.handle_checkout(holder, from, ref, nil) do
       {:noreply, %{state | client: {pid, ref, pruned_stacktrace(pid)}}}

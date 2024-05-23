@@ -1285,6 +1285,21 @@ defmodule DBConnection do
          else: (_ -> :error)
   end
 
+  @doc """
+  Returns connection metrics in the shape of `%{
+      source: {:pool | :proxy, pid()},
+      ready_conn_count: non_neg_integer(),
+      checkout_queue_length: non_neg_integer()
+    }`
+  """
+  @spec get_connection_metrics(conn, Keyword.t()) ::
+          {:ok, [DBConnection.Pool.connection_metrics()]} | :error
+
+  def get_connection_metrics(conn, opts \\ []) do
+    pool = Keyword.get(opts, :pool, DBConnection.ConnectionPool)
+    pool.get_connection_metrics(conn)
+  end
+
   defp pool_pid(%DBConnection{pool_ref: Holder.pool_ref(pool: pid)}), do: pid
   defp pool_pid(conn), do: GenServer.whereis(conn)
 
