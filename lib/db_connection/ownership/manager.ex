@@ -117,13 +117,6 @@ defmodule DBConnection.Ownership.Manager do
       |> Enum.reject(&is_nil/1)
 
     {:reply, {:ok, pool_metrics ++ proxy_metrics}, state}
-  rescue
-    error in MatchError ->
-      if log do
-        Logger.log(log, "Caught while calling :get_connection_metrics: #{inspect(error)}")
-      end
-
-      {:reply, :error, state}
   catch
     :exit, reason ->
       if log do
