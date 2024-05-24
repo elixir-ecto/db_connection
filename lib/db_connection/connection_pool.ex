@@ -43,7 +43,7 @@ defmodule DBConnection.ConnectionPool do
   @doc false
   @impl DBConnection.Pool
   def get_connection_metrics(pool) do
-    GenServer.call(pool, :get_connection_metrics)
+    GenServer.call(pool, :get_connection_metrics, :infinity)
   end
 
   ## GenServer api
