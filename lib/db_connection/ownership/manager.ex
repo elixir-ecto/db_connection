@@ -62,7 +62,7 @@ defmodule DBConnection.Ownership.Manager do
   @spec get_connection_metrics(GenServer.server()) ::
           {:ok, [DBConnection.Pool.connection_metrics()]} | :error
   def get_connection_metrics(manager) do
-    GenServer.call(manager, :get_connection_metrics)
+    GenServer.call(manager, :get_connection_metrics, :infinity)
   end
 
   ## Callbacks
