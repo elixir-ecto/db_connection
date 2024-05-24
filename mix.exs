@@ -10,6 +10,7 @@ defmodule DBConnection.Mixfile do
       app: :db_connection,
       version: @version,
       elixir: "~> 1.8",
+      compilers: [:yecc] ++ Mix.compilers(),
       deps: deps(),
       docs: docs(),
       description: description(),
