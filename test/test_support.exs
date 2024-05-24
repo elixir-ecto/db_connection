@@ -1,3 +1,19 @@
+defmodule TestHelpers do
+  def poll(fun, attempts \\ 5) do
+    try do
+      fun.()
+    rescue
+      e ->
+        if attempts > 0 do
+          :timer.sleep(50)
+          poll(fun, attempts - 1)
+        else
+          reraise e, __STACKTRACE__
+        end
+    end
+  end
+end
+
 defmodule TestConnection do
   defmacro __using__(opts) do
     quote do
@@ -19,6 +35,7 @@ defmodule TestConnection do
       end
 
       defdelegate rollback(conn, reason), to: DBConnection
+      defdelegate get_connection_metrics(pool, opts \\ []), to: DBConnection
 
       def prepare(pool, query, opts2 \\ []) do
         DBConnection.prepare(pool, query, opts2 ++ unquote(opts))

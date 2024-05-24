@@ -40,6 +40,12 @@ defmodule DBConnection.ConnectionPool do
     GenServer.call(pool, {:disconnect_all, interval}, :infinity)
   end
 
+  @doc false
+  @impl DBConnection.Pool
+  def get_connection_metrics(pool) do
+    GenServer.call(pool, :get_connection_metrics, :infinity)
+  end
+
   ## GenServer api
 
   @impl GenServer
@@ -73,6 +79,25 @@ defmodule DBConnection.ConnectionPool do
   end
 
   @impl GenServer
+  def handle_call(:get_connection_metrics, _from, {status, queue, _, _} = state) do
+    {ready_conn_count, checkout_queue_length} =
+      case status do
+        :busy ->
+          {0, :ets.select_count(queue, [{{{:_, :_, :_}}, [], [true]}])}
+
+        :ready ->
+          {:ets.select_count(queue, [{{{:_, :_}}, [], [true]}]), 0}
+      end
+
+    metrics = %{
+      source: {:pool, self()},
+      ready_conn_count: ready_conn_count,
+      checkout_queue_length: checkout_queue_length
+    }
+
+    {:reply, [metrics], state}
+  end
+
   def handle_call({:disconnect_all, interval}, _from, {type, queue, codel, _ts}) do
     ts = {System.monotonic_time(), interval}
     {:reply, :ok, {type, queue, codel, ts}}
