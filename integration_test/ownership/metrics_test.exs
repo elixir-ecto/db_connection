@@ -17,7 +17,7 @@ defmodule TestOwnershipMetrics do
     {:ok, pool} = P.start_link(agent: agent, parent: self())
 
     poll(fn ->
-      assert {:ok, [%{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 1}]} =
+      assert [%{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 1}] =
                DBConnection.get_connection_metrics(pool, pool: DBConnection.Ownership)
     end)
 
@@ -50,28 +50,26 @@ defmodule TestOwnershipMetrics do
 
     test "considers a manual checkin and checkout", %{agent: agent, pool: pool} do
       poll(fn ->
-        assert {:ok, [%{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 1}]} =
+        assert [%{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 1}] =
                  DBConnection.get_connection_metrics(pool, pool: DBConnection.Ownership)
       end)
 
       assert :ok = DBConnection.Ownership.ownership_checkout(pool, [])
 
       poll(fn ->
-        assert {:ok,
-                [
-                  %{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 0},
-                  %{source: {:proxy, _}, checkout_queue_length: 0, ready_conn_count: 1}
-                ]} =
+        assert [
+                 %{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 0},
+                 %{source: {:proxy, _}, checkout_queue_length: 0, ready_conn_count: 1}
+               ] =
                  DBConnection.get_connection_metrics(pool, pool: DBConnection.Ownership)
       end)
 
       assert :ok = DBConnection.Ownership.ownership_checkin(pool, [])
 
       poll(fn ->
-        assert {:ok,
-                [
-                  %{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 1}
-                ]} =
+        assert [
+                 %{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 1}
+               ] =
                  DBConnection.get_connection_metrics(pool, pool: DBConnection.Ownership)
       end)
 
@@ -82,7 +80,7 @@ defmodule TestOwnershipMetrics do
 
     test "considers a query in progress", %{agent: agent, pool: pool} do
       poll(fn ->
-        assert {:ok, [%{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 1}]} =
+        assert [%{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 1}] =
                  DBConnection.get_connection_metrics(pool, pool: DBConnection.Ownership)
       end)
 
@@ -97,32 +95,29 @@ defmodule TestOwnershipMetrics do
         end)
 
       poll(fn ->
-        assert {:ok,
-                [
-                  %{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 0},
-                  %{source: {:proxy, _}, checkout_queue_length: 0, ready_conn_count: 0}
-                ]} =
+        assert [
+                 %{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 0},
+                 %{source: {:proxy, _}, checkout_queue_length: 0, ready_conn_count: 0}
+               ] =
                  DBConnection.get_connection_metrics(pool, pool: DBConnection.Ownership)
       end)
 
       send(query, :continue)
 
       poll(fn ->
-        assert {:ok,
-                [
-                  %{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 0},
-                  %{source: {:proxy, _}, checkout_queue_length: 0, ready_conn_count: 1}
-                ]} =
+        assert [
+                 %{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 0},
+                 %{source: {:proxy, _}, checkout_queue_length: 0, ready_conn_count: 1}
+               ] =
                  DBConnection.get_connection_metrics(pool, pool: DBConnection.Ownership)
       end)
 
       assert :ok = DBConnection.Ownership.ownership_checkin(pool, [])
 
       poll(fn ->
-        assert {:ok,
-                [
-                  %{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 1}
-                ]} =
+        assert [
+                 %{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 1}
+               ] =
                  DBConnection.get_connection_metrics(pool, pool: DBConnection.Ownership)
       end)
 
@@ -160,7 +155,7 @@ defmodule TestOwnershipMetrics do
       agent: agent
     } do
       poll(fn ->
-        assert {:ok, [%{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 1}]} =
+        assert [%{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 1}] =
                  DBConnection.get_connection_metrics(pool, pool: DBConnection.Ownership)
       end)
 
@@ -172,21 +167,19 @@ defmodule TestOwnershipMetrics do
         end)
 
       poll(fn ->
-        assert {:ok,
-                [
-                  %{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 0},
-                  %{source: {:proxy, _}, checkout_queue_length: 0, ready_conn_count: 0}
-                ]} =
+        assert [
+                 %{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 0},
+                 %{source: {:proxy, _}, checkout_queue_length: 0, ready_conn_count: 0}
+               ] =
                  DBConnection.get_connection_metrics(pool, pool: DBConnection.Ownership)
       end)
 
       send(query, :continue)
 
       poll(fn ->
-        assert {:ok,
-                [
-                  %{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 1}
-                ]} =
+        assert [
+                 %{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 1}
+               ] =
                  DBConnection.get_connection_metrics(pool, pool: DBConnection.Ownership)
       end)
 
@@ -201,7 +194,7 @@ defmodule TestOwnershipMetrics do
       agent: agent
     } do
       poll(fn ->
-        assert {:ok, [%{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 1}]} =
+        assert [%{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 1}] =
                  DBConnection.get_connection_metrics(pool, pool: DBConnection.Ownership)
       end)
 
@@ -212,21 +205,19 @@ defmodule TestOwnershipMetrics do
         end)
 
       poll(fn ->
-        assert {:ok,
-                [
-                  %{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 0},
-                  %{source: {:proxy, _}, checkout_queue_length: 0, ready_conn_count: 0}
-                ]} =
+        assert [
+                 %{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 0},
+                 %{source: {:proxy, _}, checkout_queue_length: 0, ready_conn_count: 0}
+               ] =
                  DBConnection.get_connection_metrics(pool, pool: DBConnection.Ownership)
       end)
 
       send(query, :continue)
 
       poll(fn ->
-        assert {:ok,
-                [
-                  %{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 1}
-                ]} =
+        assert [
+                 %{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 1}
+               ] =
                  DBConnection.get_connection_metrics(pool, pool: DBConnection.Ownership)
       end)
 
@@ -241,7 +232,7 @@ defmodule TestOwnershipMetrics do
       agent: agent
     } do
       poll(fn ->
-        assert {:ok, [%{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 1}]} =
+        assert [%{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 1}] =
                  DBConnection.get_connection_metrics(pool, pool: DBConnection.Ownership)
       end)
 
@@ -260,54 +251,49 @@ defmodule TestOwnershipMetrics do
       query1 = spawn_link(query_fn)
 
       poll(fn ->
-        assert {:ok,
-                [
-                  %{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 0},
-                  %{source: {:proxy, _}, checkout_queue_length: 0, ready_conn_count: 0}
-                ]} =
+        assert [
+                 %{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 0},
+                 %{source: {:proxy, _}, checkout_queue_length: 0, ready_conn_count: 0}
+               ] =
                  DBConnection.get_connection_metrics(pool, pool: DBConnection.Ownership)
       end)
 
       query2 = spawn_link(query_fn)
 
       poll(fn ->
-        assert {:ok,
-                [
-                  %{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 0},
-                  %{source: {:proxy, _}, checkout_queue_length: 1, ready_conn_count: 0}
-                ]} =
+        assert [
+                 %{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 0},
+                 %{source: {:proxy, _}, checkout_queue_length: 1, ready_conn_count: 0}
+               ] =
                  DBConnection.get_connection_metrics(pool, pool: DBConnection.Ownership)
       end)
 
       send(query1, :continue)
 
       poll(fn ->
-        assert {:ok,
-                [
-                  %{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 0},
-                  %{source: {:proxy, _}, checkout_queue_length: 0, ready_conn_count: 0}
-                ]} =
+        assert [
+                 %{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 0},
+                 %{source: {:proxy, _}, checkout_queue_length: 0, ready_conn_count: 0}
+               ] =
                  DBConnection.get_connection_metrics(pool, pool: DBConnection.Ownership)
       end)
 
       send(query2, :continue)
 
       poll(fn ->
-        assert {:ok,
-                [
-                  %{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 0},
-                  %{source: {:proxy, _}, checkout_queue_length: 0, ready_conn_count: 1}
-                ]} =
+        assert [
+                 %{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 0},
+                 %{source: {:proxy, _}, checkout_queue_length: 0, ready_conn_count: 1}
+               ] =
                  DBConnection.get_connection_metrics(pool, pool: DBConnection.Ownership)
       end)
 
       assert :ok = DBConnection.Ownership.ownership_checkin(pool, [])
 
       poll(fn ->
-        assert {:ok,
-                [
-                  %{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 1}
-                ]} =
+        assert [
+                 %{source: {:pool, _}, checkout_queue_length: 0, ready_conn_count: 1}
+               ] =
                  DBConnection.get_connection_metrics(pool, pool: DBConnection.Ownership)
       end)
 

@@ -15,5 +15,5 @@ defmodule DBConnection.Pool do
                state :: term}
               | {:error, Exception.t()}
 
-  @callback get_connection_metrics(pool :: pool()) :: {:ok, [connection_metrics()]} | :error
+  @callback get_connection_metrics(pool :: pool()) :: [connection_metrics()]
 end

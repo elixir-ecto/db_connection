@@ -95,7 +95,7 @@ defmodule DBConnection.ConnectionPool do
       checkout_queue_length: checkout_queue_length
     }
 
-    {:reply, {:ok, [metrics]}, state}
+    {:reply, [metrics], state}
   end
 
   def handle_call({:disconnect_all, interval}, _from, {type, queue, codel, _ts}) do

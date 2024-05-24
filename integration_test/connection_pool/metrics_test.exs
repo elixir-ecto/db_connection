@@ -22,7 +22,7 @@ defmodule TestPoolMetrics do
     {:ok, pool} = P.start_link(agent: agent, parent: self())
 
     poll(fn ->
-      assert {:ok, [%{source: {:pool, ^pool}, checkout_queue_length: 0, ready_conn_count: 1}]} =
+      assert [%{source: {:pool, ^pool}, checkout_queue_length: 0, ready_conn_count: 1}] =
                DBConnection.get_connection_metrics(pool)
     end)
 
@@ -33,14 +33,14 @@ defmodule TestPoolMetrics do
       end)
 
     poll(fn ->
-      assert {:ok, [%{source: {:pool, ^pool}, checkout_queue_length: 0, ready_conn_count: 0}]} =
+      assert [%{source: {:pool, ^pool}, checkout_queue_length: 0, ready_conn_count: 0}] =
                DBConnection.get_connection_metrics(pool)
     end)
 
     send(query, :continue)
 
     poll(fn ->
-      assert {:ok, [%{source: {:pool, ^pool}, checkout_queue_length: 0, ready_conn_count: 1}]} =
+      assert [%{source: {:pool, ^pool}, checkout_queue_length: 0, ready_conn_count: 1}] =
                DBConnection.get_connection_metrics(pool)
     end)
 
@@ -62,14 +62,14 @@ defmodule TestPoolMetrics do
     {:ok, pool} = P.start_link(agent: agent, parent: self(), idle_interval: idle_interval)
 
     poll(fn ->
-      assert {:ok, [%{source: {:pool, ^pool}, checkout_queue_length: 0, ready_conn_count: 1}]} =
+      assert [%{source: {:pool, ^pool}, checkout_queue_length: 0, ready_conn_count: 1}] =
                DBConnection.get_connection_metrics(pool)
     end)
 
     :timer.sleep(idle_interval)
 
     poll(fn ->
-      assert {:ok, [%{source: {:pool, ^pool}, checkout_queue_length: 0, ready_conn_count: 1}]} =
+      assert [%{source: {:pool, ^pool}, checkout_queue_length: 0, ready_conn_count: 1}] =
                DBConnection.get_connection_metrics(pool)
     end)
 
@@ -104,7 +104,7 @@ defmodule TestPoolMetrics do
     {:ok, pool} = P.start_link(agent: agent, parent: self(), pool_size: 2)
 
     poll(fn ->
-      assert {:ok, [%{source: {:pool, ^pool}, checkout_queue_length: 0, ready_conn_count: 2}]} =
+      assert [%{source: {:pool, ^pool}, checkout_queue_length: 0, ready_conn_count: 2}] =
                DBConnection.get_connection_metrics(pool)
     end)
 
@@ -118,21 +118,21 @@ defmodule TestPoolMetrics do
     queries = [run_query.()]
 
     poll(fn ->
-      assert {:ok, [%{source: {:pool, ^pool}, checkout_queue_length: 0, ready_conn_count: 1}]} =
+      assert [%{source: {:pool, ^pool}, checkout_queue_length: 0, ready_conn_count: 1}] =
                DBConnection.get_connection_metrics(pool)
     end)
 
     queries = [run_query.() | queries]
 
     poll(fn ->
-      assert {:ok, [%{source: {:pool, ^pool}, checkout_queue_length: 0, ready_conn_count: 0}]} =
+      assert [%{source: {:pool, ^pool}, checkout_queue_length: 0, ready_conn_count: 0}] =
                DBConnection.get_connection_metrics(pool)
     end)
 
     queries = [run_query.() | queries]
 
     poll(fn ->
-      assert {:ok, [%{source: {:pool, ^pool}, checkout_queue_length: 1, ready_conn_count: 0}]} =
+      assert [%{source: {:pool, ^pool}, checkout_queue_length: 1, ready_conn_count: 0}] =
                DBConnection.get_connection_metrics(pool)
     end)
 
@@ -140,21 +140,21 @@ defmodule TestPoolMetrics do
     send(query1, :continue)
 
     poll(fn ->
-      assert {:ok, [%{source: {:pool, ^pool}, checkout_queue_length: 0, ready_conn_count: 0}]} =
+      assert [%{source: {:pool, ^pool}, checkout_queue_length: 0, ready_conn_count: 0}] =
                DBConnection.get_connection_metrics(pool)
     end)
 
     send(query2, :continue)
 
     poll(fn ->
-      assert {:ok, [%{source: {:pool, ^pool}, checkout_queue_length: 0, ready_conn_count: 1}]} =
+      assert [%{source: {:pool, ^pool}, checkout_queue_length: 0, ready_conn_count: 1}] =
                DBConnection.get_connection_metrics(pool)
     end)
 
     send(query3, :continue)
 
     poll(fn ->
-      assert {:ok, [%{source: {:pool, ^pool}, checkout_queue_length: 0, ready_conn_count: 2}]} =
+      assert [%{source: {:pool, ^pool}, checkout_queue_length: 0, ready_conn_count: 2}] =
                DBConnection.get_connection_metrics(pool)
     end)
 
