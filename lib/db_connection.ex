@@ -1286,7 +1286,7 @@ defmodule DBConnection do
   end
 
   @doc """
-    Returns connection metrics as a list in the shape of:
+  Returns connection metrics as a list in the shape of:
 
       [%{
         source: {:pool | :proxy, pid()},
