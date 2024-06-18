@@ -340,7 +340,7 @@ defmodule DBConnection.Connection do
 
   @doc false
   @impl :gen_statem
-  # If client is :closed then the connection was previouly disconnected
+  # If client is :closed then the connection was previously disconnected
   # and cleanup is not required.
   def terminate(_, _, %{client: :closed}), do: :ok
 

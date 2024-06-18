@@ -539,7 +539,7 @@ defmodule DBConnection do
 
   The allowed callbacks are:
 
-    * A 1-arity function that recieves the options from `start_link/2` as well as
+    * A 1-arity function that receives the options from `start_link/2` as well as
       `:pool_index`
     * `{module, function, args}` where the options from `start_link/2` as well as
       `:pool_index` are prepended to `args` before the function is called
