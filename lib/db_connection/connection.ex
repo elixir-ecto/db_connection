@@ -144,6 +144,12 @@ defmodule DBConnection.Connection do
       :ok
     end
 
+    :telemetry.execute(
+      [:db_connection, :disconnect],
+      %{count: 1},
+      %{mod: mod, opts: s.opts, pool: s.pool}
+    )
+
     %{state: state, client: client, timer: timer, backoff: backoff} = s
     demonitor(client)
     cancel_timer(timer)
