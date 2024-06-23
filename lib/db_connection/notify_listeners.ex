@@ -89,7 +89,11 @@ defmodule DBConnection.NotifyListeners do
   end
 
   defp do_notify_listeners(action, conn_pid) do
-    [{_, connection_listeners}] = :ets.lookup(ets_name(), conn_pid)
+    connection_listeners =
+      case :ets.lookup(ets_name(), conn_pid) do
+        [{_, listeners}] -> listeners
+        [] -> []
+      end
 
     {listeners, message} =
       case connection_listeners do
