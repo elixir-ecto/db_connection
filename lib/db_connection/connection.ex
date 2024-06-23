@@ -58,7 +58,6 @@ defmodule DBConnection.Connection do
       tag: tag,
       timer: nil,
       backoff: Backoff.new(opts),
-      connection_listeners: connection_listeners,
       after_connect: Keyword.get(opts, :after_connect),
       after_connect_timeout: Keyword.get(opts, :after_connect_timeout, @timeout)
     }
