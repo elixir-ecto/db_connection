@@ -6,6 +6,7 @@ defmodule DBConnection.App do
   def start(_type, _args) do
     children = [
       {Task.Supervisor, name: DBConnection.Task},
+      DBConnection.NotifyListeners,
       dynamic_supervisor(DBConnection.Ownership.Supervisor),
       dynamic_supervisor(DBConnection.ConnectionPool.Supervisor),
       DBConnection.Watcher

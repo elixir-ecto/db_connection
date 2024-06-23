@@ -47,6 +47,8 @@ defmodule DBConnection.Connection do
   @doc false
   @impl :gen_statem
   def init({mod, opts, pool, tag}) do
+    connection_listeners = Keyword.get(opts, :connection_listeners, [])
+
     s = %{
       mod: mod,
       opts: opts,
@@ -56,10 +58,12 @@ defmodule DBConnection.Connection do
       tag: tag,
       timer: nil,
       backoff: Backoff.new(opts),
-      connection_listeners: Keyword.get(opts, :connection_listeners, []),
+      connection_listeners: connection_listeners,
       after_connect: Keyword.get(opts, :after_connect),
       after_connect_timeout: Keyword.get(opts, :after_connect_timeout, @timeout)
     }
+
+    DBConnection.NotifyListeners.add_listeners(self(), connection_listeners)
 
     {:ok, :no_state, s, {:next_event, :internal, {:connect, :init}}}
   end
@@ -145,7 +149,7 @@ defmodule DBConnection.Connection do
     end
 
     :telemetry.execute(
-      [:db_connection, :disconnect],
+      [:db_connection, :disconnected],
       %{count: 1},
       %{mod: mod, opts: s.opts, pool: s.pool}
     )
@@ -155,8 +159,6 @@ defmodule DBConnection.Connection do
     cancel_timer(timer)
     :ok = apply(mod, :disconnect, [err, state])
     s = %{s | state: nil, client: :closed, timer: nil}
-
-    notify_connection_listeners(:disconnected, s)
 
     case client do
       _ when backoff == nil ->
@@ -227,10 +229,15 @@ defmodule DBConnection.Connection do
       state: state,
       after_connect: after_connect,
       after_connect_timeout: timeout,
-      opts: opts
+      opts: opts,
+      pool: pool
     } = s
 
-    notify_connection_listeners(:connected, s)
+    :telemetry.execute(
+      [:db_connection, :connected],
+      %{count: 1},
+      %{mod: mod, opts: opts, pool: pool}
+    )
 
     case apply(mod, :checkout, [state]) do
       {:ok, state} ->
@@ -252,7 +259,11 @@ defmodule DBConnection.Connection do
   def handle_event(:cast, {:connected, ref}, :no_state, %{client: {ref, :connect}} = s) do
     %{mod: mod, state: state} = s
 
-    notify_connection_listeners(:connected, s)
+    :telemetry.execute(
+      [:db_connection, :connected],
+      %{count: 1},
+      %{mod: mod, opts: s.opts, pool: s.pool}
+    )
 
     case apply(mod, :checkout, [state]) do
       {:ok, state} ->
@@ -512,20 +523,5 @@ defmodule DBConnection.Connection do
       [{mod, fun, args, info} | rest] when is_list(args) ->
         [{mod, fun, length(args), info} | rest]
     end
-  end
-
-  defp notify_connection_listeners(action, %{} = state) do
-    %{connection_listeners: connection_listeners} = state
-
-    {listeners, message} =
-      case connection_listeners do
-        listeners when is_list(listeners) ->
-          {listeners, {action, self()}}
-
-        {listeners, tag} when is_list(listeners) ->
-          {listeners, {action, self(), tag}}
-      end
-
-    Enum.each(listeners, &send(&1, message))
   end
 end
