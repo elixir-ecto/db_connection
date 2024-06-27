@@ -5,6 +5,16 @@ defmodule DbConnection.TelemetryListener do
   It monitors connection processes and ensures that disconnection events are
   always emitted.
 
+  ## Usage
+
+  Start the listener, optionally using a name, and pass it under the
+  `:connection_listeners` option when starting DbConnection:
+
+      {:ok, pid} = TelemetryListener.start_link([name: MyListener])
+      {:ok, _conn} = DBConnection.start_link(SomeModule, [connection_listeners: [MyListener]])
+      # Using a tag, which will be sent in telemetry metadata
+      {:ok, _conn} = DBConnection.start_link(SomeModule, [connection_listeners: {[pid], :my_tag}])
+
   ## Telemetry events
 
   ### Connected
