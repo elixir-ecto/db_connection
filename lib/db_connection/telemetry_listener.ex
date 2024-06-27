@@ -70,11 +70,9 @@ defmodule DbConnection.TelemetryListener do
 
   defp handle_connected(pid, tag, state) do
     :telemetry.execute([:db_connection, :connected], %{count: 1}, %{tag: tag, pid: pid})
-
     ref = Process.monitor(pid)
-    monitoring = Map.put(state.monitoring, pid, {ref, tag})
 
-    {:noreply, %{state | monitoring: monitoring}}
+    {:noreply, put_in(state.monitoring[pid], {ref, tag})}
   end
 
   defp handle_disconnected(pid, state) do
@@ -87,8 +85,7 @@ defmodule DbConnection.TelemetryListener do
       {ref, tag} ->
         Process.demonitor(ref, [:flush])
         :telemetry.execute([:db_connection, :disconnected], %{count: 1}, %{tag: tag, pid: pid})
-        monitoring = Map.delete(state.monitoring, pid)
-        {:noreply, %{state | monitoring: monitoring}}
+        {:noreply, %{state | monitoring: Map.delete(state.monitoring, pid)}}
     end
   end
 end
