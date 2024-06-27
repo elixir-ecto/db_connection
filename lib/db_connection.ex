@@ -524,6 +524,12 @@ defmodule DBConnection do
   This feature is available since v2.6.0. Before this version `:connection_listeners` only
   accepted a list of listener processes.
 
+  ## Telemetry listener
+
+  DBConnection provides a connection listener that emits telemetry events upon
+  connection and disconnection, see the `DBConnection.TelemetryListener` module
+  for more info.
+
   ## Connection Configuration Callback
 
   The `:configure` function will be called before each individual connection to the

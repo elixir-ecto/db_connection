@@ -1,16 +1,49 @@
 defmodule DbConnection.TelemetryListener do
   @moduledoc """
   A connection listener that emits telemetry events for connection and disconnection
+
+  It monitors connection processes and ensures that disconnection events are
+  always emitted.
+
+  ## Telemetry events
+
+  ### Connected
+
+  `[:db_connection, :connected]` - Executed after a connection is established.
+
+  #### Measurements
+
+    * `:count` - Always 1
+
+  #### Metadata
+
+    * `:pid` - The connection pid
+    * `:tag` - The connection pool tag
+
+  ### Disconnected
+
+  `[:db_connection, :disconnected]` - Executed after a disconnect.
+
+  #### Measurements
+
+    * `:count` - Always 1
+
+  #### Metadata
+
+    * `:pid` - The connection pid
+    * `:tag` - The connection pool tag
   """
 
   use GenServer
 
+  @doc "Starts a telemetry listener"
+  @spec start_link(GenServer.options()) :: {:ok, pid()}
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, nil, opts)
   end
 
   @impl GenServer
-  def init(_) do
+  def init(nil) do
     {:ok, %{monitoring: %{}}}
   end
 
@@ -44,7 +77,7 @@ defmodule DbConnection.TelemetryListener do
     {:noreply, %{state | monitoring: monitoring}}
   end
 
-  def handle_disconnected(pid, state) do
+  defp handle_disconnected(pid, state) do
     case state.monitoring[pid] do
       # Already handled. We may receive two messages: one from monitor and one
       # from listener. For this reason, we need to handle both.
