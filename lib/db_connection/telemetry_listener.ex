@@ -1,4 +1,4 @@
-defmodule DbConnection.TelemetryListener do
+defmodule DBConnection.TelemetryListener do
   @moduledoc """
   A connection listener that emits telemetry events for connection and disconnection
 

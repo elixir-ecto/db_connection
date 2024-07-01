@@ -217,7 +217,7 @@ defmodule ConnectionListenersTest do
       ]
 
       {:ok, agent} = A.start_link(stack)
-      {:ok, telemetry_listener} = DbConnection.TelemetryListener.start_link()
+      {:ok, telemetry_listener} = DBConnection.TelemetryListener.start_link()
 
       {:ok, pool} =
         P.start_link(
@@ -246,7 +246,7 @@ defmodule ConnectionListenersTest do
       ]
 
       {:ok, agent} = A.start_link(stack)
-      {:ok, telemetry_listener} = DbConnection.TelemetryListener.start_link()
+      {:ok, telemetry_listener} = DBConnection.TelemetryListener.start_link()
 
       tag = make_ref()
 
@@ -277,7 +277,7 @@ defmodule ConnectionListenersTest do
       ]
 
       {:ok, agent} = A.start_link(stack)
-      {:ok, telemetry_listener} = DbConnection.TelemetryListener.start_link()
+      {:ok, telemetry_listener} = DBConnection.TelemetryListener.start_link()
 
       {:ok, _pool} =
         P.start_link(
