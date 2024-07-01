@@ -203,4 +203,116 @@ defmodule ConnectionListenersTest do
     assert is_pid(conn3)
     refute conn1 == conn2 == conn3
   end
+
+  describe "telemetry listener" do
+    test "emits events with no tag" do
+      attach_telemetry_forwarding_handler()
+      err = RuntimeError.exception("oops")
+
+      stack = [
+        {:ok, :state},
+        {:disconnect, err, :discon},
+        :ok,
+        {:error, err}
+      ]
+
+      {:ok, agent} = A.start_link(stack)
+      {:ok, telemetry_listener} = DBConnection.TelemetryListener.start_link()
+
+      {:ok, pool} =
+        P.start_link(
+          agent: agent,
+          parent: self(),
+          connection_listeners: [telemetry_listener],
+          backoff_min: 1_000
+        )
+
+      assert_receive {:telemetry, :connected, %{tag: nil}}
+      assert P.close(pool, %Q{})
+      assert_receive {:telemetry, :disconnected, %{tag: nil}}
+    after
+      detach_telemetry_forwarding_handler()
+    end
+
+    test "emits events with tag" do
+      attach_telemetry_forwarding_handler()
+      err = RuntimeError.exception("oops")
+
+      stack = [
+        {:ok, :state},
+        {:disconnect, err, :discon},
+        :ok,
+        {:error, err}
+      ]
+
+      {:ok, agent} = A.start_link(stack)
+      {:ok, telemetry_listener} = DBConnection.TelemetryListener.start_link()
+
+      tag = make_ref()
+
+      {:ok, pool} =
+        P.start_link(
+          agent: agent,
+          parent: self(),
+          connection_listeners: {[telemetry_listener], tag},
+          backoff_min: 1_000
+        )
+
+      assert_receive {:telemetry, :connected, %{tag: ^tag}}
+      assert P.close(pool, %Q{})
+      assert_receive {:telemetry, :disconnected, %{tag: ^tag}}
+    after
+      detach_telemetry_forwarding_handler()
+    end
+
+    test "handles non-graceful disconnects" do
+      attach_telemetry_forwarding_handler()
+
+      stack = [
+        fn opts ->
+          send(opts[:parent], {:hi, self()})
+          {:ok, :state}
+        end,
+        {:ok, :state}
+      ]
+
+      {:ok, agent} = A.start_link(stack)
+      {:ok, telemetry_listener} = DBConnection.TelemetryListener.start_link()
+
+      {:ok, _pool} =
+        P.start_link(
+          agent: agent,
+          parent: self(),
+          connection_listeners: [telemetry_listener],
+          backoff_min: 1_000
+        )
+
+      assert_receive {:hi, pid}
+      Process.exit(pid, :kill)
+
+      assert_receive {:telemetry, :disconnected, %{pid: ^pid}}
+    after
+      detach_telemetry_forwarding_handler()
+    end
+  end
+
+  defp attach_telemetry_forwarding_handler() do
+    test_pid = self()
+
+    :telemetry.attach_many(
+      "TestHandler",
+      [
+        [:db_connection, :connected],
+        [:db_connection, :disconnected]
+      ],
+      fn [:db_connection, action], _, metadata, _ ->
+        send(test_pid, {:telemetry, action, metadata})
+      end,
+      %{}
+    )
+  end
+
+  defp detach_telemetry_forwarding_handler() do
+    :telemetry.detach("TestHandler")
+  end
 end
