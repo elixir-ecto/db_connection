@@ -7,13 +7,21 @@ defmodule DBConnection.TelemetryListener do
 
   ## Usage
 
-  Start the listener, optionally using a name, and pass it under the
-  `:connection_listeners` option when starting DbConnection:
+  Start the listener, and pass it under the `:connection_listeners` option when
+  starting DBConnection:
 
-      {:ok, pid} = TelemetryListener.start_link([name: MyListener])
-      {:ok, _conn} = DBConnection.start_link(SomeModule, [connection_listeners: [MyListener]])
+      {:ok, pid} = TelemetryListener.start_link()
+      {:ok, _conn} = DBConnection.start_link(SomeModule, connection_listeners: [pid])
+
       # Using a tag, which will be sent in telemetry metadata
-      {:ok, _conn} = DBConnection.start_link(SomeModule, [connection_listeners: {[pid], :my_tag}])
+      {:ok, _conn} = DBConnection.start_link(SomeModule, connection_listeners: {[pid], :my_tag})
+
+      # Or, with a Supervisor:
+      Supervisor.start_link([
+        {TelemetryListener, [name: MyListener]},
+        DBConnection.child_spec(SomeModule, connection_listeners: {[MyListener], :my_tag})
+      ])
+
 
   ## Telemetry events
 

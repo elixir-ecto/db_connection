@@ -566,6 +566,8 @@ defmodule DBConnection do
 
     * `:opts` - All options given to the pool operation
 
+  See `DBConnection.TelemetryListener` for enabling `[:db_connection, :connected]`
+  and `[:db_connection, :disconnected]` events.
   """
   @spec start_link(module, [start_option()] | Keyword.t()) :: GenServer.on_start()
   def start_link(conn_mod, opts) do
