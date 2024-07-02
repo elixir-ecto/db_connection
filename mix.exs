@@ -3,7 +3,7 @@ defmodule DBConnection.Mixfile do
 
   @source_url "https://github.com/elixir-ecto/db_connection"
   @pools [:connection_pool, :ownership]
-  @version "2.6.0"
+  @version "2.7.0"
 
   def project do
     [

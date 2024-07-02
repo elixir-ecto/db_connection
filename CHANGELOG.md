@@ -1,5 +1,14 @@
 # Changelog
 
+## v2.7.0 (2024-07-02)
+
+* Enhancements
+  * Add API for retrieving pool metrics
+  * Include a built-in listener that emits telemetry events
+
+* Bug fixes
+  * Discard EXIT messages from trapped exits
+
 ## v2.6.0 (2023-10-15)
 
 * Enhancements
