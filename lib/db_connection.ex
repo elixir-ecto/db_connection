@@ -171,7 +171,7 @@ defmodule DBConnection do
   to allow the checkout or `{:disconnect, exception, state}` to disconnect.
 
   This callback is called immediately after the connection is established
-  and the state is never effetively checked in again. That's because
+  and the state is never effectively checked in again. That's because
   DBConnection keeps the connection state in an ETS table that is moved
   between the different clients checking out connections. There is no
   `checkin` callback. The state is only handed back to the connection
