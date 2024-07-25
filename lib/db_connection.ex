@@ -1274,13 +1274,13 @@ defmodule DBConnection do
   end
 
   @doc """
-  Returns connection module used by the given connection pool.
+  Returns the connection module used by the given connection pool.
 
   When given a process that is not a connection pool, returns an `:error`.
   """
   @spec connection_module(conn) :: {:ok, module} | :error
   def connection_module(conn) do
-    with pid when pid != nil <- pool_pid(conn),
+    with pid when is_pid(pid) <- pool_pid(conn),
          {:dictionary, dictionary} <- Process.info(pid, :dictionary),
          {@connection_module_key, module} <- List.keyfind(dictionary, @connection_module_key, 0),
          do: {:ok, module},
