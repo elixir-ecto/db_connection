@@ -171,7 +171,7 @@ defmodule DBConnection do
   to allow the checkout or `{:disconnect, exception, state}` to disconnect.
 
   This callback is called immediately after the connection is established
-  and the state is never effetively checked in again. That's because
+  and the state is never effectively checked in again. That's because
   DBConnection keeps the connection state in an ETS table that is moved
   between the different clients checking out connections. There is no
   `checkin` callback. The state is only handed back to the connection
@@ -1274,13 +1274,13 @@ defmodule DBConnection do
   end
 
   @doc """
-  Returns connection module used by the given connection pool.
+  Returns the connection module used by the given connection pool.
 
   When given a process that is not a connection pool, returns an `:error`.
   """
   @spec connection_module(conn) :: {:ok, module} | :error
   def connection_module(conn) do
-    with pid when pid != nil <- pool_pid(conn),
+    with pid when is_pid(pid) <- pool_pid(conn),
          {:dictionary, dictionary} <- Process.info(pid, :dictionary),
          {@connection_module_key, module} <- List.keyfind(dictionary, @connection_module_key, 0),
          do: {:ok, module},
