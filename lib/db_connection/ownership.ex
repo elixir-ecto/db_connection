@@ -94,8 +94,7 @@ defmodule DBConnection.Ownership do
 
   It may return `:ok` if the connection is checked out.
   `{:already, :owner | :allowed}` if the caller process already
-  has a connection, `:error` if it could be not checked out or
-  raise if there was an error.
+  has a connection, or raise if there was an error.
   """
   @spec ownership_checkout(GenServer.server(), Keyword.t()) ::
           :ok | {:already, :owner | :allowed}
