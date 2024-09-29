@@ -74,7 +74,13 @@ defmodule DBConnection.Ownership.Manager do
     ets =
       case Keyword.fetch(owner_opts, :name) do
         {:ok, name} when is_atom(name) ->
-          :ets.new(name, [:set, :named_table, :protected, read_concurrency: true])
+          :ets.new(name, [
+            :set,
+            :named_table,
+            :protected,
+            read_concurrency: true,
+            decentralized_counters: true
+          ])
 
         _ ->
           nil
