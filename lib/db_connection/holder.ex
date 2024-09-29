@@ -17,7 +17,7 @@ defmodule DBConnection.Holder do
   @spec new(pid, reference, module, term) :: t
   def new(pool, ref, mod, state) do
     # Insert before setting heir so that pool can't receive empty table
-    holder = :ets.new(__MODULE__, [:public, :ordered_set])
+    holder = :ets.new(__MODULE__, [:public, :ordered_set, decentralized_counters: true])
 
     conn = conn(connection: self(), module: mod, state: state, ts: System.monotonic_time())
     true = :ets.insert_new(holder, conn)
