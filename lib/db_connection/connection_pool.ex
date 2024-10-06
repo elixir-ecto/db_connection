@@ -24,11 +24,6 @@ defmodule DBConnection.ConnectionPool do
   end
 
   @doc false
-  def child_spec(opts) do
-    super(opts)
-  end
-
-  @doc false
   @impl DBConnection.Pool
   def checkout(pool, callers, opts) do
     Holder.checkout(pool, callers, opts)
