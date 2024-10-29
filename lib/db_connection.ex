@@ -433,7 +433,7 @@ defmodule DBConnection do
   started, there are two relevant options to control the queue:
 
     * `:queue_target` in milliseconds, defaults to 50ms
-    * `:queue_interval` in milliseconds, defaults to 1000ms
+    * `:queue_interval` in milliseconds, defaults to 2000ms
 
   Our goal is to wait at most `:queue_target` for a connection.
   If all connections checked out during a `:queue_interval` takes

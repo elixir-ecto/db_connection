@@ -14,7 +14,7 @@ defmodule DBConnection.ConnectionPool do
   @behaviour DBConnection.Pool
 
   @queue_target 50
-  @queue_interval 1000
+  @queue_interval 2000
   @idle_interval 1000
   @time_unit 1000
 
