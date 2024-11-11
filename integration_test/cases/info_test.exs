@@ -5,7 +5,7 @@ defmodule InfoTest do
   alias TestAgent, as: A
   alias TestQuery, as: Q
 
-  test "handle_info handles message and moves on" do
+  test "handle_info handles harmless message and moves on" do
     stack = [
       fn opts ->
         send(opts[:parent], {:connected, self()})
@@ -37,7 +37,7 @@ defmodule InfoTest do
         send(opts[:parent], {:connected, self()})
         {:ok, :state}
       end,
-      {:disconnect, :reason},
+      {:disconnect, RuntimeError.exception("TCP connection just closed")},
       :ok,
       fn opts ->
         send(opts[:parent], :reconnected)
@@ -49,7 +49,7 @@ defmodule InfoTest do
     P.start_link(agent: agent, parent: self())
 
     assert_receive {:connected, conn}
-    send(conn, "some harmful message that casuses disconnect")
+    send(conn, "monitor says TCP connection just closed")
     assert_receive :reconnected
 
     assert [
@@ -66,16 +66,14 @@ defmodule InfoTest do
         {:ok, %{conn_pid: self()}}
       end,
       fn _query, _params, _opts, %{conn_pid: conn_pid} ->
-        send(
-          conn_pid,
-          "some harmful message that causes disconnect while conneciton is checked out"
-        )
+        send(conn_pid, "monitor says TCP connection just closed")
 
-        # This waits for the info message to be processed in the connection.
+        # This waits for the info message to be processed.
         :sys.get_state(conn_pid)
-        {:disconnect, :closed, :new_state}
+
+        {:disconnect, RuntimeError.exception("TCP connection is closed"), :new_state}
       end,
-      {:disconnect, :closed},
+      {:disconnect, RuntimeError.exception("TCP connection just closed")},
       :ok,
       fn opts ->
         send(opts[:parent], :reconnected)
@@ -83,12 +81,12 @@ defmodule InfoTest do
       end
     ]
 
-    parent = self()
-
     {:ok, agent} = A.start_link(stack)
-    {:ok, pool} = P.start_link(agent: agent, parent: parent)
+    {:ok, pool} = P.start_link(agent: agent, parent: self())
 
-    assert {:error, :closed} = P.execute(pool, %Q{}, [:first])
+    assert {:error, %RuntimeError{message: "TCP connection is closed"}} =
+             P.execute(pool, %Q{}, [:first])
+
     assert_receive :reconnected
 
     assert [
