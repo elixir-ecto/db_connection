@@ -57,4 +57,6 @@ defmodule InfoTest do
              connect: _
            ] = A.record(agent)
   end
+
+  test "handle_info's disconnect with connection checked out"
 end
