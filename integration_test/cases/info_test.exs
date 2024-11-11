@@ -85,7 +85,7 @@ defmodule InfoTest do
     {:ok, pool} = P.start_link(agent: agent, parent: self())
 
     assert {:error, %RuntimeError{message: "TCP connection is closed"}} =
-             P.execute(pool, %Q{}, [:first])
+             P.execute(pool, %Q{}, [])
 
     assert_receive :reconnected
 
