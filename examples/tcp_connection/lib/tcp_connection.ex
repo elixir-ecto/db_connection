@@ -148,8 +148,16 @@ defmodule TCPConnection do
   # The handle_info callback is optional and can be removed if not needed.
   # Here it is used to react to `:inet.monitor/1` messages which arrive
   # when socket gets closed while the connection is idle.
-  def handle_info({:DOWN, _ref, _type, sock, _info}, {sock, _buffer} = s) do
-    {:disconnect, TCPConnection.Error.exception({:idle, :closed}), s}
+  def handle_info({:DOWN, _ref, _type, sock, _info}, {sock, _buffer}) do
+    {:disconnect, TCPConnection.Error.exception({:idle, :closed})}
+  end
+
+  def handle_info(msg, state) do
+    Logger.info(fn ->
+      ["#{__MODULE__} (", inspect(self()), ") missed message: ", inspect(msg)]
+    end)
+
+    :ok
   end
 
   @impl true

@@ -80,6 +80,4 @@ defmodule TestPoolDisconnectAll do
              handle_execute: [_, _, _, :final_state1]
            ] = A.record(agent)
   end
-
-  test "disconnect on info"
 end

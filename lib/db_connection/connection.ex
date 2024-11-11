@@ -333,11 +333,11 @@ defmodule DBConnection.Connection do
   def handle_event(:info, msg, :no_state, %{mod: mod, state: state} = s) do
     if function_exported?(mod, :handle_info, 2) do
       case apply(mod, :handle_info, [msg, state]) do
-        {:ok, state} ->
-          pool_update(state, s)
+        :ok ->
+          handle_timeout(s)
 
-        {:disconnect, err, state} ->
-          {:keep_state, %{s | state: state}, {:next_event, :internal, {:disconnect, {:log, err}}}}
+        {:disconnect, err} ->
+          {:keep_state, s, {:next_event, :internal, {:disconnect, {:log, err}}}}
       end
     else
       Logger.info(fn ->
