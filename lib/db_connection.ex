@@ -364,6 +364,7 @@ defmodule DBConnection do
 
   @doc """
   Optional callback for handling messages received by the connection.
+
   Returns `{:disconnect, exception}` to close the connection or `:ok` to continue.
   """
   @callback handle_info(message :: any, state :: any) :: {:disconnect, Exception.t()} | :ok
