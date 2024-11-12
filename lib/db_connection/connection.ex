@@ -330,12 +330,22 @@ defmodule DBConnection.Connection do
     handle_timeout(s)
   end
 
-  def handle_event(:info, msg, :no_state, %{mod: mod} = s) do
-    Logger.info(fn ->
-      [inspect(mod), ?\s, ?(, inspect(self()), ") missed message: " | inspect(msg)]
-    end)
+  def handle_event(:info, msg, :no_state, %{mod: mod, state: state} = s) do
+    if function_exported?(mod, :handle_info, 2) do
+      case apply(mod, :handle_info, [msg, state]) do
+        :ok ->
+          handle_timeout(s)
 
-    handle_timeout(s)
+        {:disconnect, err} ->
+          {:keep_state, s, {:next_event, :internal, {:disconnect, {:log, err}}}}
+      end
+    else
+      Logger.info(fn ->
+        [inspect(mod), ?\s, ?(, inspect(self()), ") missed message: " | inspect(msg)]
+      end)
+
+      handle_timeout(s)
+    end
   end
 
   @doc false
