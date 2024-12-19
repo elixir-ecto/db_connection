@@ -150,10 +150,6 @@ defmodule TestConnection do
     TestAgent.eval(:handle_deallocate, [query, cursor, opts, state])
   end
 
-  def handle_info(message, state) do
-    TestAgent.eval(:handle_info, [message, state])
-  end
-
   defp put_agent_from_opts(opts) do
     Process.get(:agent) || Process.put(:agent, agent_from_opts(opts))
   end
