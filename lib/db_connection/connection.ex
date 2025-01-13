@@ -75,7 +75,9 @@ defmodule DBConnection.Connection do
     rescue
       e ->
         {e, stack} = maybe_sanitize_exception(e, __STACKTRACE__, opts)
-        reraise e, stack
+        # Because of versions of Elixir before 1.17.2 not handling genstatem error logs correctly,
+        # we need to send a stop event here instead of raising.
+        {:stop, {e, stack}}
     else
       {:ok, state} when after_connect != nil ->
         ref = make_ref()
@@ -340,8 +342,13 @@ defmodule DBConnection.Connection do
 
   @doc false
   @impl :gen_statem
-  # If client is :closed then the connection was previously disconnected
-  # and cleanup is not required.
+  # Once Elixir 1.17 is required, we can change this to do nothing, and raise on error instead of sending :stop.
+  def terminate({e, stack}, _, %{client: :closed}) do
+    msg = Exception.format_banner(:error, e, stack)
+    Logger.error(msg)
+    :ok
+  end
+
   def terminate(_, _, %{client: :closed}), do: :ok
 
   def terminate(reason, _, s) do
