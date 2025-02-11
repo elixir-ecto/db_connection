@@ -39,13 +39,13 @@ defmodule DBConnection.Backoff do
   end
 
   def backoff(%Backoff{type: :exp, min: min, state: nil} = s) do
-    {min, %Backoff{s | state: min}}
+    {min, %{s | state: min}}
   end
 
   def backoff(%Backoff{type: :exp, max: max, state: prev} = s) do
     require Bitwise
     next = min(Bitwise.<<<(prev, 1), max)
-    {next, %Backoff{s | state: next}}
+    {next, %{s | state: next}}
   end
 
   def backoff(%Backoff{type: :rand_exp, max: max, state: state} = s) do
@@ -53,17 +53,17 @@ defmodule DBConnection.Backoff do
     next_min = min(prev, lower)
     next_max = min(prev * 3, max)
     next = rand(next_min, next_max)
-    {next, %Backoff{s | state: {next, lower}}}
+    {next, %{s | state: {next, lower}}}
   end
 
   @spec reset(t) :: t
   def reset(backoff)
 
   def reset(%Backoff{type: :rand} = s), do: s
-  def reset(%Backoff{type: :exp} = s), do: %Backoff{s | state: nil}
+  def reset(%Backoff{type: :exp} = s), do: %{s | state: nil}
 
   def reset(%Backoff{type: :rand_exp, min: min, state: {_, lower}} = s) do
-    %Backoff{s | state: {min, lower}}
+    %{s | state: {min, lower}}
   end
 
   ## Internal
