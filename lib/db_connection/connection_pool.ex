@@ -9,7 +9,7 @@ defmodule DBConnection.ConnectionPool do
 
   `disconnect_all/3`, which by default will result in connections being
   reestablished, can be called periodically to recycle checked-in connections
-  after a maximum lifetime is reached. It is exposed via
+  after a maximum lifetime is reached. `Ecto SQL` users may find it at
   https://hexdocs.pm/ecto_sql/Ecto.Adapters.SQL.html#disconnect_all/3
   """
 
