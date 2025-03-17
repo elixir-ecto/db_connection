@@ -10,7 +10,7 @@ defmodule DBConnection.TelemetryListener do
   Start the listener, and pass it under the `:connection_listeners` option when
   starting DBConnection:
 
-      {:ok, pid} = TelemetryListener.start_link()
+      {:ok, pid} = DBConnection.TelemetryListener.start_link()
       {:ok, _conn} = DBConnection.start_link(SomeModule, connection_listeners: [pid])
 
       # Using a tag, which will be sent in telemetry metadata
@@ -18,10 +18,17 @@ defmodule DBConnection.TelemetryListener do
 
       # Or, with a Supervisor:
       Supervisor.start_link([
-        {TelemetryListener, [name: MyListener]},
+        {DBConnection.TelemetryListener, name: MyListener},
         DBConnection.child_spec(SomeModule, connection_listeners: {[MyListener], :my_tag})
       ])
 
+  When using with Ecto, you can pass the `connection_listeners` option to Ecto, and we
+  recommend passing the repository as the tag. In your supervision tree:
+
+      Supervisor.start_link([
+        {DBConnection.TelemetryListener, name: MyApp.DBListener},
+        {MyApp.Repo, connection_listeners: {[MyApp.DBListener], MyApp.Repo})
+      ])
 
   ## Telemetry events
 
