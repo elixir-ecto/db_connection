@@ -549,6 +549,8 @@ defmodule DBConnection do
 
   A `[:db_connection, :connection_error]` event is published whenever a
   connection checkout receives a `%DBConnection.ConnectionError{}`.
+  This event is emitted from the process that attempts to checkout the
+  connection.
 
   Measurements:
 
@@ -560,8 +562,9 @@ defmodule DBConnection do
 
     * `:opts` - All options given to the pool operation
 
-  See `DBConnection.TelemetryListener` for enabling `[:db_connection, :connected]`
-  and `[:db_connection, :disconnected]` events.
+  You may also consume `[:db_connection, :connected]` and `[:db_connection, :disconnected]`
+  events by spawning a `DBConnection.TelemetryListener` process that subscribes to the pool
+  and emits them in a robust manner.
   """
   @spec start_link(module, [start_option()] | Keyword.t()) :: GenServer.on_start()
   def start_link(conn_mod, opts) do
