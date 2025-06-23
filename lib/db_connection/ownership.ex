@@ -144,6 +144,10 @@ defmodule DBConnection.Ownership do
   has a connection. `owner_or_allowed` may either be the owner or any
   other allowed process. Returns `:not_found` if the given process
   does not have any connection checked out.
+
+  Setting the `unallow_existing` option to `true` will remove the process given by `allow` from
+  any existing allowance it may have (this is necessary because a given process can only be
+  allowed on a single connection at a time).
   """
   @spec ownership_allow(GenServer.server(), owner_or_allowed :: pid, allow :: pid, Keyword.t()) ::
           :ok | {:already, :owner | :allowed} | :not_found

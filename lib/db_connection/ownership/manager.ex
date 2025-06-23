@@ -56,7 +56,8 @@ defmodule DBConnection.Ownership.Manager do
           :ok | {:already, :owner | :allowed} | :not_found
   def allow(manager, parent, allow, opts) do
     timeout = Keyword.get(opts, :timeout, @timeout)
-    GenServer.call(manager, {:allow, parent, allow}, timeout)
+    passed_opts = Keyword.take(opts, [:unallow_existing])
+    GenServer.call(manager, {:allow, parent, allow, passed_opts}, timeout)
   end
 
   @spec get_connection_metrics(GenServer.server()) ::
@@ -170,15 +171,24 @@ defmodule DBConnection.Ownership.Manager do
     {:reply, reply, state}
   end
 
-  def handle_call({:allow, caller, allow}, _from, %{checkouts: checkouts} = state) do
-    if kind = already_checked_out(checkouts, allow) do
+  def handle_call({:allow, caller, allow, opts}, _from, %{checkouts: checkouts} = state) do
+    unallow_existing = Keyword.get(opts, :unallow_existing, false)
+    kind = already_checked_out(checkouts, allow)
+
+    if !unallow_existing && kind do
       {:reply, {:already, kind}, state}
     else
       case Map.get(checkouts, caller, :not_found) do
         {:owner, ref, proxy} ->
+          state =
+            if unallow_existing, do: owner_unallow(state, caller, allow, ref, proxy), else: state
+
           {:reply, :ok, owner_allow(state, caller, allow, ref, proxy)}
 
         {:allowed, ref, proxy} ->
+          state =
+            if unallow_existing, do: owner_unallow(state, caller, allow, ref, proxy), else: state
+
           {:reply, :ok, owner_allow(state, caller, allow, ref, proxy)}
 
         :not_found ->
@@ -307,6 +317,24 @@ defmodule DBConnection.Ownership.Manager do
       end)
 
     ets && :ets.insert(ets, {allow, proxy})
+    state
+  end
+
+  defp owner_unallow(%{ets: ets, log: log} = state, caller, unallow, ref, proxy) do
+    if log do
+      Logger.log(log, fn ->
+        [inspect(unallow), " was unallowed by ", inspect(caller), " on proxy ", inspect(proxy)]
+      end)
+    end
+
+    state = update_in(state.checkouts, &Map.delete(&1, unallow))
+
+    state =
+      update_in(state.owners[ref], fn {proxy, caller, allowed} ->
+        {proxy, caller, List.delete(allowed, unallow)}
+      end)
+
+    ets && :ets.delete(ets, {unallow, proxy})
     state
   end
 
