@@ -1,5 +1,12 @@
 # Changelog
 
+## v2.8.0 (2025-06-24)
+
+* Enhancement
+  * Allow `unallow_existing` as an opt to `ownership_allow/4`
+  * Improve ETS performance by enabling descentralized counters
+  * Increase default queue interval to 2000s
+
 ## v2.7.0 (2024-07-02)
 
 * Enhancements
