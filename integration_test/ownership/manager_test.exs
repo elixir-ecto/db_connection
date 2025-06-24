@@ -49,6 +49,7 @@ defmodule ManagerTest do
 
   test "connection may be shared with other processes" do
     {:ok, pool, _opts} = start_pool()
+    {:ok, pool_2, _opts} = start_pool()
     parent = self()
 
     Task.await(
@@ -63,6 +64,12 @@ defmodule ManagerTest do
     assert Ownership.ownership_allow(pool, self(), self(), []) ==
              {:already, :owner}
 
+    :ok = Ownership.ownership_checkout(pool_2, [])
+
+    assert Ownership.ownership_allow(pool_2, self(), self(), unallow_existing: true) == :ok
+
+    assert Ownership.ownership_allow(pool_2, self(), self(), []) == {:already, :allowed}
+
     Task.await(
       async_no_callers(fn ->
         assert Ownership.ownership_allow(pool, parent, self(), []) ==
@@ -72,6 +79,13 @@ defmodule ManagerTest do
                  {:already, :allowed}
 
         assert Ownership.ownership_checkin(pool, []) == :not_owner
+
+        # Test that we can switch our 'allow' to another pool and back again
+        assert Ownership.ownership_allow(pool_2, parent, self(), unallow_existing: true) == :ok
+
+        assert Ownership.ownership_allow(pool_2, parent, self(), []) == {:already, :allowed}
+
+        assert Ownership.ownership_allow(pool, parent, self(), unallow_existing: true) == :ok
 
         parent = self()
 
