@@ -323,7 +323,6 @@ defmodule ManagerTest do
     Task.await(task)
   end
 
-  @tag :requires_callers
   test "performs callers checkout on manual mode" do
     {:ok, pool, opts} = start_pool()
     assert Ownership.ownership_mode(pool, :manual, []) == :ok
@@ -338,7 +337,6 @@ defmodule ManagerTest do
     |> Task.await()
   end
 
-  @tag :requires_callers
   test "performs callers checkout on manual mode through allowance" do
     {:ok, pool, opts} = start_pool()
     assert Ownership.ownership_mode(pool, :manual, []) == :ok
@@ -355,7 +353,6 @@ defmodule ManagerTest do
     |> Task.await()
   end
 
-  @tag :requires_callers
   test "does not perform callers checkout on auto mode" do
     {:ok, agent} =
       A.start_link([{:ok, :state}, {:ok, :state}] ++ List.duplicate({:idle, :state}, 10))

@@ -54,7 +54,7 @@ defmodule DBConnection.Mixfile do
   defp package do
     %{
       licenses: ["Apache-2.0"],
-      maintainers: ["James Fish"],
+      maintainers: ["James Fish", "José Valim"],
       links: %{"GitHub" => @source_url}
     }
   end
