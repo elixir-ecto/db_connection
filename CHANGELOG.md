@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.8.1 (2025-06-24)
+
+* Enhancement
+  * Automatically set and read process labels in error reports
+
 ## v2.8.0 (2025-06-24)
 
 * Enhancement
