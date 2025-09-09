@@ -6,6 +6,7 @@ defmodule DBConnection.Connection do
   require Logger
   alias DBConnection.Backoff
   alias DBConnection.Holder
+  alias DBConnection.Util
 
   @timeout 15_000
 
@@ -47,6 +48,10 @@ defmodule DBConnection.Connection do
   @doc false
   @impl :gen_statem
   def init({mod, opts, pool, tag}) do
+    pool_index = Keyword.get(opts, :pool_index)
+    label = if pool_index, do: "db_conn_#{pool_index}", else: "db_conn"
+    Util.set_label(label)
+
     s = %{
       mod: mod,
       opts: opts,
@@ -267,7 +272,9 @@ defmodule DBConnection.Connection do
         :no_state,
         %{client: {ref, :after_connect}} = s
       ) do
-    message = "client #{inspect(pid)} exited: " <> Exception.format_exit(reason)
+    message =
+      "client #{Util.inspect_pid(pid)} exited: " <> Exception.format_exit(reason)
+
     err = DBConnection.ConnectionError.exception(message)
 
     {:keep_state, %{s | client: {nil, :after_connect}},
@@ -275,7 +282,9 @@ defmodule DBConnection.Connection do
   end
 
   def handle_event(:info, {:DOWN, mon, _, pid, reason}, :no_state, %{client: {ref, mon}} = s) do
-    message = "client #{inspect(pid)} exited: " <> Exception.format_exit(reason)
+    message =
+      "client #{Util.inspect_pid(pid)} exited: " <> Exception.format_exit(reason)
+
     err = DBConnection.ConnectionError.exception(message)
 
     {:keep_state, %{s | client: {ref, nil}},
@@ -290,14 +299,14 @@ defmodule DBConnection.Connection do
       )
       when is_reference(timer) do
     message =
-      "client #{inspect(pid)} timed out because it checked out " <>
+      "client #{Util.inspect_pid(pid)} timed out because it checked out " <>
         "the connection for longer than #{timeout}ms"
 
     exc =
       case Process.info(pid, :current_stacktrace) do
         {:current_stacktrace, stacktrace} ->
           message <>
-            "\n\n#{inspect(pid)} was at location:\n\n" <>
+            "\n\n#{Util.inspect_pid(pid)} was at location:\n\n" <>
             Exception.format_stacktrace(stacktrace)
 
         _ ->

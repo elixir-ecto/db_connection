@@ -15,6 +15,7 @@ defmodule DBConnection.ConnectionPool do
 
   use GenServer
   alias DBConnection.Holder
+  alias DBConnection.Util
 
   @behaviour DBConnection.Pool
 
@@ -136,7 +137,7 @@ defmodule DBConnection.ConnectionPool do
   end
 
   def handle_info({:"ETS-TRANSFER", holder, pid, queue}, {_, queue, _, _} = data) do
-    message = "client #{inspect(pid)} exited"
+    message = "client #{Util.inspect_pid(pid)} exited"
     err = DBConnection.ConnectionError.exception(message: message, severity: :info)
     Holder.handle_disconnect(holder, err)
     {:noreply, data}
@@ -175,14 +176,14 @@ defmodule DBConnection.ConnectionPool do
     # Check that timeout refers to current holder (and not previous)
     if Holder.handle_deadline(holder, deadline) do
       message =
-        "client #{inspect(pid)} timed out because " <>
+        "client #{Util.inspect_pid(pid)} timed out because " <>
           "it queued and checked out the connection for longer than #{len}ms"
 
       exc =
         case Process.info(pid, :current_stacktrace) do
           {:current_stacktrace, stacktrace} ->
             message <>
-              "\n\n#{inspect(pid)} was at location:\n\n" <>
+              "\n\n#{Util.inspect_pid(pid)} was at location:\n\n" <>
               Exception.format_stacktrace(stacktrace)
 
           _ ->

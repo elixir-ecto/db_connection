@@ -3,6 +3,7 @@ defmodule DBConnection.Ownership.Manager do
   use GenServer
   require Logger
   alias DBConnection.Ownership.Proxy
+  alias DBConnection.Util
 
   @timeout 5_000
 
@@ -394,7 +395,7 @@ defmodule DBConnection.Ownership.Manager do
 
   defp not_found({pid, _} = from) do
     msg = """
-    cannot find ownership process for #{inspect(pid)}.
+    cannot find ownership process for #{Util.inspect_pid(pid)}.
 
     When using ownership, you must manage connections in one
     of the four ways:
