@@ -12,6 +12,17 @@ defmodule DBConnection.Util do
       label_or_name -> "#{inspect(pid)} (#{inspect(label_or_name)})"
     end
   end
+  
+  defp get_name(pid) do
+    try do
+      Process.info(pid, :register_name)
+    rescue
+      _ -> :undefined
+    else
+      [] -> :undefined
+      name -> name
+    end
+  end
 
   @doc """
   Set a process label if `Process.set_label/1` is available.
