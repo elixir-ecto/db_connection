@@ -13,6 +13,8 @@ defmodule DBConnection.Task do
   end
 
   def init(fun, parent, opts) do
+    DBConnection.Util.set_label("db_after_connect_task")
+
     try do
       Process.link(parent)
     catch

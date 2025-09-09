@@ -48,6 +48,10 @@ defmodule DBConnection.Connection do
   @doc false
   @impl :gen_statem
   def init({mod, opts, pool, tag}) do
+    pool_index = Keyword.get(opts, :pool_index)
+    label = if pool_index, do: "db_conn_#{pool_index}", else: "db_conn"
+    Util.set_label(label)
+
     s = %{
       mod: mod,
       opts: opts,
