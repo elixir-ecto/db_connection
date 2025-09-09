@@ -12,7 +12,7 @@ defmodule DBConnection.Util do
       label_or_name -> "#{inspect(pid)} (#{inspect(label_or_name)})"
     end
   end
-  
+
   defp get_name(pid) do
     try do
       Process.info(pid, :registered_name)
