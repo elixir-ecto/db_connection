@@ -1,7 +1,5 @@
 defmodule DBConnection.Util do
-  @moduledoc """
-  Shared functions.
-  """
+  @moduledoc false
 
   @doc """
   Inspect a pid, including the process label if possible.
