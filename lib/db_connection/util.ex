@@ -17,8 +17,8 @@ defmodule DBConnection.Util do
   Set a process label if `Process.set_label/1` is available.
   """
   def set_label(label) do
-    if function_exported?(Process, :set_label, 1) do
-      Process.set_label(label)
+    if function_exported?(:proc_lib, :set_label, 1) do
+      :proc_lib.set_label(label)
     else
       :ok
     end
