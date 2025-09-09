@@ -15,12 +15,12 @@ defmodule DBConnection.Util do
   
   defp get_name(pid) do
     try do
-      Process.info(pid, :register_name)
+      Process.info(pid, :registered_name)
     rescue
       _ -> :undefined
     else
-      [] -> :undefined
-      name -> name
+      {:registered_name, name} when is_atom(name) -> name
+      _ -> :undefined
     end
   end
 
