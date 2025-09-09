@@ -5,9 +5,11 @@ defmodule DBConnection.Util do
   Inspect a pid, including the process label if possible.
   """
   def inspect_pid(pid) do
-    case get_label(pid) do
-      :undefined -> inspect(pid)
-      label -> "#{inspect(pid)} (#{inspect(label)})"
+    with :undefined <- get_label(pid),
+         :undefined <- get_name(pid) do
+      inspect(pid)
+    else
+      label_or_name -> "#{inspect(pid)} (#{inspect(label_or_name)})"
     end
   end
 
