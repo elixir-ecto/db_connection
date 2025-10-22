@@ -223,7 +223,7 @@ defmodule DBConnection.Ownership.Manager do
         {:noreply, state}
 
       :not_found when mode == :manual ->
-        not_found(from)
+        not_found(from, mode)
         {:noreply, state}
 
       :not_found ->
@@ -393,9 +393,10 @@ defmodule DBConnection.Ownership.Manager do
     caller
   end
 
-  defp not_found({pid, _} = from) do
+  defp not_found({pid, _} = from, mode) do
     msg = """
-    cannot find ownership process for #{Util.inspect_pid(pid)}.
+    cannot find ownership process for #{Util.inspect_pid(pid)}
+    using mode #{inspect(mode)}.
 
     When using ownership, you must manage connections in one
     of the four ways:
