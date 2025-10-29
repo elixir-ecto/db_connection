@@ -397,7 +397,9 @@ defmodule DBConnection.Ownership.Manager do
   defp not_found({pid, _} = from, mode, repo) do
     msg = """
     cannot find ownership process for #{Util.inspect_pid(pid)}
-    using mode #{inspect(mode)} on repo #{inspect(repo)}
+    using mode #{inspect(mode)} on repo #{inspect(repo)}.
+    (Note that a connection's mode reverts to :manual if its owner
+    terminates.)
 
     When using ownership, you must manage connections in one
     of the four ways:
