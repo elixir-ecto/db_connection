@@ -353,9 +353,9 @@ defmodule DBConnection.ConnectionPool do
     end
   end
 
-  defp drop(delay, from, meta) do
+  defp drop(delay, from, _meta) do
     message = """
-    [#{meta[:repo]}] connection not available and request was dropped from queue after #{delay}ms. \
+    connection not available and request was dropped from queue after #{delay}ms. \
     This means requests are coming in and your connection pool cannot serve them fast enough. \
     You can address this by:
 
