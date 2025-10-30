@@ -352,7 +352,7 @@ defmodule DBConnection.ConnectionPool do
 
   defp drop(delay, from) do
     message = """
-    connection not available and request was dropped from queue after #{delay}ms. \
+    [#{ancestor()}] connection not available and request was dropped from queue after #{delay}ms. \
     This means requests are coming in and your connection pool cannot serve them fast enough. \
     You can address this by:
 
@@ -367,6 +367,10 @@ defmodule DBConnection.ConnectionPool do
     err = DBConnection.ConnectionError.exception(message, :queue_timeout)
 
     Holder.reply_error(from, err)
+  end
+
+  defp ancestor do
+    Process.get(:"$ancestors", []) |> Enum.find(&is_atom/1)
   end
 
   defp start_opts(opts) do
