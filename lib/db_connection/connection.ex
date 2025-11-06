@@ -9,6 +9,7 @@ defmodule DBConnection.Connection do
   alias DBConnection.Util
 
   @timeout 15_000
+  @sensitive_opts [:parameters, :hostname, :port, :username, :password, :database]
 
   @doc false
   def start_link(mod, opts, pool, tag) do
@@ -234,6 +235,7 @@ defmodule DBConnection.Connection do
     case apply(mod, :checkout, [state]) do
       {:ok, state} ->
         opts = [timeout: timeout] ++ opts
+        opts = Keyword.drop(opts, @sensitive_opts)
         {pid, ref} = DBConnection.Task.run_child(mod, state, after_connect, opts)
         timer = start_timer(pid, timeout)
         s = %{s | client: {ref, :after_connect}, timer: timer, state: state}
