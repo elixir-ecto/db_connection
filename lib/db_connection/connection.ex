@@ -9,7 +9,7 @@ defmodule DBConnection.Connection do
   alias DBConnection.Util
 
   @timeout 15_000
-  @sensitive_opts [:after_connect, :parameters, :hostname, :port, :username, :password, :database]
+  @sensitive_opts [:parameters, :hostname, :port, :username, :password, :database]
 
   @doc false
   def start_link(mod, opts, pool, tag) do
