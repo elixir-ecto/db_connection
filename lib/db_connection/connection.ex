@@ -230,7 +230,6 @@ defmodule DBConnection.Connection do
       opts: opts
     } = s
 
-
     notify_connection_listeners(:connected, s)
 
     case apply(mod, :checkout, [state]) do
