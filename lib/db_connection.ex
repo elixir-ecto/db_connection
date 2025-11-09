@@ -1903,20 +1903,12 @@ defmodule DBConnection do
       {status, _conn_state} when status in [:idle, :transaction, :error] ->
         {:ok, status, meter}
 
-      {:disconnect, err, _conn_state} ->
-        disconnect(conn, err)
-        {:ok, :error, meter}
-
-      {:disconnect_and_retry, err, _conn_state} ->
-        disconnect(conn, err)
-        {:retry, err, meter}
-
-      {:catch, kind, reason, stack} ->
-        stop(conn, kind, reason, stack)
-        :erlang.raise(kind, reason, stack)
-
       other ->
-        bad_return!(other, conn, meter)
+        case retry_or_handle_common_result(other, conn, meter) do
+          {:error, _, meter} -> {:ok, :error, meter}
+          {kind, reason, stack, _meter} -> :erlang.raise(kind, reason, stack)
+          _ -> other
+        end
     end
   end
 
