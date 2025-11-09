@@ -203,10 +203,10 @@ defmodule DBConnection do
 
   Return `{:ok, result, state}`/`{:ok, query, result, state}` to continue,
   `{status, state}` to notify caller that the transaction can not begin due
-  to the transaction status `status`, or `{:disconnect, exception, state}`
-  to error and disconnect. If `{:ok, query, result, state}` is returned,
-  the query will be used to log the begin command. Otherwise, it will be
-  logged as `begin`.
+  to the transaction status `status`, or `{:disconnect | :disconnect_and_retry, exception, state}`
+  to error and disconnect (and optionally retry). If `{:ok, query, result, state}`
+  is returned, the query will be used to log the begin command. Otherwise,
+  it will be logged as `begin`.
 
   A callback implementation should only return `status` if it
   can determine the database's transaction status without side effect.
@@ -217,7 +217,7 @@ defmodule DBConnection do
               {:ok, result, new_state :: any}
               | {:ok, query, result, new_state :: any}
               | {status, new_state :: any}
-              | {:disconnect, Exception.t(), new_state :: any}
+              | {:disconnect | :disconnect_and_retry, Exception.t(), new_state :: any}
 
   @doc """
   Handle committing a transaction. Return `{:ok, result, state}` on successfully
@@ -255,20 +255,22 @@ defmodule DBConnection do
   Handle getting the transaction status. Return `{:idle, state}` if outside a
   transaction, `{:transaction, state}` if inside a transaction,
   `{:error, state}` if inside an aborted transaction, or
-  `{:disconnect, exception, state}` to error and disconnect.
+  `{:disconnect | :disconnect_and_retry, exception, state}` to error and disconnect
+  (and optionally retry).
 
   If the callback returns a `:disconnect` tuples then `status/2` will return
   `:error`.
   """
   @callback handle_status(opts :: Keyword.t(), state :: any) ::
               {status, new_state :: any}
-              | {:disconnect, Exception.t(), new_state :: any}
+              | {:disconnect | :disconnect_and_retry, Exception.t(), new_state :: any}
 
   @doc """
   Prepare a query with the database. Return `{:ok, query, state}` where
   `query` is a query to pass to `execute/4` or `close/3`,
   `{:error, exception, state}` to return an error and continue or
-  `{:disconnect, exception, state}` to return an error and disconnect.
+  `{:disconnect | :disconnect_and_retry, exception, state}` to error and disconnect
+  (and optionally retry).
 
   This callback is intended for cases where the state of a connection is
   needed to prepare a query and/or the query can be saved in the
@@ -278,45 +280,46 @@ defmodule DBConnection do
   """
   @callback handle_prepare(query, opts :: Keyword.t(), state :: any) ::
               {:ok, query, new_state :: any}
-              | {:error | :disconnect, Exception.t(), new_state :: any}
+              | {:error | :disconnect | :disconnect_and_retry, Exception.t(), new_state :: any}
 
   @doc """
   Execute a query prepared by `c:handle_prepare/3`. Return
   `{:ok, query, result, state}` to return altered query `query` and result
   `result` and continue, `{:error, exception, state}` to return an error and
-  continue or `{:disconnect, exception, state}` to return an error and
-  disconnect.
+  continue or `{:disconnect | :disconnect_and_retry, exception, state}` to
+  error and disconnect (and optionally retry).
 
   This callback is called in the client process.
   """
   @callback handle_execute(query, params, opts :: Keyword.t(), state :: any) ::
               {:ok, query, result, new_state :: any}
-              | {:error | :disconnect, Exception.t(), new_state :: any}
+              | {:error | :disconnect | :disconnect_and_retry, Exception.t(), new_state :: any}
 
   @doc """
   Close a query prepared by `c:handle_prepare/3` with the database. Return
   `{:ok, result, state}` on success and to continue,
   `{:error, exception, state}` to return an error and continue, or
-  `{:disconnect, exception, state}` to return an error and disconnect.
+  `{:disconnect | :disconnect_and_retry, exception, state}` to
+  error and disconnect (and optionally retry).
 
   This callback is called in the client process.
   """
   @callback handle_close(query, opts :: Keyword.t(), state :: any) ::
               {:ok, result, new_state :: any}
-              | {:error | :disconnect, Exception.t(), new_state :: any}
+              | {:error | :disconnect | :disconnect_and_retry, Exception.t(), new_state :: any}
 
   @doc """
   Declare a cursor using a query prepared by `c:handle_prepare/3`. Return
   `{:ok, query, cursor, state}` to return altered query `query` and cursor
   `cursor` for a stream and continue, `{:error, exception, state}` to return an
-  error and continue or `{:disconnect, exception, state}` to return an error
-  and disconnect.
+  error and continue or `{:disconnect | :disconnect_and_retry, exception, state}`
+  to error and disconnect (and optionally retry).
 
   This callback is called in the client process.
   """
   @callback handle_declare(query, params, opts :: Keyword.t(), state :: any) ::
               {:ok, query, cursor, new_state :: any}
-              | {:error | :disconnect, Exception.t(), new_state :: any}
+              | {:error | :disconnect | :disconnect_and_retry, Exception.t(), new_state :: any}
 
   @doc """
   Fetch the next result from a cursor declared by `c:handle_declare/4`. Return
@@ -358,11 +361,11 @@ defmodule DBConnection do
   The last known state will be sent and the exception will be a `DBConnection.ConnectionError`
   containing the reason for the exit. To have the same happen on unexpected
   shutdowns, you may trap exits from the `connect` callback.
-
   """
   @callback disconnect(err :: Exception.t(), state :: any) :: :ok
 
   @connection_module_key :connection_module
+  @checkout_retries 3
 
   @doc """
   Use `DBConnection` to set the behaviour.
@@ -382,42 +385,61 @@ defmodule DBConnection do
 
   ### Options
 
-    * `:backoff_min` - The minimum backoff interval (default: `1_000`)
-    * `:backoff_max` - The maximum backoff interval (default: `30_000`)
-    * `:backoff_type` - The backoff strategy, `:stop` for no backoff and
-    to stop, `:exp` for exponential, `:rand` for random and `:rand_exp` for
-    random exponential (default: `:rand_exp`)
-    * `:configure` - A function to run before every connect attempt to
-    dynamically configure the options, either a 1-arity fun,
-    `{module, function, args}` or `nil`. This function is called
-    *in the connection process*. For more details, see
-    [Connection Configuration Callback](#start_link/2-connection-configuration-callback)
     * `:after_connect` - A function to run on connect using `run/3`, either
-    a 1-arity fun, `{module, function, args}` with `t:DBConnection.t/0` prepended
-    to `args` or `nil` (default: `nil`)
+      a 1-arity fun, `{module, function, args}` with `t:DBConnection.t/0` prepended
+      to `args` or `nil` (default: `nil`)
+
     * `:after_connect_timeout` - The maximum time allowed to perform
-    function specified by `:after_connect` option (default: `15_000`)
+      function specified by `:after_connect` option (default: `15_000`)
+
+    * `:backoff_min` - The minimum backoff interval (default: `1_000`)
+
+    * `:backoff_max` - The maximum backoff interval (default: `30_000`)
+
+    * `:backoff_type` - The backoff strategy, `:stop` for no backoff and
+      to stop, `:exp` for exponential, `:rand` for random and `:rand_exp` for
+      random exponential (default: `:rand_exp`)
+
+    * `:checkout_retries` - The number of times to checkout a new connection
+      whenever the operation fails because the database disconnected. Note
+      not all operations can be retried and each adapter specifies which
+      operations are safe to retry
+
+    * `:configure` - A function to run before every connect attempt to
+      dynamically configure the options, either a 1-arity fun,
+      `{module, function, args}` or `nil`. This function is called *in the
+      connection process*. For more details, see
+      [Connection Configuration Callback](#start_link/2-connection-configuration-callback)
+
     * `:connection_listeners` - A list of process destinations to send
       notification messages whenever a connection is connected or disconnected.
       See "Connection listeners" below
-    * `:name` - A name to register the started process (see the `:name` option
-      in `GenServer.start_link/3`)
-    * `:pool` - Chooses the pool to be started (default: `DBConnection.ConnectionPool`). See
-      ["Connection pools"](#module-connection-pools).
-    * `:pool_size` - Chooses the size of the pool. Must be greater or equal to 1. (default: `1`)
+
     * `:idle_interval` - Controls the frequency we check for idle connections
       in the pool. We then notify each idle connection to ping the database.
       In practice, the ping happens within `idle_interval <= ping < 2 * idle_interval`.
       Defaults to 1000ms.
+
     * `:idle_limit` - The number of connections to ping on each `:idle_interval`.
       Defaults to the pool size (all connections).
-    * `:queue_target` and `:queue_interval` - See "Queue config" below
+
     * `:max_restarts` and `:max_seconds` - Configures the `:max_restarts` and
       `:max_seconds` for the connection pool supervisor (see the `Supervisor` docs).
       Typically speaking the connection process doesn't terminate, except due to
       faults in DBConnection. However, if backoff has been disabled, then they
       also terminate whenever a connection is disconnected (for instance, due to
       client or server errors)
+
+    * `:name` - A name to register the started process (see the `:name` option
+      in `GenServer.start_link/3`)
+
+    * `:pool` - Chooses the pool to be started (default: `DBConnection.ConnectionPool`).
+      See ["Connection pools"](#module-connection-pools).
+
+    * `:pool_size` - Chooses the size of the pool. Must be greater or equal to 1. (default: `1`)
+
+    * `:queue_target` and `:queue_interval` - See "Queue config" below
+
     * `:show_sensitive_data_on_connection_error` - By default, `DBConnection`
       hides all information during connection errors to avoid leaking credentials
       or other sensitive information. You can set this option if you wish to
@@ -952,8 +974,15 @@ defmodule DBConnection do
       {:ok, conn, old_status, _} ->
         try do
           result = fun.(conn)
-          {:ok, new_status, _meter} = run_status(conn, nil, opts)
-          {result, new_status}
+
+          case run_status(conn, nil, opts) do
+            {:ok, new_status, _meter} ->
+              {result, new_status}
+
+            {:retry, err, _meter} ->
+              disconnect(conn, err)
+              {result, :error}
+          end
         catch
           kind, error ->
             checkin(conn)
@@ -1323,12 +1352,6 @@ defmodule DBConnection do
     Holder.checkin(pool_ref)
   end
 
-  defp checkin(%DBConnection{} = conn, fun, meter, opts) do
-    return = fun.(conn, meter, opts)
-    checkin(conn)
-    return
-  end
-
   defp disconnect(%DBConnection{pool_ref: pool_ref}, err) do
     _ = Holder.disconnect(pool_ref, err)
     :ok
@@ -1339,6 +1362,17 @@ defmodule DBConnection do
     exception = DBConnection.ConnectionError.exception(msg)
     _ = Holder.stop(pool_ref, exception)
     :ok
+  end
+
+  defp retry_or_handle_common_result(return, conn, meter) do
+    case return do
+      {:disconnect_and_retry, err, _conn_state} ->
+        disconnect(conn, err)
+        {:retry, err, meter}
+
+      _ ->
+        handle_common_result(return, conn, meter)
+    end
   end
 
   defp handle_common_result(return, conn, meter) do
@@ -1488,7 +1522,7 @@ defmodule DBConnection do
   defp prepare(%DBConnection{pool_ref: pool_ref} = conn, query, meter, opts) do
     pool_ref
     |> Holder.handle(:handle_prepare, [query], opts)
-    |> handle_common_result(conn, event(meter, :prepare))
+    |> retry_or_handle_common_result(conn, event(meter, :prepare))
   end
 
   defp run_prepare_execute(conn, query, params, meter, opts) do
@@ -1510,7 +1544,7 @@ defmodule DBConnection do
         bad_return!(other, conn, meter)
 
       other ->
-        handle_common_result(other, conn, meter)
+        retry_or_handle_common_result(other, conn, meter)
     end
   end
 
@@ -1522,50 +1556,96 @@ defmodule DBConnection do
 
   defp run_close(conn, query, meter, opts) do
     meter = event(meter, :close)
-    run_cleanup(conn, :handle_close, [query], meter, opts)
+
+    cleanup(conn, :handle_close, [query], opts)
+    |> retry_or_handle_common_result(conn, meter)
   end
 
-  defp run_cleanup(conn, fun, args, meter, opts) do
+  defp cleanup(conn, fun, args, opts) do
     %DBConnection{pool_ref: pool_ref} = conn
-
     Holder.cleanup(pool_ref, fun, args, opts)
-    |> handle_common_result(conn, meter)
   end
 
   # run/4 and checkout/4 are the two entry points to get a connection.
   # run returns only the result, checkout also returns the connection.
 
   defp run(%DBConnection{} = conn, fun, meter, opts) do
-    fun.(conn, meter, opts)
+    with {:retry, err, meter} <- fun.(conn, meter, opts) do
+      {:error, err, meter}
+    end
   end
 
   defp run(pool, fun, meter, opts) do
+    retries = Keyword.get(opts, :checkout_retries, @checkout_retries)
+    run_with_retries(retries, pool, fun, meter, opts)
+  end
+
+  defp run_with_retries(retries, pool, fun, meter, opts) do
     with {:ok, conn, meter} <- checkout(pool, meter, opts) do
-      try do
-        fun.(conn, meter, opts)
-      after
-        checkin(conn)
+      result =
+        try do
+          fun.(conn, meter, opts)
+        after
+          checkin(conn)
+        end
+
+      case result do
+        {:retry, _err, meter} when retries > 0 ->
+          run_with_retries(retries - 1, pool, fun, meter, opts)
+
+        {:retry, err, meter} ->
+          {:error, err, meter}
+
+        other ->
+          other
       end
     end
   end
 
   defp checkout(%DBConnection{} = conn, fun, meter, opts) do
-    with {:ok, result, meter} <- fun.(conn, meter, opts) do
-      {:ok, conn, result, meter}
+    case fun.(conn, meter, opts) do
+      {:ok, result, meter} ->
+        {:ok, conn, result, meter}
+
+      {:retry, err, meter} ->
+        {:error, err, meter}
+
+      other ->
+        other
     end
   end
 
   defp checkout(pool, fun, meter, opts) do
+    retries = Keyword.get(opts, :checkout_retries, @checkout_retries)
+    checkout_with_retries(retries, pool, fun, meter, opts)
+  end
+
+  defp checkout_with_retries(retries, pool, fun, meter, opts) do
     with {:ok, conn, meter} <- checkout(pool, meter, opts) do
       case fun.(conn, meter, opts) do
         {:ok, result, meter} ->
           {:ok, conn, result, meter}
+
+        {:retry, err, meter} ->
+          checkin(conn)
+
+          if retries > 0 do
+            checkout_with_retries(retries - 1, pool, fun, meter, opts)
+          else
+            {:error, err, meter}
+          end
 
         error ->
           checkin(conn)
           error
       end
     end
+  end
+
+  defp checkin(%DBConnection{} = conn, fun, meter, opts) do
+    return = fun.(conn, meter, opts)
+    checkin(conn)
+    return
   end
 
   defp meter(opts) do
@@ -1754,7 +1834,7 @@ defmodule DBConnection do
         {:ok, {query, result}, meter}
 
       other ->
-        handle_common_result(other, conn, meter)
+        retry_or_handle_common_result(other, conn, meter)
     end
   end
 
@@ -1784,14 +1864,11 @@ defmodule DBConnection do
         err = DBConnection.TransactionError.exception(:error)
         {:error, err}
 
-      {query, other} ->
-        log(other, :commit, query, nil)
+      {:rollback, other} ->
+        log(other, :commit, :rollback, nil)
 
-      {:error, err, meter} ->
-        log(meter, :commit, :commit, nil, {:error, err})
-
-      {kind, reason, stack, meter} ->
-        log(meter, :commit, :commit, nil, {kind, reason, stack})
+      other ->
+        log(other, :commit, :commit, nil)
     end
   end
 
@@ -1804,10 +1881,10 @@ defmodule DBConnection do
         {:rollback, run_rollback(conn, meter, opts)}
 
       {status, _conn_state} when status in [:idle, :transaction] ->
-        {:commit, status_disconnect(conn, status, meter)}
+        status_disconnect(conn, status, meter)
 
       other ->
-        {:commit, handle_common_result(other, conn, meter)}
+        handle_common_result(other, conn, meter)
     end
   end
 
@@ -1820,20 +1897,18 @@ defmodule DBConnection do
   defp run_status(conn, meter, opts) do
     %DBConnection{pool_ref: pool_ref} = conn
 
+    # status queries are not logged, which means we need to deal
+    # with catch and disconnections explicitly
     case Holder.handle(pool_ref, :handle_status, [], opts) do
       {status, _conn_state} when status in [:idle, :transaction, :error] ->
         {:ok, status, meter}
 
-      {:disconnect, err, _conn_state} ->
-        disconnect(conn, err)
-        {:ok, :error, meter}
-
-      {:catch, kind, reason, stack} ->
-        stop(conn, kind, reason, stack)
-        :erlang.raise(kind, reason, stack)
-
       other ->
-        bad_return!(other, conn, meter)
+        case retry_or_handle_common_result(other, conn, meter) do
+          {:error, _, meter} -> {:ok, :error, meter}
+          {kind, reason, stack, _meter} -> :erlang.raise(kind, reason, stack)
+          _ -> other
+        end
     end
   end
 
@@ -1858,13 +1933,13 @@ defmodule DBConnection do
         bad_return!(other, conn, meter)
 
       other ->
-        handle_common_result(other, conn, meter)
+        retry_or_handle_common_result(other, conn, meter)
     end
   end
 
   defp stream_fetch(%DBConnection{} = conn, {:cont, query, cursor}, opts) do
     with {ok, result, meter} when ok in [:cont, :halt] <-
-           run_fetch(conn, [query, cursor], meter(opts), opts),
+           fetch(conn, [query, cursor], meter(opts), opts),
          {:ok, result, meter} <- decode(query, result, meter, opts) do
       {ok, result, meter}
     end
@@ -1882,7 +1957,7 @@ defmodule DBConnection do
     {:halt, state}
   end
 
-  defp run_fetch(conn, args, meter, opts) do
+  defp fetch(conn, args, meter, opts) do
     %DBConnection{pool_ref: pool_ref} = conn
     meter = event(meter, :fetch)
 
@@ -1902,7 +1977,8 @@ defmodule DBConnection do
     meter = event(meter(opts), :deallocate)
 
     conn
-    |> run_cleanup(:handle_deallocate, [query, cursor], meter, opts)
+    |> cleanup(:handle_deallocate, [query, cursor], opts)
+    |> handle_common_result(conn, meter)
     |> log(:deallocate, query, cursor)
   end
 
