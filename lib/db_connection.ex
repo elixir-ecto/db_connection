@@ -385,42 +385,61 @@ defmodule DBConnection do
 
   ### Options
 
-    * `:backoff_min` - The minimum backoff interval (default: `1_000`)
-    * `:backoff_max` - The maximum backoff interval (default: `30_000`)
-    * `:backoff_type` - The backoff strategy, `:stop` for no backoff and
-    to stop, `:exp` for exponential, `:rand` for random and `:rand_exp` for
-    random exponential (default: `:rand_exp`)
-    * `:configure` - A function to run before every connect attempt to
-    dynamically configure the options, either a 1-arity fun,
-    `{module, function, args}` or `nil`. This function is called
-    *in the connection process*. For more details, see
-    [Connection Configuration Callback](#start_link/2-connection-configuration-callback)
     * `:after_connect` - A function to run on connect using `run/3`, either
-    a 1-arity fun, `{module, function, args}` with `t:DBConnection.t/0` prepended
-    to `args` or `nil` (default: `nil`)
+      a 1-arity fun, `{module, function, args}` with `t:DBConnection.t/0` prepended
+      to `args` or `nil` (default: `nil`)
+
     * `:after_connect_timeout` - The maximum time allowed to perform
-    function specified by `:after_connect` option (default: `15_000`)
+      function specified by `:after_connect` option (default: `15_000`)
+
+    * `:backoff_min` - The minimum backoff interval (default: `1_000`)
+
+    * `:backoff_max` - The maximum backoff interval (default: `30_000`)
+
+    * `:backoff_type` - The backoff strategy, `:stop` for no backoff and
+      to stop, `:exp` for exponential, `:rand` for random and `:rand_exp` for
+      random exponential (default: `:rand_exp`)
+
+    * `:checkout_retries` - The number of times to checkout a new connection
+      whenever the operation fails because the database disconnected. Note
+      not all operations can be retried and each adapter specifies which
+      operations are safe to retry
+
+    * `:configure` - A function to run before every connect attempt to
+      dynamically configure the options, either a 1-arity fun,
+      `{module, function, args}` or `nil`. This function is called *in the
+      connection process*. For more details, see
+      [Connection Configuration Callback](#start_link/2-connection-configuration-callback)
+
     * `:connection_listeners` - A list of process destinations to send
       notification messages whenever a connection is connected or disconnected.
       See "Connection listeners" below
-    * `:name` - A name to register the started process (see the `:name` option
-      in `GenServer.start_link/3`)
-    * `:pool` - Chooses the pool to be started (default: `DBConnection.ConnectionPool`). See
-      ["Connection pools"](#module-connection-pools).
-    * `:pool_size` - Chooses the size of the pool. Must be greater or equal to 1. (default: `1`)
+
     * `:idle_interval` - Controls the frequency we check for idle connections
       in the pool. We then notify each idle connection to ping the database.
       In practice, the ping happens within `idle_interval <= ping < 2 * idle_interval`.
       Defaults to 1000ms.
+
     * `:idle_limit` - The number of connections to ping on each `:idle_interval`.
       Defaults to the pool size (all connections).
-    * `:queue_target` and `:queue_interval` - See "Queue config" below
+
     * `:max_restarts` and `:max_seconds` - Configures the `:max_restarts` and
       `:max_seconds` for the connection pool supervisor (see the `Supervisor` docs).
       Typically speaking the connection process doesn't terminate, except due to
       faults in DBConnection. However, if backoff has been disabled, then they
       also terminate whenever a connection is disconnected (for instance, due to
       client or server errors)
+
+    * `:name` - A name to register the started process (see the `:name` option
+      in `GenServer.start_link/3`)
+
+    * `:pool` - Chooses the pool to be started (default: `DBConnection.ConnectionPool`).
+      See ["Connection pools"](#module-connection-pools).
+
+    * `:pool_size` - Chooses the size of the pool. Must be greater or equal to 1. (default: `1`)
+
+    * `:queue_target` and `:queue_interval` - See "Queue config" below
+
     * `:show_sensitive_data_on_connection_error` - By default, `DBConnection`
       hides all information during connection errors to avoid leaking credentials
       or other sensitive information. You can set this option if you wish to
@@ -1571,7 +1590,7 @@ defmodule DBConnection do
         end
 
       case result do
-        {:retry, err, meter} when retries > 0 ->
+        {:retry, _err, meter} when retries > 0 ->
           run_with_retries(retries - 1, pool, fun, meter, opts)
 
         {:retry, err, meter} ->
