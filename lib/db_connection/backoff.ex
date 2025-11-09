@@ -43,7 +43,6 @@ defmodule DBConnection.Backoff do
   end
 
   def backoff(%Backoff{type: :exp, max: max, state: prev} = s) do
-    require Bitwise
     next = min(Bitwise.<<<(prev, 1), max)
     {next, %{s | state: next}}
   end
