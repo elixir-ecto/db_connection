@@ -435,6 +435,70 @@ defmodule TransactionTest do
            ] = A.record(agent)
   end
 
+  test "transaction begin disconnect_and_retry succeeds" do
+    err = RuntimeError.exception("oops")
+
+    stack = [
+      {:ok, :state},
+      {:disconnect_and_retry, err, :state},
+      :ok,
+      fn opts ->
+        send(opts[:parent], :reconnected)
+        {:ok, :new_state}
+      end,
+      {:ok, :began, :newer_state},
+      {:ok, :committed, :newest_state}
+    ]
+
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self()]
+    {:ok, pool} = P.start_link(opts)
+    assert P.transaction(pool, fn _ -> :ok end) == {:ok, :ok}
+    assert_receive :reconnected
+
+    assert [
+             connect: [_],
+             handle_begin: [_, :state],
+             disconnect: [_, :state],
+             connect: [_],
+             handle_begin: [_, :new_state],
+             handle_commit: [_, :newer_state]
+           ] = A.record(agent)
+  end
+
+  test "transaction begin disconnect_and_retry errors if there are no retries" do
+    err = RuntimeError.exception("oops")
+
+    stack = [
+      {:ok, :state},
+      {:disconnect_and_retry, err, :new_state},
+      :ok,
+      fn opts ->
+        send(opts[:parent], :reconnected)
+        {:ok, :newest_state}
+      end
+    ]
+
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self()]
+    {:ok, pool} = P.start_link(opts)
+
+    assert_raise RuntimeError, "oops", fn ->
+      P.transaction(pool, fn _ -> flunk("transaction ran") end, checkout_retries: 0)
+    end
+
+    assert_receive :reconnected
+
+    assert [
+             connect: [_],
+             handle_begin: [_, :state],
+             disconnect: [_, :new_state],
+             connect: [_]
+           ] = A.record(agent)
+  end
+
   test "transaction begin bad return raises and stops connection" do
     stack = [
       fn opts ->

@@ -496,6 +496,39 @@ defmodule PrepareExecuteTest do
            ] = A.record(agent)
   end
 
+  test "prepare_execute execute disconnect_and_retry succeeds" do
+    err = RuntimeError.exception("oops")
+
+    stack = [
+      {:ok, :state},
+      {:disconnect_and_retry, err, :state},
+      :ok,
+      fn opts ->
+        send(opts[:parent], :reconnected)
+        {:ok, :new_state}
+      end,
+      {:ok, %Q{}, :newer_state},
+      {:ok, %Q{state: :executed}, %R{}, :newest_state}
+    ]
+
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self()]
+    {:ok, pool} = P.start_link(opts)
+    assert P.prepare_execute(pool, %Q{}, [:param]) == {:ok, %Q{state: :executed}, %R{}}
+
+    assert_receive :reconnected
+
+    assert [
+             connect: [opts2],
+             handle_prepare: [%Q{}, _, :state],
+             disconnect: [^err, :state],
+             connect: [opts2],
+             handle_prepare: [%Q{}, _, :new_state],
+             handle_execute: [%Q{}, [:param], _, :newer_state]
+           ] = A.record(agent)
+  end
+
   test "prepare_execute describe or encode raises and closes query" do
     stack = [
       {:ok, :state},

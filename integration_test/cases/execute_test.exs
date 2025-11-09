@@ -348,6 +348,66 @@ defmodule ExecuteTest do
            ] = A.record(agent)
   end
 
+  test "execute disconnect_and_retry succeeds" do
+    err = RuntimeError.exception("oops")
+
+    stack = [
+      {:ok, :state},
+      {:disconnect_and_retry, err, :state},
+      :ok,
+      fn opts ->
+        send(opts[:parent], :reconnected)
+        {:ok, :new_state}
+      end,
+      {:ok, %Q{}, %R{}, :new_state}
+    ]
+
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self()]
+    {:ok, pool} = P.start_link(opts)
+    assert P.execute(pool, %Q{}, [:param]) == {:ok, %Q{}, %R{}}
+
+    assert_receive :reconnected
+
+    assert [
+             connect: [opts2],
+             handle_execute: [%Q{}, [:param], _, :state],
+             disconnect: [^err, :state],
+             connect: [opts2],
+             handle_execute: [%Q{}, [:param], _, :new_state]
+           ] = A.record(agent)
+  end
+
+  test "execute disconnect_and_retry errors if there are no retries" do
+    err = RuntimeError.exception("oops")
+
+    stack = [
+      {:ok, :state},
+      {:disconnect_and_retry, err, :new_state},
+      :ok,
+      fn opts ->
+        send(opts[:parent], :reconnected)
+        {:ok, :state}
+      end
+    ]
+
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self()]
+    {:ok, pool} = P.start_link(opts)
+    assert P.execute(pool, %Q{}, [:param], checkout_retries: 0) == {:error, err}
+
+    assert_receive :reconnected
+
+    assert [
+             connect: [opts2],
+             handle_execute: [%Q{}, [:param], _, :state],
+             disconnect: [^err, :new_state],
+             connect: [opts2]
+           ] = A.record(agent)
+  end
+
   test "execute bad return raises DBConnection.ConnectionError and stops" do
     stack = [
       fn opts ->
