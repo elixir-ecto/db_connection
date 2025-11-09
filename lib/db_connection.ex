@@ -703,7 +703,7 @@ defmodule DBConnection do
 
     result =
       with {:ok, query, meter} <- parse(query, meter, opts) do
-        run(conn, &run_prepare/4, query, meter, opts)
+        run(conn, &run_prepare(&1, query, &2, &3), meter, opts)
       end
 
     log(result, :prepare, query, nil)
@@ -766,7 +766,7 @@ defmodule DBConnection do
 
   defp parsed_prepare_execute(conn, query, params, meter, opts) do
     with {:ok, query, result, meter} <-
-           run(conn, &run_prepare_execute/5, query, params, meter, opts),
+           run(conn, &run_prepare_execute(&1, query, params, &2, &3), meter, opts),
          {:ok, result, meter} <- decode(query, result, meter, opts) do
       {:ok, query, result, meter}
     end
@@ -823,7 +823,7 @@ defmodule DBConnection do
 
         {:ok, params, meter} ->
           with {:ok, query, result, meter} <-
-                 run(conn, &run_execute/5, query, params, meter, opts),
+                 run(conn, &run_execute(&1, query, params, &2, &3), meter, opts),
                {:ok, result, meter} <- decode(query, result, meter, opts) do
             {:ok, query, result, meter}
           end
@@ -1494,7 +1494,7 @@ defmodule DBConnection do
   end
 
   defp parsed_prepare_declare(conn, query, params, meter, opts) do
-    run(conn, &run_prepare_declare/5, query, params, meter, opts)
+    run(conn, &run_prepare_declare(&1, query, params, &2, &3), meter, opts)
   end
 
   defp prepare_declare!(conn, query, params, opts) do
@@ -1514,7 +1514,7 @@ defmodule DBConnection do
           parsed_prepare_declare(conn, query, params, meter, opts)
 
         {:ok, params, meter} ->
-          run(conn, &run_declare/5, query, params, meter, opts)
+          run(conn, &run_declare(&1, query, params, &2, &3), meter, opts)
 
         {_, _, _, _} = error ->
           error
@@ -1620,34 +1620,6 @@ defmodule DBConnection do
     with {:ok, conn, meter} <- checkout(pool, meter, opts) do
       try do
         fun.(conn, meter, opts)
-      after
-        checkin(conn)
-      end
-    end
-  end
-
-  defp run(%DBConnection{} = conn, fun, arg, meter, opts) do
-    fun.(conn, arg, meter, opts)
-  end
-
-  defp run(pool, fun, arg, meter, opts) do
-    with {:ok, conn, meter} <- checkout(pool, meter, opts) do
-      try do
-        fun.(conn, arg, meter, opts)
-      after
-        checkin(conn)
-      end
-    end
-  end
-
-  defp run(%DBConnection{} = conn, fun, arg1, arg2, meter, opts) do
-    fun.(conn, arg1, arg2, meter, opts)
-  end
-
-  defp run(pool, fun, arg1, arg2, meter, opts) do
-    with {:ok, conn, meter} <- checkout(pool, meter, opts) do
-      try do
-        fun.(conn, arg1, arg2, meter, opts)
       after
         checkin(conn)
       end
@@ -1950,7 +1922,7 @@ defmodule DBConnection do
 
   defp stream_fetch(conn, {:cont, query, cursor}, opts) do
     conn
-    |> run(&run_stream_fetch/4, [query, cursor], meter(opts), opts)
+    |> run(&run_stream_fetch(&1, [query, cursor], &2, &3), meter(opts), opts)
     |> log(:fetch, query, cursor)
     |> case do
       {ok, result} when ok in [:cont, :halt] ->
