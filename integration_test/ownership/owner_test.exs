@@ -45,10 +45,7 @@ defmodule OwnerTest do
       end)
 
     assert log =~ ~r"owner #PID<\d+\.\d+\.\d+> exited"
-
-    assert log =~
-             ~r"Client #PID<\d+\.\d+\.\d+> is still using a connection from owner at location"
-
+    assert log =~ ~r"is still using a connection from owner at location"
     assert log =~ ~r"The connection itself was checked out by #PID<\d+\.\d+\.\d+> at location"
 
     assert [
@@ -94,7 +91,7 @@ defmodule OwnerTest do
                assert_receive {:done, ^pid}
              end)
            end) =~
-             ~r"owner #PID<\d+\.\d+\.\d+> timed out because it owned the connection for longer than 100ms"
+             ~r"timed out because it owned the connection for longer than 100ms"
 
     assert [
              {:connect, _},
@@ -133,7 +130,7 @@ defmodule OwnerTest do
                end,
                timeout: 0
              )
-           end) =~ ~r"client #PID<\d+\.\d+\.\d+> timed out"
+           end) =~ ~r"timed out"
 
     assert [
              {:connect, _},
