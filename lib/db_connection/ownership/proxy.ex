@@ -22,8 +22,6 @@ defmodule DBConnection.Ownership.Proxy do
 
   @impl true
   def init({caller, pool, pool_opts}) do
-    Util.set_label("db_ownership_proxy")
-
     pool_opts =
       pool_opts
       |> Keyword.put(:timeout, :infinity)
