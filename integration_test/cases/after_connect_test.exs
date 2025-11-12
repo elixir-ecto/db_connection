@@ -212,16 +212,17 @@ defmodule AfterConnectTest do
 
     assert_receive {:after_connect, after_pid}
 
-    prefix =
-      "client #{inspect(after_pid)} stopped: " <>
-        "** (DBConnection.ConnectionError) bad return value: :oops"
-
-    len = byte_size(prefix)
+    pid_str = inspect(after_pid)
 
     assert_receive {:EXIT, ^conn,
                     {%DBConnection.ConnectionError{
-                       message: <<^prefix::binary-size(len), _::binary>>
+                       message: message
                      }, [_ | _]}}
+
+    assert Regex.match?(
+             ~r/^client #{Regex.escape(pid_str)}(?<optional_pid_info>\s*\([^)]+\))?\s+stopped: \*\* \(DBConnection\.ConnectionError\) bad return value: :oops/,
+             message
+           )
 
     assert [
              {:connect, _},
@@ -266,13 +267,17 @@ defmodule AfterConnectTest do
     assert_receive {:hi, conn}
 
     assert_receive {:after_connect, after_pid}
-    prefix = "client #{inspect(after_pid)} stopped: ** (RuntimeError) oops"
-    len = byte_size(prefix)
+    pid_str = inspect(after_pid)
 
     assert_receive {:EXIT, ^conn,
                     {%DBConnection.ConnectionError{
-                       message: <<^prefix::binary-size(len), _::binary>>
+                       message: message
                      }, [_ | _]}}
+
+    assert Regex.match?(
+             ~r/^client #{Regex.escape(pid_str)}(?<optional_pid_info>\s*\([^)]+\))?\s+stopped: \*\* \(RuntimeError\) oops/,
+             message
+           )
 
     assert [
              {:connect, _},

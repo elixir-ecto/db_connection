@@ -4,14 +4,17 @@ defmodule DBConnection.Util do
   @doc """
   Inspect a pid, including the process label if possible.
   """
-  def inspect_pid(pid) do
+  def inspect_pid(pid) when is_pid(pid) do
     with :undefined <- get_label(pid),
-         :undefined <- get_name(pid) do
+         :undefined <- get_name(pid),
+         :undefined <- get_initial_call(pid) do
       inspect(pid)
     else
-      label_or_name -> "#{inspect(pid)} (#{inspect(label_or_name)})"
+      label_or_name_or_call -> "#{inspect(pid)} (#{inspect(label_or_name_or_call)})"
     end
   end
+
+  def inspect_pid(other), do: inspect(other)
 
   defp get_name(pid) do
     try do
@@ -47,6 +50,13 @@ defmodule DBConnection.Util do
       # Don't resort to using `Process.info(pid, :dictionary)`,
       # as this is not efficient.
       :undefined
+    end
+  end
+
+  defp get_initial_call(pid) do
+    case Process.info(pid, :initial_call) do
+      {:initial_call, _} = tuple -> tuple
+      _ -> :undefined
     end
   end
 end

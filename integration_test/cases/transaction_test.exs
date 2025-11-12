@@ -523,16 +523,17 @@ defmodule TransactionTest do
       P.transaction(pool, fn _ -> flunk("transaction ran") end)
     end
 
-    prefix =
-      "client #{inspect(self())} stopped: " <>
-        "** (DBConnection.ConnectionError) bad return value: :oops"
-
-    len = byte_size(prefix)
+    pid_str = inspect(self())
 
     assert_receive {:EXIT, ^conn,
                     {%DBConnection.ConnectionError{
-                       message: <<^prefix::binary-size(len), _::binary>>
+                       message: message
                      }, [_ | _]}}
+
+    assert Regex.match?(
+             ~r/^client #{Regex.escape(pid_str)}(?<optional_pid_info>\s*\([^)]+\))?\s+stopped: \*\* \(DBConnection\.ConnectionError\) bad return value: :oops/,
+             message
+           )
 
     assert [
              {:connect, _},
@@ -567,13 +568,17 @@ defmodule TransactionTest do
       P.transaction(pool, fn _ -> flunk("transaction ran") end)
     end
 
-    prefix = "client #{inspect(self())} stopped: ** (RuntimeError) oops"
-    len = byte_size(prefix)
+    pid_str = inspect(self())
 
     assert_receive {:EXIT, ^conn,
                     {%DBConnection.ConnectionError{
-                       message: <<^prefix::binary-size(len), _::binary>>
+                       message: message
                      }, [_ | _]}}
+
+    assert Regex.match?(
+             ~r/^client #{Regex.escape(pid_str)}(?<optional_pid_info>\s*\([^)]+\))?\s+stopped: \*\* \(RuntimeError\) oops/,
+             message
+           )
 
     assert [
              {:connect, _},
@@ -709,16 +714,17 @@ defmodule TransactionTest do
       P.transaction(pool, fn _ -> :result end)
     end
 
-    prefix =
-      "client #{inspect(self())} stopped: " <>
-        "** (DBConnection.ConnectionError) bad return value: :oops"
-
-    len = byte_size(prefix)
+    pid_str = inspect(self())
 
     assert_receive {:EXIT, ^conn,
                     {%DBConnection.ConnectionError{
-                       message: <<^prefix::binary-size(len), _::binary>>
+                       message: message
                      }, [_ | _]}}
+
+    assert Regex.match?(
+             ~r/^client #{Regex.escape(pid_str)}(?<optional_pid_info>\s*\([^)]+\))?\s+stopped: \*\* \(DBConnection\.ConnectionError\) bad return value: :oops/,
+             message
+           )
 
     assert [
              {:connect, _},
@@ -752,13 +758,17 @@ defmodule TransactionTest do
     Process.flag(:trap_exit, true)
     assert_raise RuntimeError, "oops", fn -> P.transaction(pool, fn _ -> :result end) end
 
-    prefix = "client #{inspect(self())} stopped: ** (RuntimeError) oops"
-    len = byte_size(prefix)
+    pid_str = inspect(self())
 
     assert_receive {:EXIT, ^conn,
                     {%DBConnection.ConnectionError{
-                       message: <<^prefix::binary-size(len), _::binary>>
+                       message: message
                      }, [_ | _]}}
+
+    assert Regex.match?(
+             ~r/^client #{Regex.escape(pid_str)}(?<optional_pid_info>\s*\([^)]+\))?\s+stopped: \*\* \(RuntimeError\) oops/,
+             message
+           )
 
     assert [
              {:connect, _},

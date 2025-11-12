@@ -82,6 +82,7 @@ defmodule DBConnection do
   require Logger
 
   alias DBConnection.Holder
+  alias DBConnection.Util
 
   require Holder
 
@@ -1357,7 +1358,7 @@ defmodule DBConnection do
   end
 
   defp stop(%DBConnection{pool_ref: pool_ref}, kind, reason, stack) do
-    msg = "client #{inspect(self())} stopped: " <> Exception.format(kind, reason, stack)
+    msg = "client #{Util.inspect_pid(self())} stopped: " <> Exception.format(kind, reason, stack)
     exception = DBConnection.ConnectionError.exception(msg)
     _ = Holder.stop(pool_ref, exception)
     :ok

@@ -262,11 +262,11 @@ defmodule DBConnection.Ownership.Manager do
     if log do
       Logger.log(log, fn ->
         [
-          inspect(caller),
+          Util.inspect_pid(caller),
           " checked out connection in ",
           inspect(mode),
           " mode using proxy ",
-          inspect(proxy)
+          Util.inspect_pid(proxy)
         ]
       end)
     end
@@ -306,7 +306,13 @@ defmodule DBConnection.Ownership.Manager do
   defp owner_allow(%{ets: ets, log: log} = state, caller, allow, ref, proxy) do
     if log do
       Logger.log(log, fn ->
-        [inspect(allow), " was allowed by ", inspect(caller), " on proxy ", inspect(proxy)]
+        [
+          Util.inspect_pid(allow),
+          " was allowed by ",
+          Util.inspect_pid(caller),
+          " on proxy ",
+          Util.inspect_pid(proxy)
+        ]
       end)
     end
 
@@ -324,7 +330,13 @@ defmodule DBConnection.Ownership.Manager do
   defp owner_unallow(%{ets: ets, log: log} = state, caller, unallow, ref, proxy) do
     if log do
       Logger.log(log, fn ->
-        [inspect(unallow), " was unallowed by ", inspect(caller), " on proxy ", inspect(proxy)]
+        [
+          Util.inspect_pid(unallow),
+          " was unallowed by ",
+          Util.inspect_pid(caller),
+          " on proxy ",
+          Util.inspect_pid(proxy)
+        ]
       end)
     end
 
@@ -348,9 +360,9 @@ defmodule DBConnection.Ownership.Manager do
         if log do
           Logger.log(log, fn ->
             [
-              Enum.map_join(entries, ", ", &inspect/1),
+              Enum.map_join(entries, ", ", &Util.inspect_pid/1),
               " lost connection from proxy ",
-              inspect(proxy)
+              Util.inspect_pid(proxy)
             ]
           end)
         end

@@ -2,6 +2,8 @@ defmodule DBConnection.Holder do
   @moduledoc false
   require Record
 
+  alias DBConnection.Util
+
   @queue true
   @timeout 15000
   @time_unit 1000
@@ -84,7 +86,7 @@ defmodule DBConnection.Holder do
              %{
                exception
                | message:
-                   "could not checkout the connection owned by #{inspect(caller)}. " <>
+                   "could not checkout the connection owned by #{Util.inspect_pid(caller)}. " <>
                      "When using the sandbox, connections are shared, so this may imply " <>
                      "another process is using a connection. Reason: #{message}"
              }}
@@ -332,7 +334,7 @@ defmodule DBConnection.Holder do
 
     call_reason =
       if maybe_pid do
-        "Error happened when attempting to transfer to #{inspect(maybe_pid)} " <>
+        "Error happened when attempting to transfer to #{Util.inspect_pid(maybe_pid)} " <>
           "(alive: #{Process.alive?(maybe_pid)})"
       else
         "Error happened when looking up connection"
@@ -342,7 +344,7 @@ defmodule DBConnection.Holder do
     #{inspect(__MODULE__)} #{inspect(holder)} #{reason}, pool inconsistent.
     #{call_reason}.
 
-    SELF: #{inspect(self())}
+    SELF: #{Util.inspect_pid(self())}
     ETS INFO: #{inspect(:ets.info(holder))}
 
     Please report at https://github.com/elixir-ecto/db_connection/issues"

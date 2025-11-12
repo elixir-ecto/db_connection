@@ -44,9 +44,13 @@ defmodule OwnerTest do
                end) == :ok
       end)
 
-    assert log =~ ~r"owner #PID<\d+\.\d+\.\d+> exited"
-    assert log =~ ~r"is still using a connection from owner at location"
-    assert log =~ ~r"The connection itself was checked out by #PID<\d+\.\d+\.\d+> at location"
+    assert log =~ ~r"owner #PID<\d+\.\d+\.\d+>(?<optional_pid_info>\s*\([^)]+\))?\s+exited"
+
+    assert log =~
+             ~r"Client #PID<\d+\.\d+\.\d+>(?<optional_pid_info>\s*\([^)]+\))?\s+is still using a connection from owner at location"
+
+    assert log =~
+             ~r"The connection itself was checked out by #PID<\d+\.\d+\.\d+>(?<optional_pid_info>\s*\([^)]+\))?"
 
     assert [
              {:connect, _},
