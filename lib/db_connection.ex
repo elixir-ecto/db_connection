@@ -312,14 +312,13 @@ defmodule DBConnection do
   Declare a cursor using a query prepared by `c:handle_prepare/3`. Return
   `{:ok, query, cursor, state}` to return altered query `query` and cursor
   `cursor` for a stream and continue, `{:error, exception, state}` to return an
-  error and continue or `{:disconnect | :disconnect_and_retry, exception, state}`
-  to error and disconnect (and optionally retry).
+  error and continue or `{:disconnect, exception, state}` to error and disconnect.
 
   This callback is called in the client process.
   """
   @callback handle_declare(query, params, opts :: Keyword.t(), state :: any) ::
               {:ok, query, cursor, new_state :: any}
-              | {:error | :disconnect | :disconnect_and_retry, Exception.t(), new_state :: any}
+              | {:error | :disconnect, Exception.t(), new_state :: any}
 
   @doc """
   Fetch the next result from a cursor declared by `c:handle_declare/4`. Return
@@ -1933,7 +1932,7 @@ defmodule DBConnection do
         bad_return!(other, conn, meter)
 
       other ->
-        retry_or_handle_common_result(other, conn, meter)
+        handle_common_result(other, conn, meter)
     end
   end
 
