@@ -156,7 +156,8 @@ defmodule DBConnection.Ownership.Proxy do
 
   @impl true
   def handle_cast({:stop, caller}, %{owner: {owner, _}} = state) do
-    message = "#{inspect(caller)} checked in the connection owned by #{inspect(owner)}"
+    message =
+      "#{Util.inspect_pid(caller)} checked in the connection owned by #{Util.inspect_pid(owner)}"
 
     message =
       case pruned_stacktrace(caller) do
@@ -165,7 +166,7 @@ defmodule DBConnection.Ownership.Proxy do
 
         current_stack ->
           message <>
-            "\n\n#{inspect(caller)} triggered the checkin at location:\n\n" <>
+            "\n\n#{Util.inspect_pid(caller)} triggered the checkin at location:\n\n" <>
             Exception.format_stacktrace(current_stack)
       end
 
@@ -235,10 +236,10 @@ defmodule DBConnection.Ownership.Proxy do
         current_stack ->
           reason <>
             """
-            \n\nClient #{inspect(client)} is still using a connection from owner at location:
+            \n\nClient #{Util.inspect_pid(client)} is still using a connection from owner at location:
 
             #{Exception.format_stacktrace(current_stack)}
-            The connection itself was checked out by #{inspect(client)} at location:
+            The connection itself was checked out by #{Util.inspect_pid(client)} at location:
 
             #{Exception.format_stacktrace(checkout_stack)}
             """

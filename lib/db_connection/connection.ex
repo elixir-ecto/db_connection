@@ -100,7 +100,7 @@ defmodule DBConnection.Connection do
             [
               inspect(mod),
               " (",
-              inspect(self()),
+              Util.inspect_pid(self()),
               ") failed to connect: " | Exception.format_banner(:error, err, [])
             ]
           end,
@@ -116,7 +116,7 @@ defmodule DBConnection.Connection do
               inspect(mod),
               ?\s,
               ?(,
-              inspect(self()),
+              Util.inspect_pid(self()),
               ") failed to connect: "
               | Exception.format_banner(:error, err, [])
             ]
@@ -142,7 +142,7 @@ defmodule DBConnection.Connection do
           inspect(mod),
           ?\s,
           ?(,
-          inspect(self()),
+          Util.inspect_pid(self()),
           ") disconnected: " | Exception.format_banner(:error, err, [])
         ]
       end)
@@ -343,7 +343,7 @@ defmodule DBConnection.Connection do
 
   def handle_event(:info, msg, :no_state, %{mod: mod} = s) do
     Logger.info(fn ->
-      [inspect(mod), ?\s, ?(, inspect(self()), ") missed message: " | inspect(msg)]
+      [inspect(mod), ?\s, ?(, Util.inspect_pid(self()), ") missed message: " | inspect(msg)]
     end)
 
     handle_timeout(s)

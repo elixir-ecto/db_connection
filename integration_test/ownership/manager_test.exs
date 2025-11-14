@@ -269,11 +269,19 @@ defmodule ManagerTest do
         :ok
       end)
 
-    assert capture_log(fn ->
-             assert_receive :checked_out
-             assert Ownership.ownership_mode(pool, :manual, []) == :ok
-             assert Ownership.ownership_checkout(pool, []) == :ok
-           end) =~ "#{inspect(self())} checked in the connection owned by #{inspect(task.pid)}"
+    log_output =
+      capture_log(fn ->
+        assert_receive :checked_out
+        assert Ownership.ownership_mode(pool, :manual, []) == :ok
+        assert Ownership.ownership_checkout(pool, []) == :ok
+      end)
+
+    self_pid_str = inspect(self())
+    task_pid_str = inspect(task.pid)
+
+    # Check that the log contains both PIDs with optional process info
+    assert log_output =~
+             ~r/#{Regex.escape(self_pid_str)}(?<optional_pid_info_1>\s*\([^)]+\))?\s+checked in the connection owned by\s+#{Regex.escape(task_pid_str)}(?<optional_pid_info_2>\s*\([^)]+\))?/
   end
 
   test "uses ETS when the pool is named (with pid access)" do
@@ -667,7 +675,9 @@ defmodule ManagerTest do
         assert_receive :reconnected
       end)
 
-    assert log =~ ~r"State machine #PID<\d+\.\d+\.\d+> terminating\n"
+    assert log =~
+             ~r"State machine #PID<\d+\.\d+\.\d+>(?<optional_pid_info>\s*\([^)]+\))?\s+terminating\n"
+
     assert log =~ "** (RuntimeError) oops"
   end
 
