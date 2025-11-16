@@ -55,7 +55,7 @@ defmodule DBConnection.Util do
 
   defp get_initial_call(pid) do
     case Process.info(pid, :initial_call) do
-      {:initial_call, _} = tuple -> tuple
+      {:initial_call, {mod, _, _}} -> mod
       _ -> :undefined
     end
   end
