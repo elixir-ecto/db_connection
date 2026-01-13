@@ -41,6 +41,7 @@ defmodule DBConnectionTest do
                :backoff_max,
                :backoff_min,
                :backoff_type,
+               :checkout_retries,
                :configure,
                :idle_interval,
                :idle_limit,
