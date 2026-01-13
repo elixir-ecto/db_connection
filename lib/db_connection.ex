@@ -123,6 +123,7 @@ defmodule DBConnection do
           | {:backoff_max, non_neg_integer}
           | {:backoff_min, non_neg_integer}
           | {:backoff_type, :stop | :exp | :rand | :rand_exp}
+          | {:checkout_retries, non_neg_integer}
           | {:configure, (keyword -> keyword) | {module, atom, [any]} | nil}
           | {:idle_interval, non_neg_integer}
           | {:idle_limit, non_neg_integer}
@@ -626,6 +627,7 @@ defmodule DBConnection do
       :backoff_max,
       :backoff_min,
       :backoff_type,
+      :checkout_retries,
       :configure,
       :idle_interval,
       :idle_limit,
