@@ -393,4 +393,41 @@ defmodule AfterConnectTest do
 
     assert [connect: [_], handle_status: _, handle_status: _] = A.record(agent)
   end
+
+  test "after_connect raises" do
+    err = RuntimeError.exception("oops")
+
+    stack = [
+      {:ok, :state},
+      {:idle, :state},
+      {:error, err, :new_state},
+      {:ok, %Q{}, %R{}, :newer_state},
+      {:idle, :newer_state},
+      {:ok, %Q{}, %R{}, :newest_state}
+    ]
+
+    {:ok, agent} = A.start_link(stack)
+    parent = self()
+
+    after_connect = fn conn ->
+      send(parent, {:after_connect, self()})
+      _ = Process.put(:agent, agent)
+
+      case P.execute(conn, %Q{}, [:after_connect]) do
+        {:error, err} -> raise err
+        {:ok, _, _} -> :ok
+      end
+    end
+
+    secret = "SHOULD NOT LEAK"
+    opts = [after_connect: after_connect, agent: agent, parent: self(), secret: secret]
+
+    refute ExUnit.CaptureLog.capture_log(fn ->
+             {:ok, _pool} = P.start_link(opts)
+
+             assert_receive {:after_connect, task}
+             ref = Process.monitor(task)
+             assert_receive {:DOWN, ^ref, _, _, {%RuntimeError{}, _}}
+           end) =~ secret
+  end
 end

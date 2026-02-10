@@ -1,3 +1,9 @@
+defmodule DBConnection.SensitiveData do
+  @moduledoc false
+  @derive {Inspect, only: []}
+  defstruct [:data]
+end
+
 defmodule DBConnection.Stream do
   defstruct [:conn, :query, :params, :opts]
 

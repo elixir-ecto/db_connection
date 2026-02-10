@@ -5,14 +5,14 @@ defmodule DBConnection.Task do
   require DBConnection.Holder
 
   def run_child(mod, state, fun, opts) do
-    arg = [fun, self(), opts]
+    arg = [fun, self(), %DBConnection.SensitiveData{data: opts}]
     {:ok, pid} = Task.Supervisor.start_child(@name, __MODULE__, :init, arg)
     ref = Process.monitor(pid)
     _ = DBConnection.Holder.update(pid, ref, mod, state)
     {pid, ref}
   end
 
-  def init(fun, parent, opts) do
+  def init(fun, parent, %DBConnection.SensitiveData{data: opts}) do
     try do
       Process.link(parent)
     catch

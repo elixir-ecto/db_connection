@@ -9,12 +9,12 @@ defmodule DBConnection.Connection do
   alias DBConnection.Util
 
   @timeout 15_000
-  @sensitive_opts [:parameters, :hostname, :port, :username, :password, :database]
 
   @doc false
   def start_link(mod, opts, pool, tag) do
     start_opts = Keyword.take(opts, [:debug, :spawn_opt])
-    :gen_statem.start_link(__MODULE__, {mod, opts, pool, tag}, start_opts)
+    sensitive_options = %DBConnection.SensitiveData{data: opts}
+    :gen_statem.start_link(__MODULE__, {mod, sensitive_options, pool, tag}, start_opts)
   end
 
   @doc false
@@ -48,7 +48,7 @@ defmodule DBConnection.Connection do
 
   @doc false
   @impl :gen_statem
-  def init({mod, opts, pool, tag}) do
+  def init({mod, %DBConnection.SensitiveData{data: opts}, pool, tag}) do
     pool_index = Keyword.get(opts, :pool_index)
     label = if pool_index, do: "db_conn_#{pool_index}", else: "db_conn"
     Util.set_label(label)
@@ -235,7 +235,6 @@ defmodule DBConnection.Connection do
     case apply(mod, :checkout, [state]) do
       {:ok, state} ->
         opts = [timeout: timeout] ++ opts
-        opts = Keyword.drop(opts, @sensitive_opts)
         {pid, ref} = DBConnection.Task.run_child(mod, state, after_connect, opts)
         timer = start_timer(pid, timeout)
         s = %{s | client: {ref, :after_connect}, timer: timer, state: state}
