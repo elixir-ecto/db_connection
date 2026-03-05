@@ -17,6 +17,7 @@ defmodule DBConnection.Mixfile do
       build_per_environment: false,
       consolidate_protocols: false,
       test_paths: test_paths(Mix.env()),
+      test_ignore_filters: [~r/test_support\.exs$/],
       aliases: ["test.all": ["test", "test.pools"], "test.pools": &test_pools/1],
       preferred_cli_env: ["test.all": :test]
     ]
