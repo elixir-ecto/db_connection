@@ -34,6 +34,11 @@ defmodule DBConnection.Ownership.Proxy do
 
     pre_checkin = Keyword.get(pool_opts, :pre_checkin, fn _, mod, state -> {:ok, mod, state} end)
     post_checkout = Keyword.get(pool_opts, :post_checkout, &{:ok, &1, &2})
+    label = pool_opts[:label]
+
+    if label do
+      Process.set_label({__MODULE__, label})
+    end
 
     state = %{
       client: nil,
@@ -193,8 +198,10 @@ defmodule DBConnection.Ownership.Proxy do
     {:reply, connection_metrics, state}
   end
 
-  defp checkout({pid, ref} = from, %{holder: holder} = state) do
-    if Holder.handle_checkout(holder, from, ref, nil) do
+  defp checkout({pid, ref} = from, %{holder: holder, pool_opts: pool_opts} = state) do
+    label = pool_opts[:label]
+
+    if Holder.handle_checkout(holder, from, ref, nil, label) do
       {:noreply, %{state | client: {pid, ref, pruned_stacktrace(pid)}}}
     else
       next(state)

@@ -681,6 +681,59 @@ defmodule ManagerTest do
     assert log =~ "** (RuntimeError) oops"
   end
 
+  test "includes label in ownership error when label is provided" do
+    {:ok, pool, opts} = start_pool(label: MyApp.Repo)
+
+    # Try to use the pool without checking out - should raise OwnershipError with label
+    error =
+      assert_raise DBConnection.OwnershipError, fn ->
+        P.run(pool, fn _ -> :ok end, opts)
+      end
+
+    # Verify the error message includes the label
+    assert error.message =~ "cannot find ownership process"
+    assert error.message =~ "(MyApp.Repo)"
+    assert error.message =~ "using mode :manual"
+  end
+
+  test "doesn't require a label to produce an ownership error" do
+    {:ok, pool, opts} = start_pool()
+
+    # Try to use the pool without checking out - should raise OwnershipError with label
+    error =
+      assert_raise DBConnection.OwnershipError, fn ->
+        P.run(pool, fn _ -> :ok end, opts)
+      end
+
+    assert error.message =~ "cannot find ownership process"
+  end
+
+  test "includes label in connection closed error when label is provided" do
+    alias TestQuery, as: Q
+    {pool, _agent} = start_pool_with_disconnect_on_execute(label: MyApp.Repo)
+    Ownership.ownership_checkout(pool, [])
+
+    P.transaction(pool, fn conn ->
+      P.execute(conn, %Q{}, [:param])
+      error = assert_raise DBConnection.ConnectionError, fn -> P.execute!(conn, %Q{}, [:param]) end
+      assert String.starts_with?(error.message, "MyApp.Repo connection is closed")
+      :closed
+    end)
+  end
+
+  test "doesn't require a label to produce a connection closed error" do
+    alias TestQuery, as: Q
+    {pool, _agent} = start_pool_with_disconnect_on_execute()
+    Ownership.ownership_checkout(pool, [])
+
+    P.transaction(pool, fn conn ->
+      P.execute(conn, %Q{}, [:param])
+      error = assert_raise DBConnection.ConnectionError, fn -> P.execute!(conn, %Q{}, [:param]) end
+      assert String.starts_with?(error.message, "connection is closed")
+      :closed
+    end)
+  end
+
   defp start_pool(opts \\ []) do
     stack = [{:ok, :state}] ++ List.duplicate({:idle, :state}, 10)
     {:ok, agent} = A.start_link(stack)
@@ -688,6 +741,21 @@ defmodule ManagerTest do
     opts = [agent: agent, parent: self(), ownership_mode: :manual] ++ opts
     {:ok, pid} = P.start_link(opts)
     {:ok, pid, opts}
+  end
+
+  # Helper to set up a pool that will disconnect during a transaction.
+  # This is needed to trigger Holder's "connection is closed" error.
+  defp start_pool_with_disconnect_on_execute(opts \\ []) do
+    err = %DBConnection.ConnectionError{message: "test error"}
+    # The stack represents TestAgent responses: initial connect, begin transaction,
+    # disconnect on first execute, then allow reconnect.
+    stack = [{:ok, :state}, {:ok, :began, :new_state}, {:disconnect, err, :newer_state}, :ok, {:ok, :state}]
+
+    {:ok, agent} = A.start_link(stack)
+    pool_opts = [agent: agent, parent: self(), ownership_mode: :manual] ++ opts
+    {:ok, pool} = P.start_link(pool_opts)
+
+    {pool, agent}
   end
 
   defp async_no_callers(fun) do

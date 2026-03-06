@@ -9,7 +9,7 @@ defmodule DBConnection.Holder do
   @time_unit 1000
 
   Record.defrecord(:conn, [:connection, :module, :state, :lock, :ts, deadline: nil, status: :ok])
-  Record.defrecord(:pool_ref, [:pool, :reference, :deadline, :holder, :lock])
+  Record.defrecord(:pool_ref, [:pool, :reference, :deadline, :holder, :lock, :label])
 
   @type t :: :ets.tid()
   @type checkin_time :: non_neg_integer() | nil
@@ -131,29 +131,47 @@ defmodule DBConnection.Holder do
   end
 
   defp handle_or_cleanup(type, pool_ref, fun, args, opts) do
-    pool_ref(holder: holder, lock: lock) = pool_ref
+    pool_ref(holder: holder, lock: lock, label: label) = pool_ref
 
     try do
       :ets.lookup(holder, :conn)
     rescue
       ArgumentError ->
-        msg = "connection is closed because of an error, disconnect or timeout"
+        msg =
+          maybe_prefix_label(
+            "connection is closed because of an error, disconnect or timeout",
+            label
+          )
+
         {:disconnect, DBConnection.ConnectionError.exception(msg), _state = :unused}
     else
       [conn(lock: conn_lock)] when conn_lock != lock ->
-        raise "an outdated connection has been given to DBConnection on #{fun}/#{length(args) + 2}"
+        raise maybe_prefix_label(
+                "an outdated connection has been given to DBConnection on #{fun}/#{length(args) + 2}",
+                label,
+                ":"
+              )
 
       [conn(status: :error)] ->
-        msg = "connection is closed because of an error, disconnect or timeout"
+        msg =
+          maybe_prefix_label(
+            "connection is closed because of an error, disconnect or timeout",
+            label
+          )
+
         {:disconnect, DBConnection.ConnectionError.exception(msg), _state = :unused}
 
       [conn(status: :aborted)] when type != :cleanup ->
-        msg = "transaction rolling back"
+        msg = maybe_prefix_label("transaction rolling back", label)
         {:disconnect, DBConnection.ConnectionError.exception(msg), _state = :unused}
 
       [conn(module: module, state: state)] ->
         holder_apply(holder, module, fun, args ++ [opts, state])
     end
+  end
+
+  defp maybe_prefix_label(msg, label, separator \\ "") do
+    if label, do: "#{inspect(label)} " <> separator <> msg, else: msg
   end
 
   ## Pool state helpers API (invoked by callers)
@@ -196,9 +214,9 @@ defmodule DBConnection.Holder do
     :ok
   end
 
-  @spec handle_checkout(t, {pid, reference}, reference, checkin_time) :: boolean
-  def handle_checkout(holder, {pid, mref}, ref, checkin_time) do
-    :ets.give_away(holder, pid, {mref, ref, checkin_time})
+  @spec handle_checkout(t, {pid, reference}, reference, checkin_time, label :: any) :: boolean
+  def handle_checkout(holder, {pid, mref}, ref, checkin_time, label \\ nil) do
+    :ets.give_away(holder, pid, {mref, ref, checkin_time, label})
   rescue
     ArgumentError ->
       if Process.alive?(pid) or :ets.info(holder, :owner) != self() do
@@ -290,13 +308,20 @@ defmodule DBConnection.Holder do
     send(pid, {:db_connection, {self(), lock}, {:checkout, callers, start, queue?}})
 
     receive do
-      {:"ETS-TRANSFER", holder, pool, {^lock, ref, checkin_time}} ->
+      {:"ETS-TRANSFER", holder, pool, {^lock, ref, checkin_time, label}} ->
         Process.demonitor(lock, [:flush])
         {deadline, ops} = start_deadline(timeout, pool, ref, holder, start)
         :ets.update_element(holder, :conn, [{conn(:lock) + 1, lock} | ops])
 
         pool_ref =
-          pool_ref(pool: pool, reference: ref, deadline: deadline, holder: holder, lock: lock)
+          pool_ref(
+            pool: pool,
+            reference: ref,
+            deadline: deadline,
+            holder: holder,
+            lock: lock,
+            label: label
+          )
 
         checkout_result(holder, pool_ref, checkin_time)
 
