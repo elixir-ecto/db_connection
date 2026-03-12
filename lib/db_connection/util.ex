@@ -32,7 +32,7 @@ defmodule DBConnection.Util do
   """
   def set_label(label) do
     if function_exported?(Process, :set_label, 1) do
-      Process.set_label(label)
+      apply(Process, :set_label, [label])
     else
       :ok
     end
