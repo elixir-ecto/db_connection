@@ -38,6 +38,21 @@ defmodule DBConnection.Util do
     end
   end
 
+  @doc """
+  Get the pool label from a pid's process label.
+
+  Returns the label if found, or `nil` otherwise.
+  Process labels set as `{module, label}` tuples have the label extracted.
+  """
+  def pool_label(pid) when is_pid(pid) do
+    case get_label(pid) do
+      {module, label} when is_atom(module) and module != nil and label != nil -> label
+      _ -> nil
+    end
+  end
+
+  def pool_label(_other), do: nil
+
   # Get a process label if `:proc_lib.get_label/1` is available.
   defp get_label(pid) do
     if function_exported?(:proc_lib, :get_label, 1) do
