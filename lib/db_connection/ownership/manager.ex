@@ -98,6 +98,10 @@ defmodule DBConnection.Ownership.Manager do
     mode = Keyword.get(pool_opts, :ownership_mode, :auto)
     checkout_opts = Keyword.take(pool_opts, [:ownership_timeout, :queue_target, :queue_interval])
 
+    if label = pool_opts[:label] do
+      Util.set_label({__MODULE__, label})
+    end
+
     {:ok,
      %{
        pool: pool,
@@ -406,9 +410,14 @@ defmodule DBConnection.Ownership.Manager do
   end
 
   defp not_found({pid, _} = from, mode) do
+    label = Util.pool_label(self())
+    label_info = if label, do: "(#{inspect(label)}) ", else: ""
+
     msg = """
     cannot find ownership process for #{Util.inspect_pid(pid)}
-    using mode #{inspect(mode)}.
+    #{label_info}using mode #{inspect(mode)}.
+    (Note that a connection's mode reverts to :manual if its owner
+    terminates.)
 
     When using ownership, you must manage connections in one
     of the four ways:

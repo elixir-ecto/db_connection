@@ -681,6 +681,35 @@ defmodule ManagerTest do
     assert log =~ "** (RuntimeError) oops"
   end
 
+  test "includes label in ownership error when label is provided" do
+    if function_exported?(:proc_lib, :get_label, 1) do
+      {:ok, pool, opts} = start_pool(label: TestRepo)
+
+      error =
+        assert_raise DBConnection.OwnershipError, fn ->
+          P.run(pool, fn _ -> :ok end, opts)
+        end
+
+      assert error.message =~ "cannot find ownership process"
+      assert error.message =~ "using mode :manual"
+
+      assert error.message =~ "(TestRepo)"
+    end
+  end
+
+  test "doesn't require a label to produce an ownership error" do
+    {:ok, pool, opts} = start_pool()
+
+    # Try to use the pool without checking out - should raise OwnershipError
+    error =
+      assert_raise DBConnection.OwnershipError, fn ->
+        P.run(pool, fn _ -> :ok end, opts)
+      end
+
+    assert error.message =~ "cannot find ownership process"
+    assert error.message =~ "using mode :manual"
+  end
+
   defp start_pool(opts \\ []) do
     stack = [{:ok, :state}] ++ List.duplicate({:idle, :state}, 10)
     {:ok, agent} = A.start_link(stack)
