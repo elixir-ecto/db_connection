@@ -697,6 +697,62 @@ defmodule ManagerTest do
     end
   end
 
+  test "unallow_existing cleans up old owner so its exit doesn't revoke the new allowance" do
+    stack = List.duplicate({:ok, :state}, 2) ++ List.duplicate({:idle, :state}, 20)
+    {:ok, agent} = A.start_link(stack)
+    opts = [agent: agent, parent: self(), ownership_mode: :manual, pool_size: 2]
+    {:ok, pool} = P.start_link(opts)
+    parent = self()
+
+    # A long-lived worker process that gets re-allowed across owners.
+    worker =
+      spawn(fn ->
+        receive do
+          :done -> :ok
+        end
+      end)
+
+    # owner_a checks out and allows the worker
+    owner_a =
+      async_no_callers(fn ->
+        :ok = Ownership.ownership_checkout(pool, [])
+        :ok = Ownership.ownership_allow(pool, self(), worker, [])
+        send(parent, {:owner_ready, :a})
+        assert_receive :exit
+      end)
+
+    assert_receive {:owner_ready, :a}
+
+    # owner_b checks out and re-allows the worker via unallow_existing
+    owner_b =
+      async_no_callers(fn ->
+        :ok = Ownership.ownership_checkout(pool, [])
+        :ok = Ownership.ownership_allow(pool, self(), worker, unallow_existing: true)
+        send(parent, {:owner_ready, :b})
+        assert_receive :exit
+      end)
+
+    assert_receive {:owner_ready, :b}
+
+    # Verify worker has access via owner_b
+    assert P.run(pool, fn _ -> :ok end, [caller: worker] ++ opts)
+
+    # Kill owner_a. The worker was moved to owner_b via unallow_existing,
+    # so owner_a's exit must not revoke the worker's access.
+    send(owner_a.pid, :exit)
+    ref = Process.monitor(owner_a.pid)
+    assert_receive {:DOWN, ^ref, _, _, _}
+
+    # Let the pool manager process the :DOWN
+    Process.sleep(50)
+
+    # Worker should still have access through owner_b
+    assert P.run(pool, fn _ -> :ok end, [caller: worker] ++ opts)
+
+    send(owner_b.pid, :exit)
+    send(worker, :done)
+  end
+
   test "doesn't require a label to produce an ownership error" do
     {:ok, pool, opts} = start_pool()
 
