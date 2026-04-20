@@ -45,6 +45,7 @@ defmodule DBConnection.Watcher do
             :exit, _ -> :ok
           end
         end)
+
         caller_refs = Map.delete(caller_refs, ref)
         started_refs = Map.put(started_refs, started_ref, {nil, nil})
         {:noreply, {caller_refs, started_refs}}
