@@ -38,13 +38,12 @@ defmodule DBConnection.Watcher do
   def handle_info({:DOWN, ref, _, _, _}, {caller_refs, started_refs}) do
     case caller_refs do
       %{^ref => {_supervisor, started_pid, started_ref}} ->
-        Task.Supervisor.start_child(DBConnection.Task, fn ->
-          try do
-            GenServer.stop(started_pid, :shutdown, :infinity)
-          catch
-            :exit, _ -> :ok
-          end
-        end)
+        try do
+          :sys.terminate(started_pid, :shutdown, :infinity)
+        catch
+          :exit, {:noproc, {:sys, :terminate, _}} -> :ok
+          :exit, {:shutdown, {:sys, :terminate, _}} -> :ok
+        end
 
         caller_refs = Map.delete(caller_refs, ref)
         started_refs = Map.put(started_refs, started_ref, {nil, nil})
