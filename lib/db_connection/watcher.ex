@@ -37,16 +37,28 @@ defmodule DBConnection.Watcher do
   @impl true
   def handle_info({:DOWN, ref, _, _, _}, {caller_refs, started_refs}) do
     case caller_refs do
-      %{^ref => {supervisor, started_pid, started_ref}} ->
-        Process.demonitor(started_ref, [:flush])
-        DynamicSupervisor.terminate_child(supervisor, started_pid)
-        {:noreply, {Map.delete(caller_refs, ref), Map.delete(started_refs, started_ref)}}
+      %{^ref => {_supervisor, started_pid, started_ref}} ->
+        Task.Supervisor.start_child(DBConnection.Task, fn ->
+          try do
+            GenServer.stop(started_pid, :shutdown, :infinity)
+          catch
+            :exit, _ -> :ok
+          end
+        end)
+        caller_refs = Map.delete(caller_refs, ref)
+        started_refs = Map.put(started_refs, started_ref, {nil, nil})
+        {:noreply, {caller_refs, started_refs}}
 
       %{} ->
-        %{^ref => {caller_pid, caller_ref}} = started_refs
-        Process.demonitor(caller_ref, [:flush])
-        Process.exit(caller_pid, :kill)
-        {:noreply, {Map.delete(caller_refs, caller_ref), Map.delete(started_refs, ref)}}
+        case started_refs do
+          %{^ref => {nil, nil}} ->
+            {:noreply, {caller_refs, Map.delete(started_refs, ref)}}
+
+          %{^ref => {caller_pid, caller_ref}} ->
+            Process.demonitor(caller_ref, [:flush])
+            Process.exit(caller_pid, :kill)
+            {:noreply, {Map.delete(caller_refs, caller_ref), Map.delete(started_refs, ref)}}
+        end
     end
   end
 
