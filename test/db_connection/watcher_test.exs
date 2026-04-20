@@ -44,12 +44,9 @@ defmodule DBConnection.WatcherTest do
       end)
       |> Process.monitor()
 
-    # Trigger termination of pool1 by stopping it (the caller).
-    # This sends a :DOWN to the Watcher, which will try to terminate the pool.
+    # Trigger pool termination
     stop_supervised!(:pool1)
 
-    # Now try to start a second pool. If the Watcher is blocked by the
-    # synchronous DynamicSupervisor.terminate_child call, this will hang.
     {:ok, agent2} = A.start_link([{:ok, :state}])
 
     task =
@@ -57,9 +54,10 @@ defmodule DBConnection.WatcherTest do
         C.start_link(agent: agent2, pool_size: 1, idle_interval: 100_000)
       end)
 
-    assert {:ok, _pool2} = Task.await(task, 3_000)
+    # If the DynamicSupervisor or the watcher is blocked, this hangs
+    assert {:ok, _pool2} = Task.await(task, 1_000)
 
     # Ensure the pool supervisor actually terminates
-    assert_receive {:DOWN, ^pool_sup_ref, _, _, _}, 10_000
+    assert_receive {:DOWN, ^pool_sup_ref, _, _, _}, 5_000
   end
 end
