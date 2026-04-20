@@ -69,7 +69,7 @@ defmodule DBConnection.Watcher do
 
   @impl true
   def terminate(_, {_, started_refs}) do
-    for {_, {caller_pid, _}} <- started_refs do
+    for {_, {caller_pid, _}} when caller_pid != nil <- started_refs do
       Process.exit(caller_pid, :kill)
     end
 
