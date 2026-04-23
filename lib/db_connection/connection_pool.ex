@@ -54,7 +54,21 @@ defmodule DBConnection.ConnectionPool do
     DBConnection.register_as_pool(mod)
 
     queue = :ets.new(__MODULE__.Queue, [:protected, :ordered_set, decentralized_counters: true])
-    ts = {System.monotonic_time(), 0}
+
+    max_lifetime =
+      case Keyword.fetch(opts, :max_lifetime) do
+        {:ok, %Range{first: first, last: last, step: 1}} ->
+          {System.convert_time_unit(first, :millisecond, :native), last - first}
+
+        {:ok, invalid} ->
+          raise ArgumentError,
+                "invalid value for :max_lifetime, expected a step-1 range, got: #{inspect(invalid)}"
+
+        :error ->
+          nil
+      end
+
+    ts = {System.monotonic_time(), 0, max_lifetime}
     {:ok, _} = DBConnection.ConnectionPool.Pool.start_supervised(queue, mod, opts)
     target = Keyword.get(opts, :queue_target, @queue_target)
     interval = Keyword.get(opts, :queue_interval, @queue_interval)
@@ -99,8 +113,9 @@ defmodule DBConnection.ConnectionPool do
     {:reply, [metrics], state}
   end
 
-  def handle_call({:disconnect_all, interval}, _from, {type, queue, codel, _ts}) do
-    ts = {System.monotonic_time(), interval}
+  def handle_call({:disconnect_all, interval}, _from, {type, queue, codel, ts}) do
+    {_, _, max_lifetime} = ts
+    ts = {System.monotonic_time(), interval, max_lifetime}
     {:reply, :ok, {type, queue, codel, ts}}
   end
 
@@ -150,9 +165,9 @@ defmodule DBConnection.ConnectionPool do
 
         case :ets.info(holder, :owner) do
           ^owner ->
-            {time, interval} = ts
+            {time, interval, max_lifetime} = ts
 
-            if Holder.maybe_disconnect(holder, time, interval) do
+            if Holder.maybe_disconnect(holder, time, interval, max_lifetime) do
               {:noreply, data}
             else
               handle_checkin(holder, extra, data)
@@ -224,7 +239,8 @@ defmodule DBConnection.ConnectionPool do
          {queued_in_native, holder} = key when queued_in_native <= past_in_native <-
            :ets.first(queue) do
       :ets.delete(queue, key)
-      Holder.maybe_disconnect(holder, elem(ts, 0), 0) or Holder.handle_ping(holder)
+      {time, _interval, max_lifetime} = ts
+      Holder.maybe_disconnect(holder, time, 0, max_lifetime) or Holder.handle_ping(holder)
       drop_idle(past_in_native, limit - 1, status, queue, codel, ts)
     else
       _ ->

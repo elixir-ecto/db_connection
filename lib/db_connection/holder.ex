@@ -241,30 +241,45 @@ defmodule DBConnection.Holder do
     handle_done(holder, &DBConnection.Connection.stop/3, err)
   end
 
-  @spec maybe_disconnect(t, integer, non_neg_integer) :: boolean()
-  def maybe_disconnect(holder, start, interval_ms) do
+  @spec maybe_disconnect(t, integer, non_neg_integer, integer | :infinity) :: boolean()
+  def maybe_disconnect(holder, start, interval_ms, lifetime) do
     ts = :ets.lookup_element(holder, :conn, conn(:ts) + 1)
 
-    cond do
-      ts >= start ->
-        false
-
-      interval_ms == 0 ->
-        true
-
-      true ->
-        pid = :ets.lookup_element(holder, :conn, conn(:connection) + 1)
-        System.monotonic_time() > hash_pid(pid, interval_ms) + start
-    end
+    disconnect_all_reason(start, interval_ms, ts, holder) ||
+      max_lifetime_reason(lifetime, ts, holder)
   rescue
     _ -> false
   else
-    true ->
-      opts = [message: "disconnect_all requested", severity: :debug]
-      handle_disconnect(holder, DBConnection.ConnectionError.exception(opts))
-
-    false ->
+    nil ->
       false
+
+    reason ->
+      opts = [message: reason, severity: :debug]
+      handle_disconnect(holder, DBConnection.ConnectionError.exception(opts))
+  end
+
+  defp max_lifetime_reason(nil, _ts, _holder), do: nil
+
+  defp max_lifetime_reason({start, interval_ms}, ts, holder) do
+    ellapsed = System.monotonic_time() - ts
+
+    # First check if passed start then check if also the interval
+    if ellapsed > start and ellapsed > hash_holder(holder, interval_ms) + start do
+      "max_lifetime exceeded"
+    end
+  end
+
+  defp disconnect_all_reason(start, interval_ms, ts, holder) do
+    disconnect? =
+      cond do
+        ts >= start -> false
+        interval_ms == 0 -> true
+        true -> System.monotonic_time() > hash_holder(holder, interval_ms) + start
+      end
+
+    if disconnect? do
+      "disconnect_all requested"
+    end
   end
 
   ## Private
@@ -441,7 +456,10 @@ defmodule DBConnection.Holder do
     :erlang.cancel_timer(deadline, async: true, info: false)
   end
 
-  defp hash_pid(pid, interval_ms) do
+  defp hash_holder(_holder, 0), do: 0
+
+  defp hash_holder(holder, interval_ms) do
+    pid = :ets.lookup_element(holder, :conn, conn(:connection) + 1)
     hash = :erlang.phash2(pid, interval_ms)
     System.convert_time_unit(hash, :millisecond, :native)
   end
