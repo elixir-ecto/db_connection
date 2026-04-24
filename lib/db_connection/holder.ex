@@ -241,7 +241,8 @@ defmodule DBConnection.Holder do
     handle_done(holder, &DBConnection.Connection.stop/3, err)
   end
 
-  @spec maybe_disconnect(t, integer, non_neg_integer, {integer, non_neg_integer} | nil) :: boolean()
+  @spec maybe_disconnect(t, integer, non_neg_integer, {integer, non_neg_integer} | nil) ::
+          boolean()
   def maybe_disconnect(holder, start, interval_ms, lifetime) do
     ts = :ets.lookup_element(holder, :conn, conn(:ts) + 1)
 
