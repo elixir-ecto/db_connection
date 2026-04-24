@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.10.0 (2026-01-10)
+
+* Add `:max_lifetime` to connection
+* Fix watcher blocking during slow pool termination
+* Fix owner unallow using wrong ref when switching owners
+* Add label (repo name) to ownership errors
+* Wrap options into a sensitive data struct when crossing process boundaries
+
 ## v2.9.0 (2026-01-10)
 
 * Enhancements
