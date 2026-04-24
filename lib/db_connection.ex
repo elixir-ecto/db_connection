@@ -133,6 +133,7 @@ defmodule DBConnection do
           | {:configure, (keyword -> keyword) | {module, atom, [any]} | nil}
           | {:idle_interval, non_neg_integer}
           | {:idle_limit, non_neg_integer}
+          | {:max_lifetime, Range.t()}
           | {:max_restarts, non_neg_integer}
           | {:max_seconds, pos_integer}
           | {:name, GenServer.name()}
@@ -436,6 +437,15 @@ defmodule DBConnection do
       faults in DBConnection. However, if backoff has been disabled, then they
       also terminate whenever a connection is disconnected (for instance, due to
       client or server errors)
+
+    * `:max_lifetime` - The number of ms the connection is allowed to live.
+      It is a range so you can jitter/spread disconnections over some time period.
+      For example, to have a max lifetime between 8 and 9 minutes, you ca set it
+      to `480_000..540_000`. Because the timer is started *after* the connection
+      to the database is established and on checkout, the connection may live for
+      slightly longer. If the connection is idle, the worst case wait is of
+      `540_000 + idle_limit`. If the connection is in use, it may last as long as
+      the connection is checked out over the max period. Default is `nil`.
 
     * `:name` - A name to register the started process (see the `:name` option
       in `GenServer.start_link/3`)
