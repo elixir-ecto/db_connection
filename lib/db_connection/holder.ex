@@ -262,10 +262,10 @@ defmodule DBConnection.Holder do
   defp max_lifetime_reason(nil, _ts, _holder), do: nil
 
   defp max_lifetime_reason({start, interval_ms}, ts, holder) do
-    ellapsed = System.monotonic_time() - ts
+    elapsed = System.monotonic_time() - ts
 
     # First check if passed start then check if also the interval
-    if ellapsed > start and ellapsed > hash_holder(holder, interval_ms) + start do
+    if elapsed > start and elapsed > hash_holder(holder, interval_ms) + start do
       "max_lifetime exceeded"
     end
   end

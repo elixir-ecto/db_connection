@@ -57,12 +57,12 @@ defmodule DBConnection.ConnectionPool do
 
     max_lifetime =
       case Keyword.fetch(opts, :max_lifetime) do
-        {:ok, %Range{first: first, last: last, step: 1}} ->
+        {:ok, %Range{first: first, last: last, step: 1}} when first >= 0 and last >= first ->
           {System.convert_time_unit(first, :millisecond, :native), last - first}
 
         {:ok, invalid} ->
           raise ArgumentError,
-                "invalid value for :max_lifetime, expected a step-1 range, got: #{inspect(invalid)}"
+                "invalid value for :max_lifetime, expected a non-negative step-1 range, got: #{inspect(invalid)}"
 
         :error ->
           nil
