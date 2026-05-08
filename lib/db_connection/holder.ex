@@ -252,13 +252,13 @@ defmodule DBConnection.Holder do
     handle_done(holder, &DBConnection.Connection.stop/3, err)
   end
 
-  @spec maybe_disconnect(t, integer, non_neg_integer, {integer, non_neg_integer} | nil) ::
+  @spec maybe_disconnect(t, {integer, non_neg_integer} | nil, {integer, non_neg_integer} | nil) ::
           boolean()
-  def maybe_disconnect(holder, start, interval_ms, lifetime) do
-    ts = :ets.lookup_element(holder, :conn, conn(:connected_at) + 1)
+  def maybe_disconnect(_holder, nil, nil), do: false
 
-    disconnect_all_reason(start, interval_ms, ts, holder) ||
-      max_lifetime_reason(lifetime, ts, holder)
+  def maybe_disconnect(holder, interval, lifetime) do
+    ts = :ets.lookup_element(holder, :conn, conn(:connected_at) + 1)
+    disconnect_all_reason(holder, ts, interval) || max_lifetime_reason(holder, ts, lifetime)
   rescue
     _ -> false
   else
@@ -270,26 +270,22 @@ defmodule DBConnection.Holder do
       handle_disconnect(holder, DBConnection.ConnectionError.exception(opts))
   end
 
-  defp max_lifetime_reason(nil, _ts, _holder), do: nil
+  defp max_lifetime_reason(_holder, _ts, nil), do: nil
 
-  defp max_lifetime_reason({start, interval_ms}, ts, holder) do
+  defp max_lifetime_reason(holder, ts, {min_lifetime, interval_ms}) do
     elapsed = System.monotonic_time() - ts
 
     # First check if passed start then check if also the interval
-    if elapsed > start and elapsed > hash_holder(holder, interval_ms) + start do
+    if elapsed > min_lifetime and elapsed > hash_holder(holder, interval_ms) + min_lifetime do
       "max_lifetime exceeded"
     end
   end
 
-  defp disconnect_all_reason(start, interval_ms, ts, holder) do
-    disconnect? =
-      cond do
-        ts >= start -> false
-        interval_ms == 0 -> true
-        true -> System.monotonic_time() > hash_holder(holder, interval_ms) + start
-      end
+  defp disconnect_all_reason(_holder, _ts, nil), do: nil
 
-    if disconnect? do
+  defp disconnect_all_reason(holder, ts, {disconnect_start, interval_ms}) do
+    if disconnect_start > ts and
+         System.monotonic_time() > hash_holder(holder, interval_ms) + disconnect_start do
       "disconnect_all requested"
     end
   end

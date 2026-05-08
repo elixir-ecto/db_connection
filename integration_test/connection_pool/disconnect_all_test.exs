@@ -59,12 +59,11 @@ defmodule TestPoolDisconnectAll do
 
     {:ok, agent} = A.start_link(stack)
 
-    opts = [agent: agent, parent: self(), idle_interval: 50]
+    opts = [agent: agent, parent: self(), idle_interval: 200]
     {:ok, pool} = P.start_link(opts)
     assert P.execute(pool, %Q{}, [:param]) == {:ok, %Q{}, %R{}}
 
-    # High intervals do not affect ping because those are always disconnected.
-    P.disconnect_all(pool, 45_000)
+    P.disconnect_all(pool, 0)
     assert_receive :disconnecting
     assert P.execute(pool, %Q{}, [:param]) == {:ok, %Q{}, %R{}}
     assert P.execute(pool, %Q{}, [:param]) == {:ok, %Q{}, %R{}}

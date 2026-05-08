@@ -6,11 +6,6 @@ defmodule DBConnection.ConnectionPool do
 
   You're not supposed to call any functions on this pool directly, but only pass this
   as the value of the `:pool` option in functions such as `DBConnection.start_link/2`.
-
-  `disconnect_all/3`, which by default will result in connections being
-  reestablished, can be called periodically to recycle checked-in connections
-  after a maximum lifetime is reached. `Ecto SQL` users may find it at
-  https://hexdocs.pm/ecto_sql/Ecto.Adapters.SQL.html#disconnect_all/3
   """
 
   use GenServer
@@ -68,7 +63,7 @@ defmodule DBConnection.ConnectionPool do
           nil
       end
 
-    ts = {System.monotonic_time(), 0, max_lifetime}
+    ts = {nil, max_lifetime}
     {:ok, _} = DBConnection.ConnectionPool.Pool.start_supervised(queue, mod, opts)
     target = Keyword.get(opts, :queue_target, @queue_target)
     interval = Keyword.get(opts, :queue_interval, @queue_interval)
@@ -114,8 +109,8 @@ defmodule DBConnection.ConnectionPool do
   end
 
   def handle_call({:disconnect_all, interval}, _from, {type, queue, codel, ts}) do
-    {_, _, max_lifetime} = ts
-    ts = {System.monotonic_time(), interval, max_lifetime}
+    {_, max_lifetime} = ts
+    ts = {{System.monotonic_time(), interval}, max_lifetime}
     {:reply, :ok, {type, queue, codel, ts}}
   end
 
@@ -165,9 +160,9 @@ defmodule DBConnection.ConnectionPool do
 
         case :ets.info(holder, :owner) do
           ^owner ->
-            {time, interval, max_lifetime} = ts
+            {interval, max_lifetime} = ts
 
-            if Holder.maybe_disconnect(holder, time, interval, max_lifetime) do
+            if Holder.maybe_disconnect(holder, interval, max_lifetime) do
               {:noreply, data}
             else
               handle_checkin(holder, extra, data)
@@ -239,8 +234,8 @@ defmodule DBConnection.ConnectionPool do
          {queued_in_native, holder} = key when queued_in_native <= past_in_native <-
            :ets.first(queue) do
       :ets.delete(queue, key)
-      {time, _interval, max_lifetime} = ts
-      Holder.maybe_disconnect(holder, time, 0, max_lifetime) or Holder.handle_ping(holder)
+      {interval, max_lifetime} = ts
+      Holder.maybe_disconnect(holder, interval, max_lifetime) or Holder.handle_ping(holder)
       drop_idle(past_in_native, limit - 1, status, queue, codel, ts)
     else
       _ ->
