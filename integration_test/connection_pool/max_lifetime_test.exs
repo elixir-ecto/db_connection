@@ -1,3 +1,23 @@
+defmodule MaxLifetimeTest.Connection do
+  def connect(opts) do
+    {:ok, %{parent: Keyword.fetch!(opts, :parent), pings: 0}}
+  end
+
+  def disconnect(err, state) do
+    send(state.parent, {:max_lifetime_disconnect, err, state.pings})
+    :ok
+  end
+
+  def checkout(state), do: {:ok, state}
+  def checkin(state), do: {:ok, state}
+
+  def ping(state) do
+    state = %{state | pings: state.pings + 1}
+    send(state.parent, {:ping, state.pings})
+    {:ok, state}
+  end
+end
+
 defmodule MaxLifetimeTest do
   use ExUnit.Case, async: true
 
@@ -52,6 +72,31 @@ defmodule MaxLifetimeTest do
     {:ok, pool} = P.start_link(opts)
     assert_receive {:connected, conn}
     assert P.run(pool, fn _conn -> Process.sleep(500) end)
+    assert_receive {:disconnected, ^conn}
+    assert_receive {:connected, ^conn}
+  end
+
+  test "idle pings do not reset max_lifetime" do
+    opts = [
+      parent: self(),
+      pool: DBConnection.ConnectionPool,
+      pool_size: 1,
+      connection_listeners: [self()],
+      max_lifetime: 500..500,
+      idle_interval: 50,
+      backoff_min: 10
+    ]
+
+    {:ok, _pool} = DBConnection.start_link(MaxLifetimeTest.Connection, opts)
+
+    assert_receive {:connected, conn}
+    assert_receive {:ping, 1}, 500
+
+    assert_receive {:max_lifetime_disconnect,
+                    %DBConnection.ConnectionError{message: "max_lifetime exceeded"}, pings},
+                   2_000
+
+    assert pings > 0
     assert_receive {:disconnected, ^conn}
     assert_receive {:connected, ^conn}
   end

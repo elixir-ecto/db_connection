@@ -61,6 +61,7 @@ defmodule DBConnection.Connection do
       pool: pool,
       tag: tag,
       timer: nil,
+      connected_at: nil,
       backoff: Backoff.new(opts),
       connection_listeners: Keyword.get(opts, :connection_listeners, []),
       after_connect: Keyword.get(opts, :after_connect),
@@ -85,14 +86,24 @@ defmodule DBConnection.Connection do
     else
       {:ok, state} when after_connect != nil ->
         ref = make_ref()
+        connected_at = System.monotonic_time()
         :gen_statem.cast(self(), {:after_connect, ref})
-        {:keep_state, %{s | state: state, client: {ref, :connect}}}
+        {:keep_state, %{s | state: state, client: {ref, :connect}, connected_at: connected_at}}
 
       {:ok, state} ->
         backoff = backoff && Backoff.reset(backoff)
         ref = make_ref()
+        connected_at = System.monotonic_time()
         :gen_statem.cast(self(), {:connected, ref})
-        {:keep_state, %{s | state: state, client: {ref, :connect}, backoff: backoff}}
+
+        {:keep_state,
+         %{
+           s
+           | state: state,
+             client: {ref, :connect},
+             backoff: backoff,
+             connected_at: connected_at
+         }}
 
       {:error, err} when is_nil(backoff) ->
         Logger.error(
@@ -154,7 +165,7 @@ defmodule DBConnection.Connection do
     demonitor(client)
     cancel_timer(timer)
     :ok = apply(mod, :disconnect, [err, state])
-    s = %{s | state: nil, client: :closed, timer: nil}
+    s = %{s | state: nil, client: :closed, timer: nil, connected_at: nil}
 
     notify_connection_listeners(:disconnected, s)
 
@@ -470,8 +481,8 @@ defmodule DBConnection.Connection do
     pool_update(state, %{s | client: nil, backoff: backoff})
   end
 
-  defp pool_update(state, %{pool: pool, tag: tag, mod: mod} = s) do
-    case Holder.update(pool, tag, mod, state) do
+  defp pool_update(state, %{pool: pool, tag: tag, mod: mod, connected_at: connected_at} = s) do
+    case Holder.update(pool, tag, mod, state, connected_at) do
       {:ok, ref} ->
         {:keep_state, %{s | client: {ref, :pool}, state: state}, :hibernate}
 
