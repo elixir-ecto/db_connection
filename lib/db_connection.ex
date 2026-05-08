@@ -446,6 +446,8 @@ defmodule DBConnection do
       If the connection is idle, the worst case wait is of
       `540_000 + 2 * idle_interval`. If the connection is in use, it may last as
       long as the connection is checked out over the max period. Default is `nil`.
+      Enabling this option requires a backoff to be set, so connections can properly
+      reconnect.
 
     * `:name` - A name to register the started process (see the `:name` option
       in `GenServer.start_link/3`)
@@ -679,9 +681,8 @@ defmodule DBConnection do
   in milliseconds.
 
   Once this function is called, the pool will disconnect all of its connections
-  as they are checked in or as they are pinged. Checked in connections will be
-  randomly disconnected within the given time interval. Pinged connections are
-  immediately disconnected - as they are idle (according to `:idle_interval`).
+  as they are checked in or as they are pinged. Checked in and idle connections
+  will be randomly disconnected within the given time interval.
 
   If the connection has a backoff configured (which is the case by default),
   disconnecting means an attempt at a new connection will be done immediately

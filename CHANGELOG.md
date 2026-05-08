@@ -1,6 +1,11 @@
 # Changelog
 
-## v2.10.0 (2026-01-10)
+## v2.10.1 (2026-05-09)
+
+* Ensure `:max_lifetime` works on connections that have been idle
+* Always distribute `:disconnect_all` over the given limit, even for idle connections
+
+## v2.10.0 (2026-04-24)
 
 * Add `:max_lifetime` to connection
 * Fix watcher blocking during slow pool termination
