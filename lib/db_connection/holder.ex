@@ -8,7 +8,16 @@ defmodule DBConnection.Holder do
   @timeout 15000
   @time_unit 1000
 
-  Record.defrecord(:conn, [:connection, :module, :state, :lock, :ts, deadline: nil, status: :ok])
+  Record.defrecord(:conn, [
+    :connection,
+    :module,
+    :state,
+    :lock,
+    :connected_at,
+    deadline: nil,
+    status: :ok
+  ])
+
   Record.defrecord(:pool_ref, [:pool, :reference, :deadline, :holder, :lock])
 
   @type t :: :ets.tid()
@@ -17,11 +26,12 @@ defmodule DBConnection.Holder do
   ## Holder API
 
   @spec new(pid, reference, module, term) :: t
-  def new(pool, ref, mod, state) do
+  @spec new(pid, reference, module, term, integer) :: t
+  def new(pool, ref, mod, state, connected_at \\ System.monotonic_time()) do
     # Insert before setting heir so that pool can't receive empty table
     holder = :ets.new(__MODULE__, [:public, :ordered_set, decentralized_counters: true])
 
-    conn = conn(connection: self(), module: mod, state: state, ts: System.monotonic_time())
+    conn = conn(connection: self(), module: mod, state: state, connected_at: connected_at)
     true = :ets.insert_new(holder, conn)
 
     :ets.setopts(holder, {:heir, pool, ref})
@@ -29,8 +39,9 @@ defmodule DBConnection.Holder do
   end
 
   @spec update(pid, reference, module, term) :: {:ok, t} | :error
-  def update(pool, ref, mod, state) do
-    holder = new(pool, ref, mod, state)
+  @spec update(pid, reference, module, term, integer) :: {:ok, t} | :error
+  def update(pool, ref, mod, state, connected_at \\ System.monotonic_time()) do
+    holder = new(pool, ref, mod, state, connected_at)
 
     try do
       :ets.give_away(holder, pool, {:checkin, ref, System.monotonic_time()})
@@ -244,7 +255,7 @@ defmodule DBConnection.Holder do
   @spec maybe_disconnect(t, integer, non_neg_integer, {integer, non_neg_integer} | nil) ::
           boolean()
   def maybe_disconnect(holder, start, interval_ms, lifetime) do
-    ts = :ets.lookup_element(holder, :conn, conn(:ts) + 1)
+    ts = :ets.lookup_element(holder, :conn, conn(:connected_at) + 1)
 
     disconnect_all_reason(start, interval_ms, ts, holder) ||
       max_lifetime_reason(lifetime, ts, holder)
