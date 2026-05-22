@@ -312,7 +312,7 @@ defmodule DBConnection.Connection do
       when is_reference(timer) do
     message =
       "client #{Util.inspect_pid(pid)} timed out because it checked out " <>
-        "the connection for longer than #{timeout}ms"
+        "#{Util.pool_label_info(s.pool)}the connection for longer than #{timeout}ms"
 
     exc =
       case Process.info(pid, :current_stacktrace) do

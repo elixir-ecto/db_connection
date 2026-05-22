@@ -48,6 +48,10 @@ defmodule DBConnection.ConnectionPool do
   def init({mod, opts}) do
     DBConnection.register_as_pool(mod)
 
+    if label = opts[:label] do
+      Util.set_label({__MODULE__, label})
+    end
+
     queue = :ets.new(__MODULE__.Queue, [:protected, :ordered_set, decentralized_counters: true])
 
     max_lifetime =
@@ -187,7 +191,7 @@ defmodule DBConnection.ConnectionPool do
     if Holder.handle_deadline(holder, deadline) do
       message =
         "client #{Util.inspect_pid(pid)} timed out because " <>
-          "it queued and checked out the connection for longer than #{len}ms"
+          "#{Util.pool_label_info(self())}it queued and checked out the connection for longer than #{len}ms"
 
       exc =
         case Process.info(pid, :current_stacktrace) do

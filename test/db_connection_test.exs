@@ -63,6 +63,17 @@ defmodule DBConnectionTest do
     end
   end
 
+  describe "pool label formatting" do
+    test "formats pool labels for timeout errors on supported runtimes" do
+      if function_exported?(Process, :set_label, 1) do
+        DBConnection.Util.set_label({DBConnection.ConnectionPool, MyApp.Repo})
+        assert DBConnection.Util.pool_label_info(self()) == "(MyApp.Repo) "
+      else
+        assert DBConnection.Util.pool_label_info(self()) == ""
+      end
+    end
+  end
+
   describe "connection_module/1" do
     setup do
       {:ok, agent} = A.start_link([{:ok, :state}, {:idle, :state}, {:idle, :state}])

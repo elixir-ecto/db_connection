@@ -53,6 +53,13 @@ defmodule DBConnection.Util do
 
   def pool_label(_other), do: nil
 
+  def pool_label_info(pid) do
+    case pool_label(pid) do
+      nil -> ""
+      label -> "(#{inspect(label)}) "
+    end
+  end
+
   # Get a process label if `:proc_lib.get_label/1` is available.
   defp get_label(pid) do
     if function_exported?(:proc_lib, :get_label, 1) do
