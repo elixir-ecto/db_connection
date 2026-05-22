@@ -42,6 +42,29 @@ defmodule QueueTest do
     end
   end
 
+  test "queue drop timeout includes pool label when present" do
+    if function_exported?(:proc_lib, :get_label, 1) do
+      stack = [{:ok, :state}, {:idle, :state}, {:idle, :state}]
+      {:ok, agent} = A.start_link(stack)
+
+      opts = [
+        agent: agent,
+        parent: self(),
+        label: TestRepo,
+        queue_target: 10,
+        queue_interval: 10
+      ]
+
+      {:ok, pool} = P.start_link(opts)
+
+      P.run(pool, fn _ ->
+        assert_raise DBConnection.ConnectionError,
+                     ~r/connection not available from TestRepo and request was dropped from queue after \d+ms/,
+                     fn -> P.run(pool, fn _ -> flunk("got connection") end, timeout: 10) end
+      end)
+    end
+  end
+
   test "queue many async timeouts" do
     stack = [{:ok, :state}] ++ List.duplicate({:idle, :state}, 20)
     {:ok, agent} = A.start_link(stack)

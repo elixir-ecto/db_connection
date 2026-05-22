@@ -56,7 +56,7 @@ defmodule DBConnection.Util do
   def pool_label_info(pid) do
     case pool_label(pid) do
       nil -> ""
-      label -> "(#{inspect(label)}) "
+      label -> " from #{inspect(label)}"
     end
   end
 

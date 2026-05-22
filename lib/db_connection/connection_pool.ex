@@ -191,7 +191,7 @@ defmodule DBConnection.ConnectionPool do
     if Holder.handle_deadline(holder, deadline) do
       message =
         "client #{Util.inspect_pid(pid)} timed out because " <>
-          "#{Util.pool_label_info(self())}it queued and checked out the connection for longer than #{len}ms"
+          "it queued and checked out the connection#{Util.pool_label_info(self())} for longer than #{len}ms"
 
       exc =
         case Process.info(pid, :current_stacktrace) do
@@ -271,7 +271,7 @@ defmodule DBConnection.ConnectionPool do
     select_slow = [{match, guards, [{{:"$1", :"$2"}}]}]
 
     for {sent, from} <- :ets.select(queue, select_slow) do
-      drop(time - sent, from)
+      drop(time - sent, from, Util.pool_label_info(self()))
     end
 
     :ets.select_delete(queue, [{match, guards, [true]}])
@@ -340,7 +340,7 @@ defmodule DBConnection.ConnectionPool do
     case :ets.first(queue) do
       {sent, _, from} = key when time - sent > timeout ->
         :ets.delete(queue, key)
-        drop(time - sent, from)
+        drop(time - sent, from, Util.pool_label_info(self()))
         dequeue_slow(time, timeout, holder, queue, codel, ts)
 
       {sent, _, from} = key ->
@@ -365,9 +365,9 @@ defmodule DBConnection.ConnectionPool do
     end
   end
 
-  defp drop(delay, from) do
+  defp drop(delay, from, pool_label_info) do
     message = """
-    [#{ancestor()}] connection not available and request was dropped from queue after #{delay}ms. \
+    [#{ancestor()}] connection not available#{pool_label_info} and request was dropped from queue after #{delay}ms. \
     This means requests are coming in and your connection pool cannot serve them fast enough. \
     You can address this by:
 

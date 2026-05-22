@@ -70,7 +70,7 @@ defmodule DBConnection.Ownership.Proxy do
     if Holder.handle_deadline(holder, deadline) do
       message =
         "client #{Util.inspect_pid(pid)} timed out because " <>
-          "#{Util.pool_label_info(self())}it queued and checked out the connection for longer than #{len}ms"
+          "it queued and checked out the connection#{Util.pool_label_info(self())} for longer than #{len}ms"
 
       shutdown(message, state)
     else
@@ -84,7 +84,7 @@ defmodule DBConnection.Ownership.Proxy do
       ) do
     message =
       "owner #{Util.inspect_pid(pid)} timed out because " <>
-        "#{Util.pool_label_info(self())}it owned the connection for longer than #{timeout}ms (set via the :ownership_timeout option)"
+        "it owned the connection#{Util.pool_label_info(self())} for longer than #{timeout}ms (set via the :ownership_timeout option)"
 
     # We don't invoke shutdown because this is always a disconnect, even if there is no client.
     # On the other hand, those timeouts are unlikely to trigger, as it defaults to 2 mins.

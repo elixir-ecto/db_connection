@@ -431,6 +431,10 @@ defmodule DBConnection do
     * `:idle_limit` - The number of connections to ping on each `:idle_interval`.
       Defaults to the pool size (all connections).
 
+    * `:label` - A label to include in relevant connection pool error messages.
+      Libraries built on top of DBConnection, such as Ecto, can use this to
+      identify the pool that timed out.
+
     * `:max_restarts` and `:max_seconds` - Configures the `:max_restarts` and
       `:max_seconds` for the connection pool supervisor (see the `Supervisor` docs).
       Typically speaking the connection process doesn't terminate, except due to
@@ -649,6 +653,7 @@ defmodule DBConnection do
       :configure,
       :idle_interval,
       :idle_limit,
+      :label,
       :max_restarts,
       :max_seconds,
       :name,

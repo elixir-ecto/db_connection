@@ -45,6 +45,7 @@ defmodule DBConnectionTest do
                :configure,
                :idle_interval,
                :idle_limit,
+               :label,
                :max_restarts,
                :max_seconds,
                :name,
@@ -60,17 +61,6 @@ defmodule DBConnectionTest do
   describe "available_connection_options/0" do
     test "returns all available function options" do
       assert DBConnection.available_connection_options() == [:log, :queue, :timeout, :deadline]
-    end
-  end
-
-  describe "pool label formatting" do
-    test "formats pool labels for timeout errors on supported runtimes" do
-      if function_exported?(Process, :set_label, 1) do
-        DBConnection.Util.set_label({DBConnection.ConnectionPool, MyApp.Repo})
-        assert DBConnection.Util.pool_label_info(self()) == "(MyApp.Repo) "
-      else
-        assert DBConnection.Util.pool_label_info(self()) == ""
-      end
     end
   end
 
