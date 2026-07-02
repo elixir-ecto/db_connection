@@ -18,6 +18,7 @@ defmodule DBConnection.ConnectionPool do
   @queue_interval 2000
   @idle_interval 1000
   @time_unit 1000
+  @watcher_ref {__MODULE__, :watcher_ref}
 
   @doc false
   def start_link({mod, opts}) do
@@ -46,6 +47,7 @@ defmodule DBConnection.ConnectionPool do
 
   @impl GenServer
   def init({mod, opts}) do
+    Process.flag(:trap_exit, true)
     DBConnection.register_as_pool(mod)
 
     queue = :ets.new(__MODULE__.Queue, [:protected, :ordered_set, decentralized_counters: true])
@@ -64,7 +66,8 @@ defmodule DBConnection.ConnectionPool do
       end
 
     ts = {nil, max_lifetime}
-    {:ok, _} = DBConnection.ConnectionPool.Pool.start_supervised(queue, mod, opts)
+    {:ok, watcher_ref} = DBConnection.ConnectionPool.Pool.start_supervised(queue, mod, opts)
+    Process.put(@watcher_ref, watcher_ref)
     target = Keyword.get(opts, :queue_target, @queue_target)
     interval = Keyword.get(opts, :queue_interval, @queue_interval)
     idle_interval = Keyword.get(opts, :idle_interval, @idle_interval)
@@ -227,6 +230,19 @@ defmodule DBConnection.ConnectionPool do
   def handle_info({:timeout, idle, past_in_native}, {_, _, %{idle: idle}, _} = data) do
     {status, queue, %{idle_limit: limit} = codel, ts} = data
     drop_idle(past_in_native, limit, status, queue, codel, ts)
+  end
+
+  def handle_info({:EXIT, _pid, reason}, state) do
+    {:stop, reason, state}
+  end
+
+  @impl GenServer
+  def terminate(_reason, _state) do
+    if watcher_ref = Process.get(@watcher_ref) do
+      DBConnection.ConnectionPool.Pool.stop_supervised(watcher_ref)
+    end
+
+    :ok
   end
 
   defp drop_idle(past_in_native, limit, status, queue, codel, ts) do

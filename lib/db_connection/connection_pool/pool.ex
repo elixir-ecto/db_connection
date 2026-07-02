@@ -9,6 +9,13 @@ defmodule DBConnection.ConnectionPool.Pool do
     )
   end
 
+  def stop_supervised(ref) do
+    case DBConnection.Watcher.unwatch(ref) do
+      pid when is_pid(pid) -> wait_until_down(pid)
+      nil -> :ok
+    end
+  end
+
   def start_link(arg) do
     Supervisor.start_link(__MODULE__, arg)
   end
@@ -29,5 +36,13 @@ defmodule DBConnection.ConnectionPool.Pool do
   defp conn(owner, tag, id, mod, opts) do
     child_opts = [id: {mod, owner, id}] ++ Keyword.take(opts, [:shutdown])
     DBConnection.Connection.child_spec(mod, [pool_index: id] ++ opts, owner, tag, child_opts)
+  end
+
+  defp wait_until_down(pid) do
+    ref = Process.monitor(pid)
+
+    receive do
+      {:DOWN, ^ref, _, _, _} -> :ok
+    end
   end
 end

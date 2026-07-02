@@ -47,7 +47,7 @@ defmodule DBConnection.WatcherTest do
     # Trigger pool termination
     stop_supervised!(:pool1)
 
-    {:ok, agent2} = A.start_link([{:ok, :state}])
+    {:ok, agent2} = A.start_link([{:ok, :state}, {:ok, :state}])
 
     task =
       Task.async(fn ->

@@ -12,6 +12,10 @@ defmodule DBConnection.Watcher do
     GenServer.call(@name, {:watch, supervisor, args}, :infinity)
   end
 
+  def unwatch(ref) do
+    GenServer.call(@name, {:unwatch, ref}, :infinity)
+  end
+
   @impl true
   def init(:ok) do
     Process.flag(:trap_exit, true)
@@ -27,7 +31,7 @@ defmodule DBConnection.Watcher do
         started_ref = Process.monitor(started_pid)
         caller_refs = Map.put(caller_refs, caller_ref, {supervisor, started_pid, started_ref})
         started_refs = Map.put(started_refs, started_ref, {caller_pid, caller_ref})
-        {:reply, {:ok, started_pid}, {caller_refs, started_refs}}
+        {:reply, {:ok, caller_ref}, {caller_refs, started_refs}}
 
       other ->
         {:reply, other, {caller_refs, started_refs}}
@@ -35,25 +39,31 @@ defmodule DBConnection.Watcher do
   end
 
   @impl true
+  def handle_call({:unwatch, ref}, _from, {caller_refs, started_refs}) do
+    case Map.pop(caller_refs, ref) do
+      {{_supervisor, started_pid, started_ref}, caller_refs} ->
+        terminate_started(started_pid)
+        Process.demonitor(ref, [:flush])
+        Process.demonitor(started_ref, [:flush])
+        {:reply, started_pid, {caller_refs, Map.delete(started_refs, started_ref)}}
+
+      {nil, caller_refs} ->
+        {:reply, nil, {caller_refs, started_refs}}
+    end
+  end
+
+  @impl true
   def handle_info({:DOWN, ref, _, _, _}, {caller_refs, started_refs}) do
     case caller_refs do
       %{^ref => {_supervisor, started_pid, started_ref}} ->
-        try do
-          :sys.terminate(started_pid, :shutdown, :infinity)
-        catch
-          :exit, {:noproc, {:sys, :terminate, _}} -> :ok
-          :exit, {:shutdown, {:sys, :terminate, _}} -> :ok
-        end
-
+        terminate_started(started_pid)
+        Process.demonitor(started_ref, [:flush])
         caller_refs = Map.delete(caller_refs, ref)
-        started_refs = Map.put(started_refs, started_ref, {nil, nil})
+        started_refs = Map.delete(started_refs, started_ref)
         {:noreply, {caller_refs, started_refs}}
 
       %{} ->
         case started_refs do
-          %{^ref => {nil, nil}} ->
-            {:noreply, {caller_refs, Map.delete(started_refs, ref)}}
-
           %{^ref => {caller_pid, caller_ref}} ->
             Process.demonitor(caller_ref, [:flush])
             Process.exit(caller_pid, :kill)
@@ -66,9 +76,18 @@ defmodule DBConnection.Watcher do
     {:noreply, state}
   end
 
+  defp terminate_started(started_pid) do
+    try do
+      :sys.terminate(started_pid, :shutdown, :infinity)
+    catch
+      :exit, {:noproc, {:sys, :terminate, _}} -> :ok
+      :exit, {:shutdown, {:sys, :terminate, _}} -> :ok
+    end
+  end
+
   @impl true
   def terminate(_, {_, started_refs}) do
-    for {_, {caller_pid, _}} when caller_pid != nil <- started_refs do
+    for {_, {caller_pid, _}} <- started_refs do
       Process.exit(caller_pid, :kill)
     end
 
