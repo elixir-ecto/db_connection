@@ -1103,7 +1103,7 @@ defmodule DBConnection do
   def transaction(%DBConnection{} = conn, fun, opts) do
     case begin(conn, &run/4, opts) do
       {:ok, _} ->
-        run_transaction(conn, fun, &run/4, opts)
+        run_transaction(conn, fun, &run/4, opts, true)
 
       {:error, error} ->
         rollback_or_raise(error)
@@ -1113,7 +1113,7 @@ defmodule DBConnection do
   def transaction(pool, fun, opts) do
     case begin(pool, &checkout/4, opts) do
       {:ok, conn, _} ->
-        run_transaction(conn, fun, &checkin/4, opts)
+        run_transaction(conn, fun, &transaction_checkin/4, opts, false)
 
       {:error, error} ->
         rollback_or_raise(error)
@@ -1661,12 +1661,6 @@ defmodule DBConnection do
     end
   end
 
-  defp checkin(%DBConnection{} = conn, fun, meter, opts) do
-    return = fun.(conn, meter, opts)
-    checkin(conn)
-    return
-  end
-
   defp meter(opts) do
     case Keyword.get(opts, :log) do
       nil -> nil
@@ -1759,7 +1753,7 @@ defmodule DBConnection do
   defp crash_reason(:throw, value), do: {:nocatch, value}
   defp crash_reason(_, value), do: value
 
-  defp run_transaction(conn, fun, run, opts) do
+  defp run_transaction(conn, fun, run, opts, reset_after?) do
     %DBConnection{conn_ref: conn_ref} = conn
 
     try do
@@ -1801,7 +1795,9 @@ defmodule DBConnection do
             raise err
         end
     after
-      reset(conn)
+      if reset_after? do
+        reset(conn)
+      end
     end
   end
 
@@ -1824,6 +1820,13 @@ defmodule DBConnection do
       true -> Holder.put_status(pool_ref, :ok)
       false -> :ok
     end
+  end
+
+  defp transaction_checkin(%DBConnection{} = conn, fun, meter, opts) do
+    return = fun.(conn, meter, opts)
+    reset(conn)
+    checkin(conn)
+    return
   end
 
   defp begin(conn, run, opts) do
