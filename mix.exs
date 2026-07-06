@@ -3,7 +3,7 @@ defmodule DBConnection.Mixfile do
 
   @source_url "https://github.com/elixir-ecto/db_connection"
   @pools [:connection_pool, :ownership]
-  @version "2.10.1"
+  @version "2.10.2"
 
   def project do
     [
@@ -18,9 +18,12 @@ defmodule DBConnection.Mixfile do
       consolidate_protocols: false,
       test_paths: test_paths(Mix.env()),
       test_ignore_filters: [~r/test_support\.exs$/],
-      aliases: ["test.all": ["test", "test.pools"], "test.pools": &test_pools/1],
-      preferred_cli_env: ["test.all": :test]
+      aliases: ["test.all": ["test", "test.pools"], "test.pools": &test_pools/1]
     ]
+  end
+
+  def cli do
+    [preferred_envs: ["test.all": :test]]
   end
 
   def application do

@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.10.2 (2026-07-06)
+
+* Ensure pool connections terminate synchronously when the pool manager shuts down
+* Ensure transaction is reset before the pool is checked in
+
 ## v2.10.1 (2026-05-09)
 
 * Ensure `:max_lifetime` works on connections that have been idle
