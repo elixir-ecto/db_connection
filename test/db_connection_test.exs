@@ -91,4 +91,83 @@ defmodule DBConnectionTest do
       assert :error = DBConnection.connection_module(self())
     end
   end
+
+  test "pool transaction reset after checkin does not clear the next client's aborted status" do
+    stack = [
+      {:ok, :state},
+      {:ok, :begin, :state},
+      {:ok, :commit, :state},
+      {:ok, :begin, :state},
+      {:ok, :rollback, :state}
+    ]
+
+    {:ok, agent} = A.start_link(stack)
+    {:ok, pool} = P.start_link(agent: agent, pool_size: 1)
+
+    parent = self()
+
+    log = fn
+      %DBConnection.LogEntry{call: :commit} ->
+        send(parent, :x_in_commit_log)
+
+        receive do
+          :release_x -> :ok
+        after
+          5000 -> flunk("timed out waiting to release transaction X")
+        end
+
+      %DBConnection.LogEntry{} ->
+        :ok
+    end
+
+    x =
+      Task.async(fn ->
+        Process.put(:agent, agent)
+
+        P.transaction(
+          pool,
+          fn _conn ->
+            :x_done
+          end,
+          log: log
+        )
+      end)
+
+    assert_receive :x_in_commit_log
+
+    y =
+      Task.async(fn ->
+        Process.put(:agent, agent)
+
+        P.transaction(pool, fn conn ->
+          assert {:error, :nested_failed} =
+                   P.transaction(conn, fn conn ->
+                     P.rollback(conn, :nested_failed)
+                   end)
+
+          send(parent, :y_nested_failed)
+
+          receive do
+            :finish_y -> :done
+          after
+            5000 -> flunk("timed out waiting to finish transaction Y")
+          end
+        end)
+      end)
+
+    assert_receive :y_nested_failed
+    send(x.pid, :release_x)
+    assert {:ok, :x_done} = Task.await(x)
+
+    send(y.pid, :finish_y)
+    assert {:error, :rollback} = Task.await(y)
+
+    assert [
+             {:connect, _},
+             {:handle_begin, _},
+             {:handle_commit, _},
+             {:handle_begin, _},
+             {:handle_rollback, _}
+           ] = A.record(agent)
+  end
 end
