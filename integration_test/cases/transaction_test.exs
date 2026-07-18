@@ -1187,6 +1187,37 @@ defmodule TransactionTest do
            ] = A.record(agent)
   end
 
+  test "status disconnect_and_retry succeeds" do
+    err = RuntimeError.exception("oops")
+
+    stack = [
+      {:ok, :state},
+      {:disconnect_and_retry, err, :new_state},
+      :ok,
+      fn opts ->
+        send(opts[:parent], :reconnected)
+        {:ok, :reconnected_state}
+      end,
+      {:idle, :newest_state}
+    ]
+
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self()]
+    {:ok, pool} = P.start_link(opts)
+
+    assert P.status(pool, opts) == :idle
+    assert_receive :reconnected
+
+    assert [
+             connect: [_],
+             handle_status: [_, :state],
+             disconnect: [^err, :new_state],
+             connect: [_],
+             handle_status: [_, :reconnected_state]
+           ] = A.record(agent)
+  end
+
   test "status returns result on successful run" do
     stack = [
       {:ok, :state},

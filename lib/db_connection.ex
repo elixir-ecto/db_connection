@@ -1927,6 +1927,7 @@ defmodule DBConnection do
 
       other ->
         case retry_or_handle_common_result(other, conn, meter) do
+          {:retry, _, _} = retry -> retry
           {:error, _, meter} -> {:ok, :error, meter}
           {kind, reason, stack, _meter} -> :erlang.raise(kind, reason, stack)
           _ -> other
