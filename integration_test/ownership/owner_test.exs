@@ -132,7 +132,7 @@ defmodule OwnerTest do
                fn _ ->
                  assert_receive :reconnected
                end,
-               timeout: 0
+               timeout: 10
              )
            end) =~ ~r"timed out"
 
