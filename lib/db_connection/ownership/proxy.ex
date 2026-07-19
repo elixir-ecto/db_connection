@@ -74,6 +74,12 @@ defmodule DBConnection.Ownership.Proxy do
     end
   end
 
+  # Deadline timers are cancelled asynchronously, so their messages may arrive
+  # after the holder has been transferred or replaced.
+  def handle_info({:timeout, _deadline, {_ref, _holder, _pid, _len}}, state) do
+    {:noreply, state}
+  end
+
   def handle_info(
         {:timeout, timer, {__MODULE__, pid, timeout}},
         %{ownership_timer: timer} = state

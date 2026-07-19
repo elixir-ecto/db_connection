@@ -143,4 +143,21 @@ defmodule OwnerTest do
              {:connect, _}
            ] = A.record(agent)
   end
+
+  test "ignores a late deadline timer for a previous holder" do
+    stack = [{:ok, :state}] ++ List.duplicate({:idle, :state}, 2)
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, ownership_mode: :manual]
+    {:ok, pool} = P.start_link(opts)
+
+    :ok = Ownership.ownership_checkout(pool, [])
+    {:owner, _ref, proxy} = Map.fetch!(:sys.get_state(pool).checkouts, self())
+    monitor_ref = Process.monitor(proxy)
+
+    send(proxy, {:timeout, make_ref(), {make_ref(), make_ref(), self(), 15_000}})
+
+    assert %{source: {:proxy, ^proxy}} = GenServer.call(proxy, :get_connection_metrics)
+    refute_receive {:DOWN, ^monitor_ref, :process, ^proxy, _reason}
+  end
 end
