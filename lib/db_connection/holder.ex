@@ -321,7 +321,7 @@ defmodule DBConnection.Holder do
         pool_ref =
           pool_ref(pool: pool, reference: ref, deadline: deadline, holder: holder, lock: lock)
 
-        checkout_result(holder, pool_ref, checkin_time)
+        checkout_result(holder, pool_ref, checkin_time, timeout)
 
       {^lock, reply} ->
         Process.demonitor(lock, [:flush])
@@ -332,19 +332,33 @@ defmodule DBConnection.Holder do
     end
   end
 
-  defp checkout_result(holder, pool_ref, checkin_time) do
-    try do
-      :ets.lookup(holder, :conn)
-    rescue
-      ArgumentError ->
-        # Deadline could hit and be handled pool before using connection
-        msg = "connection not available because deadline reached while in queue"
-        {:error, DBConnection.ConnectionError.exception(msg)}
+  defp checkout_result(holder, pool_ref, checkin_time, timeout) do
+    if deadline_reached?(timeout) do
+      err = checkout_deadline_error()
+      disconnect(pool_ref, err)
+      {:error, err}
     else
-      [conn(module: mod, state: state)] ->
-        {:ok, pool_ref, mod, checkin_time, state}
+      try do
+        :ets.lookup(holder, :conn)
+      rescue
+        ArgumentError ->
+          # Deadline could hit and be handled by the pool before using the connection.
+          {:error, checkout_deadline_error()}
+      else
+        [conn(module: mod, state: state)] ->
+          {:ok, pool_ref, mod, checkin_time, state}
+      end
     end
   end
+
+  defp checkout_deadline_error do
+    DBConnection.ConnectionError.exception(
+      "connection not available because deadline reached while in queue"
+    )
+  end
+
+  defp deadline_reached?(nil), do: false
+  defp deadline_reached?(timeout), do: timeout <= System.monotonic_time(@time_unit)
 
   defp no_holder(holder, maybe_pid) do
     reason =

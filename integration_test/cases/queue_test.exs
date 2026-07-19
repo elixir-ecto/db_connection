@@ -86,6 +86,29 @@ defmodule QueueTest do
     assert P.run(pool, fn _ -> :result end) == :result
   end
 
+  test "does not checkout a connection after its deadline" do
+    stack = [
+      {:ok, :state},
+      :ok,
+      fn opts ->
+        send(opts[:parent], :reconnected)
+        {:ok, :state}
+      end
+    ]
+
+    {:ok, agent} = A.start_link(stack)
+
+    opts = [agent: agent, parent: self()]
+    {:ok, pool} = P.start_link(opts)
+    deadline = System.monotonic_time(:millisecond) - 1
+
+    assert_raise DBConnection.ConnectionError, ~r/deadline reached/, fn ->
+      P.run(pool, fn _ -> flunk("checkout succeeded") end, deadline: deadline)
+    end
+
+    assert_receive :reconnected
+  end
+
   test "queue many async exits" do
     stack = [{:ok, :state}] ++ List.duplicate({:idle, :state}, 20)
     {:ok, agent} = A.start_link(stack)
