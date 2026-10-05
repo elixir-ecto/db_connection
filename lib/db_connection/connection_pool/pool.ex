@@ -5,7 +5,7 @@ defmodule DBConnection.ConnectionPool.Pool do
   def start_supervised(tag, mod, opts) do
     DBConnection.Watcher.watch(
       DBConnection.ConnectionPool.Supervisor,
-      {DBConnection.ConnectionPool.Pool, {self(), tag, mod, opts}}
+      {__MODULE__, {self(), tag, mod, %DBConnection.SensitiveData{data: opts}}}
     )
   end
 
@@ -16,8 +16,8 @@ defmodule DBConnection.ConnectionPool.Pool do
     end
   end
 
-  def start_link(arg) do
-    Supervisor.start_link(__MODULE__, arg)
+  def start_link({owner, tag, mod, %DBConnection.SensitiveData{data: opts}}) do
+    Supervisor.start_link(__MODULE__, {owner, tag, mod, opts})
   end
 
   @impl true

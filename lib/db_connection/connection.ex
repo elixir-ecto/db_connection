@@ -11,16 +11,17 @@ defmodule DBConnection.Connection do
   @timeout 15_000
 
   @doc false
-  def start_link(mod, opts, pool, tag) do
+  def start_link(mod, %DBConnection.SensitiveData{data: opts} = sensitive_options, pool, tag) do
     start_opts = Keyword.take(opts, [:debug, :spawn_opt])
-    sensitive_options = %DBConnection.SensitiveData{data: opts}
     :gen_statem.start_link(__MODULE__, {mod, sensitive_options, pool, tag}, start_opts)
   end
 
   @doc false
   def child_spec(mod, opts, pool, tag, child_opts) do
+    sensitive_options = %DBConnection.SensitiveData{data: opts}
+
     Supervisor.child_spec(
-      %{id: __MODULE__, start: {__MODULE__, :start_link, [mod, opts, pool, tag]}},
+      %{id: __MODULE__, start: {__MODULE__, :start_link, [mod, sensitive_options, pool, tag]}},
       child_opts
     )
   end

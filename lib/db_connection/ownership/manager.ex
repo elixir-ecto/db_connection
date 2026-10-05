@@ -7,9 +7,9 @@ defmodule DBConnection.Ownership.Manager do
 
   @timeout 5_000
 
-  @callback start_link({module, opts :: Keyword.t()}) ::
+  @callback start_link({module, %DBConnection.SensitiveData{}}) ::
               GenServer.on_start()
-  def start_link({module, opts}) do
+  def start_link({module, %DBConnection.SensitiveData{data: opts}}) do
     {owner_opts, pool_opts} = Keyword.split(opts, [:name])
     GenServer.start_link(__MODULE__, {module, owner_opts, pool_opts}, owner_opts)
   end
@@ -260,7 +260,7 @@ defmodule DBConnection.Ownership.Manager do
     {:ok, proxy} =
       DynamicSupervisor.start_child(
         DBConnection.Ownership.Supervisor,
-        {DBConnection.Ownership.Proxy, {caller, pool, opts}}
+        {Proxy, {caller, pool, %DBConnection.SensitiveData{data: opts}}}
       )
 
     if log do

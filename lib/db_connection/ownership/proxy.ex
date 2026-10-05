@@ -10,7 +10,7 @@ defmodule DBConnection.Ownership.Proxy do
   @queue_target 50
   @queue_interval 1000
 
-  def start_link({caller, pool, pool_opts}) do
+  def start_link({caller, pool, %DBConnection.SensitiveData{data: pool_opts}}) do
     GenServer.start_link(__MODULE__, {caller, pool, pool_opts}, [])
   end
 

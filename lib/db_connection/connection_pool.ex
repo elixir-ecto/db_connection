@@ -21,7 +21,7 @@ defmodule DBConnection.ConnectionPool do
   @watcher_ref {__MODULE__, :watcher_ref}
 
   @doc false
-  def start_link({mod, opts}) do
+  def start_link({mod, %DBConnection.SensitiveData{data: opts}}) do
     GenServer.start_link(__MODULE__, {mod, opts}, start_opts(opts))
   end
 

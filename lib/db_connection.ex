@@ -623,7 +623,7 @@ defmodule DBConnection do
   @spec child_spec(module, [start_option()] | Keyword.t()) :: :supervisor.child_spec()
   def child_spec(conn_mod, opts) do
     pool = Keyword.get(opts, :pool, DBConnection.ConnectionPool)
-    pool.child_spec({conn_mod, opts})
+    pool.child_spec({conn_mod, %DBConnection.SensitiveData{data: opts}})
   end
 
   @doc """
