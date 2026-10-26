@@ -157,7 +157,7 @@ defmodule DBConnection.Ownership.Proxy do
   end
 
   def handle_info({:"ETS-TRANSFER", holder, pid, ref}, %{holder: holder, owner: {_, ref}} = state) do
-    shutdown("client #{Util.inspect_pid(pid)} exited", state)
+    shutdown("client #{Util.inspect_pid(pid)} exited", state, :info)
   end
 
   @impl true
@@ -228,12 +228,14 @@ defmodule DBConnection.Ownership.Proxy do
   end
 
   # If shutting down but it has no client, checkin
-  defp shutdown(reason, %{client: nil} = state) do
+  defp shutdown(reason, state, severity \\ :error)
+
+  defp shutdown(reason, %{client: nil} = state, _severity) do
     pool_checkin(reason, state)
   end
 
   # If shutting down but it has a client, disconnect
-  defp shutdown(reason, %{client: {client, _, checkout_stack}} = state) do
+  defp shutdown(reason, %{client: {client, _, checkout_stack}} = state, severity) do
     reason =
       case pruned_stacktrace(client) do
         [] ->
@@ -251,7 +253,7 @@ defmodule DBConnection.Ownership.Proxy do
             """
       end
 
-    err = DBConnection.ConnectionError.exception(reason)
+    err = DBConnection.ConnectionError.exception(message: reason, severity: severity)
     pool_disconnect(err, false, state)
   end
 
