@@ -79,7 +79,10 @@ defmodule DBConnection.Connection do
     %{mod: mod, opts: opts, backoff: backoff, after_connect: after_connect} = s
 
     try do
-      apply(mod, :connect, [connect_opts(opts)])
+      case connect_opts(opts) do
+        {:error, err} when is_exception(err) -> {:error, err}
+        connect_opts -> apply(mod, :connect, [connect_opts])
+      end
     rescue
       e ->
         {e, stack} = maybe_sanitize_exception(e, __STACKTRACE__, opts)

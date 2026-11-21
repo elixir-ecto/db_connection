@@ -130,7 +130,8 @@ defmodule DBConnection do
           | {:backoff_min, non_neg_integer}
           | {:backoff_type, :stop | :exp | :rand | :rand_exp}
           | {:checkout_retries, non_neg_integer}
-          | {:configure, (keyword -> keyword) | {module, atom, [any]} | nil}
+          | {:configure,
+             (keyword -> keyword | {:error, Exception.t()}) | {module, atom, [any]} | nil}
           | {:idle_interval, non_neg_integer}
           | {:idle_limit, non_neg_integer}
           | {:max_lifetime, Range.t()}
@@ -416,7 +417,9 @@ defmodule DBConnection do
     * `:configure` - A function to run before every connect attempt to
       dynamically configure the options, either a 1-arity fun,
       `{module, function, args}` or `nil`. This function is called *in the
-      connection process*. For more details, see
+      connection process*. It returns a keyword list of options or
+      `{:error, exception}` to skip connecting and apply the configured backoff.
+      For more details, see
       [Connection Configuration Callback](#start_link/2-connection-configuration-callback)
 
     * `:connection_listeners` - A list of process destinations to send
@@ -569,9 +572,17 @@ defmodule DBConnection do
 
   The `:configure` function will be called before each individual connection to the
   database is made. It receives all of the options provided to `start_link/2` as well
-  as an additional generated value named `:pool_index`. The returned value will be
-  passed as the options into the appropriate `:connect` callback. This provides a way
-  for the user to dynamically configure the connection options.
+  as an additional generated value named `:pool_index`. The returned keyword list will
+  be passed as the options into the appropriate `:connect` callback. This provides a
+  way for the user to dynamically configure the connection options.
+
+  The callback may instead return `{:error, exception}`, where `exception` is an
+  exception struct. In this case, the `:connect` callback is not called and the error
+  is handled like an error returned by `:connect`: it is logged and the connection
+  retries after the configured backoff, or stops if `:backoff_type` is `:stop`.
+  Returned errors are logged as-is and must not contain sensitive information.
+  Exceptions raised by the callback still terminate the connection process and
+  respect `:show_sensitive_data_on_connection_error`.
 
   `:pool_index` is an integer in `1..pool_size` that represents the current connection's
   place in the enumeration of all of the pool's connections. It can be used, for example,
