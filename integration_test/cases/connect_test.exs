@@ -146,6 +146,52 @@ defmodule ConnectTest do
     assert_receive {:hello, ^ref}
   end
 
+  test "MFA configure still passes non-exception errors to connect" do
+    parent = self()
+
+    {:ok, agent} =
+      A.start_link([
+        fn opts ->
+          send(parent, {:connect_opts, opts})
+          {:ok, :state}
+        end
+      ])
+
+    configure = fn opts ->
+      Process.put(:agent, opts[:agent])
+      {:error, :unavailable}
+    end
+
+    {:ok, _pool} = P.start_link(agent: agent, configure: {__MODULE__, :configure, [configure]})
+
+    assert_receive {:connect_opts, {:error, :unavailable}}
+    assert [connect: [{:error, :unavailable}]] = A.record(agent)
+  end
+
+  test "function configure still passes non-exception errors to connect" do
+    parent = self()
+
+    {:ok, agent} =
+      A.start_link([
+        fn opts ->
+          send(parent, {:connect_opts, opts})
+          {:ok, :state}
+        end
+      ])
+
+    configure = fn opts ->
+      Process.put(:agent, opts[:agent])
+      {:error, :unavailable}
+    end
+
+    {:ok, _pool} = P.start_link(agent: agent, configure: configure)
+
+    assert_receive {:connect_opts, {:error, :unavailable}}
+    assert [connect: [{:error, :unavailable}]] = A.record(agent)
+  end
+
+  def configure(opts, callback), do: callback.(opts)
+
   test "backoff after disconnect and failed connection attempt" do
     err = RuntimeError.exception("oops")
 

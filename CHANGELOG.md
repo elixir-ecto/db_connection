@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+* Allow `:configure` callbacks to return `{:error, exception}` to skip connecting and apply the configured backoff
+
 ## v2.10.2 (2026-07-06)
 
 * Ensure pool connections terminate synchronously when the pool manager shuts down
