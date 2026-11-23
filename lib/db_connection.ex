@@ -1234,6 +1234,7 @@ defmodule DBConnection do
   @spec prepare_stream(t, query, params, [connection_option()] | Keyword.t()) ::
           DBConnection.PrepareStream.t()
   def prepare_stream(%DBConnection{} = conn, query, params, opts \\ []) do
+    opts = normalize_log(opts)
     %DBConnection.PrepareStream{conn: conn, query: query, params: params, opts: opts}
   end
 
@@ -1275,6 +1276,7 @@ defmodule DBConnection do
   """
   @spec stream(t, query, params, [connection_option()] | Keyword.t()) :: DBConnection.Stream.t()
   def stream(%DBConnection{} = conn, query, params, opts \\ []) do
+    opts = normalize_log(opts)
     %DBConnection.Stream{conn: conn, query: query, params: params, opts: opts}
   end
 
@@ -1510,7 +1512,7 @@ defmodule DBConnection do
 
   defp prepare_declare(conn, query, params, opts) do
     result =
-      with {:ok, query, meter} <- parse(query, meter(opts), opts) do
+      with {:ok, query, meter} <- parse(query, already_normalized_meter(opts), opts) do
         run(conn, &run_prepare_declare(&1, query, params, &2, &3), meter, opts)
       end
 
@@ -1529,7 +1531,7 @@ defmodule DBConnection do
 
   defp declare(conn, query, params, opts) do
     result =
-      case maybe_encode(query, params, meter(opts), opts) do
+      case maybe_encode(query, params, already_normalized_meter(opts), opts) do
         {:prepare, meter} ->
           run(conn, &run_prepare_declare(&1, query, params, &2, &3), meter, opts)
 
@@ -1672,7 +1674,22 @@ defmodule DBConnection do
     end
   end
 
+  defp normalize_log(opts) do
+    case Keyword.get(opts, :log) do
+      {mod, fun, args} -> Keyword.put(opts, :log, &apply(mod, fun, [&1 | args]))
+      _ -> opts
+    end
+  end
+
   defp meter(opts) do
+    case Keyword.get(opts, :log) do
+      nil -> nil
+      {mod, fun, args} -> {&apply(mod, fun, [&1 | args]), []}
+      log -> {log, []}
+    end
+  end
+
+  defp already_normalized_meter(opts) do
     case Keyword.get(opts, :log) do
       nil -> nil
       log -> {log, []}
@@ -1737,7 +1754,6 @@ defmodule DBConnection do
 
   defp entry_result(other), do: other
 
-  defp log({mod, fun, args}, entry), do: apply(mod, fun, [entry | args])
   defp log(fun, entry), do: fun.(entry)
 
   defp log_result({kind, reason, stack}) when kind in [:error, :exit, :throw] do
@@ -1973,7 +1989,7 @@ defmodule DBConnection do
 
   defp stream_fetch(%DBConnection{} = conn, {:cont, query, cursor}, opts) do
     with {ok, result, meter} when ok in [:cont, :halt] <-
-           fetch(conn, [query, cursor], meter(opts), opts),
+           fetch(conn, [query, cursor], already_normalized_meter(opts), opts),
          {:ok, result, meter} <- decode(query, result, meter, opts) do
       {ok, result, meter}
     end
@@ -2008,7 +2024,7 @@ defmodule DBConnection do
   end
 
   defp stream_deallocate(conn, {_status, query, cursor}, opts) do
-    meter = event(meter(opts), :deallocate)
+    meter = event(already_normalized_meter(opts), :deallocate)
 
     conn
     |> cleanup(:handle_deallocate, [query, cursor], opts)
