@@ -1,8 +1,12 @@
 # Changelog
 
-## Unreleased
+## v2.10.3 (2026-11-24)
 
+* Do not accept MFArgs within enumerable protocol implementations. This is not a vulnerability in DBConnection but it is included as a hardening fix. We advise users to upgrade (CVE-2026-133555)
 * Allow `:configure` callbacks to return `{:error, exception}` to skip connecting and apply the configured backoff
+* Ignore stale ownership deadline timeouts
+* Reject checkouts after deadline
+* Wrap user options on struct to avoid leakage to logs
 
 ## v2.10.2 (2026-07-06)
 
