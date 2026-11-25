@@ -697,6 +697,18 @@ defmodule ManagerTest do
     end
   end
 
+  test "includes label in closed connection error when label is provided" do
+    error = closed_connection_error(label: TestRepo)
+
+    assert error.message ==
+             "[TestRepo] connection is closed because of an error, disconnect or timeout"
+  end
+
+  test "doesn't require a label to produce a closed connection error" do
+    error = closed_connection_error([])
+    assert error.message == "connection is closed because of an error, disconnect or timeout"
+  end
+
   test "unallow_existing cleans up old owner so its exit doesn't revoke the new allowance" do
     stack = List.duplicate({:ok, :state}, 2) ++ List.duplicate({:idle, :state}, 20)
     {:ok, agent} = A.start_link(stack)
@@ -773,6 +785,36 @@ defmodule ManagerTest do
     opts = [agent: agent, parent: self(), ownership_mode: :manual] ++ opts
     {:ok, pid} = P.start_link(opts)
     {:ok, pid, opts}
+  end
+
+  defp closed_connection_error(opts) do
+    stack = [{:ok, :state}, {:idle, :state}, :ok, {:ok, :state}]
+    {:ok, agent} = A.start_link(stack ++ List.duplicate({:idle, :state}, 10))
+
+    opts = [agent: agent, parent: self(), ownership_mode: :manual] ++ opts
+    {:ok, pool} = P.start_link(opts)
+    :ok = Ownership.ownership_checkout(pool, ownership_timeout: 100)
+
+    capture_log(fn ->
+      P.run(
+        pool,
+        fn conn ->
+          # Hold the connection longer than the ownership_timeout above.
+          Process.sleep(200)
+
+          error =
+            assert_raise DBConnection.ConnectionError, fn ->
+              P.execute!(conn, %TestQuery{}, [:param], opts)
+            end
+
+          send(self(), {:closed_connection_error, error})
+        end,
+        opts
+      )
+    end)
+
+    assert_received {:closed_connection_error, error}
+    error
   end
 
   defp async_no_callers(fun) do

@@ -2,6 +2,7 @@ defmodule DBConnection.Ownership.Proxy do
   @moduledoc false
 
   alias DBConnection.Holder
+  require Holder
   alias DBConnection.Util
   use GenServer, restart: :temporary
 
@@ -109,7 +110,9 @@ defmodule DBConnection.Ownership.Proxy do
       {:ok, pool_ref, original_mod, _idle_time, conn_state} ->
         case post_checkout.(original_mod, conn_state) do
           {:ok, conn_mod, conn_state} ->
-            holder = Holder.new(self(), owner_ref, conn_mod, conn_state)
+            label = Holder.pool_ref(pool_ref, :label)
+            now = System.monotonic_time()
+            holder = Holder.new(self(), owner_ref, conn_mod, conn_state, now, label)
             state = %{state | pool_ref: pool_ref, holder: holder, mod: original_mod}
             checkout(from, state)
 

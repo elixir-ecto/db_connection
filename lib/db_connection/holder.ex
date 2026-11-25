@@ -15,10 +15,11 @@ defmodule DBConnection.Holder do
     :lock,
     :connected_at,
     deadline: nil,
-    status: :ok
+    status: :ok,
+    label: nil
   ])
 
-  Record.defrecord(:pool_ref, [:pool, :reference, :deadline, :holder, :lock])
+  Record.defrecord(:pool_ref, [:pool, :reference, :deadline, :holder, :lock, :label])
 
   @type t :: :ets.tid()
   @type checkin_time :: non_neg_integer() | nil
@@ -27,11 +28,20 @@ defmodule DBConnection.Holder do
 
   @spec new(pid, reference, module, term) :: t
   @spec new(pid, reference, module, term, integer) :: t
-  def new(pool, ref, mod, state, connected_at \\ System.monotonic_time()) do
+  @spec new(pid, reference, module, term, integer, term) :: t
+  def new(pool, ref, mod, state, connected_at \\ System.monotonic_time(), label \\ nil) do
     # Insert before setting heir so that pool can't receive empty table
     holder = :ets.new(__MODULE__, [:public, :ordered_set, decentralized_counters: true])
 
-    conn = conn(connection: self(), module: mod, state: state, connected_at: connected_at)
+    conn =
+      conn(
+        connection: self(),
+        module: mod,
+        state: state,
+        connected_at: connected_at,
+        label: label
+      )
+
     true = :ets.insert_new(holder, conn)
 
     :ets.setopts(holder, {:heir, pool, ref})
@@ -40,8 +50,9 @@ defmodule DBConnection.Holder do
 
   @spec update(pid, reference, module, term) :: {:ok, t} | :error
   @spec update(pid, reference, module, term, integer) :: {:ok, t} | :error
-  def update(pool, ref, mod, state, connected_at \\ System.monotonic_time()) do
-    holder = new(pool, ref, mod, state, connected_at)
+  @spec update(pid, reference, module, term, integer, term) :: {:ok, t} | :error
+  def update(pool, ref, mod, state, connected_at \\ System.monotonic_time(), label \\ nil) do
+    holder = new(pool, ref, mod, state, connected_at, label)
 
     try do
       :ets.give_away(holder, pool, {:checkin, ref, System.monotonic_time()})
@@ -142,21 +153,19 @@ defmodule DBConnection.Holder do
   end
 
   defp handle_or_cleanup(type, pool_ref, fun, args, opts) do
-    pool_ref(holder: holder, lock: lock) = pool_ref
+    pool_ref(holder: holder, lock: lock, label: label) = pool_ref
 
     try do
       :ets.lookup(holder, :conn)
     rescue
       ArgumentError ->
-        msg = "connection is closed because of an error, disconnect or timeout"
-        {:disconnect, DBConnection.ConnectionError.exception(msg), _state = :unused}
+        {:disconnect, closed_error(label), _state = :unused}
     else
       [conn(lock: conn_lock)] when conn_lock != lock ->
         raise "an outdated connection has been given to DBConnection on #{fun}/#{length(args) + 2}"
 
       [conn(status: :error)] ->
-        msg = "connection is closed because of an error, disconnect or timeout"
-        {:disconnect, DBConnection.ConnectionError.exception(msg), _state = :unused}
+        {:disconnect, closed_error(label), _state = :unused}
 
       [conn(status: :aborted)] when type != :cleanup ->
         msg = "transaction rolling back"
@@ -345,10 +354,16 @@ defmodule DBConnection.Holder do
           # Deadline could hit and be handled by the pool before using the connection.
           {:error, checkout_deadline_error()}
       else
-        [conn(module: mod, state: state)] ->
-          {:ok, pool_ref, mod, checkin_time, state}
+        [conn(module: mod, state: state, label: label)] ->
+          {:ok, pool_ref(pool_ref, label: label), mod, checkin_time, state}
       end
     end
+  end
+
+  defp closed_error(label) do
+    msg = "connection is closed because of an error, disconnect or timeout"
+    msg = if label == nil, do: msg, else: "[#{inspect(label)}] " <> msg
+    DBConnection.ConnectionError.exception(msg)
   end
 
   defp checkout_deadline_error do
